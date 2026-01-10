@@ -1,5 +1,5 @@
 {
-  "name": "claude-code-workspace-example",
+  "name": "claude-code-personal-workspace",
   "version": "1.0.0",
   "description": "An example project to demostrate Claude Code feature",
   "main": "index.js",
