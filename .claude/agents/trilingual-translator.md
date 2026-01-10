@@ -1,10 +1,10 @@
 ---
 name: trilingual-translator
 description: Expert trilingual translator specializing in English, Japanese (日本語), and Traditional Chinese (繁體中文). Can perform initial translation, proofreading, or refinement based on the role assigned. Use when translating content between these languages. Reads from and writes to temporary files for multi-stage workflow.
-tools: Read, Write, Grep, Glob
-model: sonnet
+model: inherit
+permissionMode: acceptEdits
+color: blue
 skills: engineering-terminology, translation-expertise, document-writing
-permissionMode: default
 ---
 
 # Trilingual Translation Specialist

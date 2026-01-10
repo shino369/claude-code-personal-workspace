@@ -19,25 +19,7 @@
       "Bash(type *)"
     ],
     "ask": [
-      "Bash(git push*)",
-      "Bash(git pull*)",
-      "Bash(git fetch*)",
-      "Bash(rm *)",
-      "Bash(del *)",
-      "Bash(rmdir *)",
-      "Bash(move *)",
-      "Bash(mv *)",
-      "Bash(copy *)",
-      "Bash(cp *)",
-      "Bash(pnpm install *)",
-      "Bash(pnpm add *)",
-      "Bash(pnpm remove *)",
-      "Edit(/package.json)",
-      "Edit(/tsconfig.json)",
-      "Edit(/.gitignore)",
-      "Bash(mkdir *)",
-      "Bash(touch *)",
-      "Edit(//\\\\*)"
+      "Bash(rm *)"
     ],
     "deny": [
       "Read(./.env)",

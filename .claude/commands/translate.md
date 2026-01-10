@@ -1,7 +1,6 @@
 ---
 description: Translate text between English, Japanese, and Chinese (Traditional) using a multi-stage professional translation workflow
 argument-hint: [--lang <en|ja|cn>] [--tone <casual|formal>] <text or file reference>
-allowed-tools: Task(trilingual-translator)
 ---
 
 # Professional Trilingual Translation
