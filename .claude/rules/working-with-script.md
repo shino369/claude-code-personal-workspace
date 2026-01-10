@@ -1,4 +1,4 @@
-# Creating New Script
+# Working With Script
 
 Always use Node.js first - this is a pnpm workspace.
 
