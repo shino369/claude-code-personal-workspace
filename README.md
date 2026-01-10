@@ -29,11 +29,27 @@ output/
     |   ├── studies/
     |   |   ├── STUDIES_some_task.md
     |   |   └── ...
-    |   └── scripts/
-    |       ├── some_script.js
-    |       ├── some_script.py
-    |       └── ...
+    |   ├── scripts/
+    |   |   ├── some_script.js
+    |   |   ├── some_script.py
+    |   |   └── ...
+    |   ├── ... // others
+    |   
     ├── 26260102_some_another_task
 ```
 
 Directory name under `YYYYMMDD_task_name` varies and will be based on the task nature.
+
+## Available Systems
+
+### Trilingual Translation System
+
+Professional translation system supporting English ↔ Japanese ↔ Traditional Chinese.
+
+**Quick Start:**
+
+```bash
+/translate --lang ja "Hello, how are you?"
+```
+
+See [Claude Code Trilingual Translation System](./docs/translation/README.md) for overview.

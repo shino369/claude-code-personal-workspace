@@ -13,7 +13,9 @@ This is a personal workspace for Claude Code to assist with various daily tasks 
 The workspace is designed with a structured approach to organizing outputs and configurations:
 
 ### Configuration Structure (Planned)
+
 The repository is set up to support:
+
 - `./CLAUDE.md` - Main memory/guidance file (this file)
 - `./.claude/rules/*` - Extended rules for Claude Code behavior
 - `./.claude/settings.json` - Workspace configuration
@@ -28,18 +30,24 @@ All Claude Code generated files should be placed in `output/tasks/<YYYYMMDD_task
 ```
 output/
 └── tasks/
-    ├── 20260101_some_task/
-    │   ├── reviews/
-    │   │   └── REVIEW_some_task.md
-    │   ├── studies/
-    │   │   └── STUDIES_some_task.md
-    │   └── scripts/
-    │       ├── some_script.js
-    │       └── some_script.py
-    └── 20260102_another_task/
+    ├── 26260101_some_task
+    |   ├── reviews/
+    |   |   ├── REVIEW_some_task.md
+    |   |   └── ...
+    |   ├── studies/
+    |   |   ├── STUDIES_some_task.md
+    |   |   └── ...
+    |   ├── scripts/
+    |   |   ├── some_script.js
+    |   |   ├── some_script.py
+    |   |   └── ...
+    |   ├── ... // others
+    |   
+    ├── 26260102_some_another_task
 ```
 
 **Key conventions:**
+
 - Task directory format: `YYYYMMDD_task_name`
 - Subdirectories vary based on task nature (reviews/, studies/, scripts/, etc.)
 - Choose appropriate subdirectory names that reflect the content type
