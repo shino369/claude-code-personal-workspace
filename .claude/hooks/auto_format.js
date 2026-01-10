@@ -9,14 +9,25 @@ const path = require('path');
 
 // Extensions that prettier can format
 const FORMATTABLE_EXTENSIONS = [
-  '.js', '.jsx', '.ts', '.tsx',
-  '.json', '.jsonc',
-  '.css', '.scss', '.less',
-  '.html', '.htm',
-  '.md', '.mdx',
-  '.yaml', '.yml',
-  '.graphql', '.gql',
-  '.vue', '.svelte'
+  '.js',
+  '.jsx',
+  '.ts',
+  '.tsx',
+  '.json',
+  '.jsonc',
+  '.css',
+  '.scss',
+  '.less',
+  '.html',
+  '.htm',
+  '.md',
+  '.mdx',
+  '.yaml',
+  '.yml',
+  '.graphql',
+  '.gql',
+  '.vue',
+  '.svelte',
 ];
 
 function isFormattable(filePath) {
@@ -40,7 +51,7 @@ function runPrettier(filePath) {
     // Run prettier
     execSync(`pnpm prettier --write "${filePath}"`, {
       stdio: 'pipe',
-      encoding: 'utf-8'
+      encoding: 'utf-8',
     });
 
     return true;

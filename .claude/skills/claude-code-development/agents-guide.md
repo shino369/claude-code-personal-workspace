@@ -26,10 +26,10 @@ permissionMode: default
 skills: skill-1, skill-2
 hooks:
   PreToolUse:
-    - matcher: "Bash"
+    - matcher: 'Bash'
       hooks:
         - type: command
-          command: "./scripts/validate.sh"
+          command: './scripts/validate.sh'
 ---
 
 # Agent System Prompt
@@ -440,14 +440,14 @@ model: sonnet
 permissionMode: plan
 hooks:
   PreToolUse:
-    - matcher: "Bash"
+    - matcher: 'Bash'
       hooks:
         - type: command
-          command: "./scripts/pre-deploy-check.sh"
+          command: './scripts/pre-deploy-check.sh'
   Stop:
     - hooks:
         - type: command
-          command: "./scripts/post-deploy-notify.sh"
+          command: './scripts/post-deploy-notify.sh'
 ---
 ```
 
@@ -546,10 +546,10 @@ Common hook patterns for agents:
 ```yaml
 hooks:
   PreToolUse:
-    - matcher: "Write|Edit"
+    - matcher: 'Write|Edit'
       hooks:
         - type: command
-          command: "./scripts/validate-syntax.sh $TOOL_INPUT"
+          command: './scripts/validate-syntax.sh $TOOL_INPUT'
 ```
 
 **Post-cleanup**:
@@ -557,10 +557,10 @@ hooks:
 ```yaml
 hooks:
   PostToolUse:
-    - matcher: "Bash"
+    - matcher: 'Bash'
       hooks:
         - type: command
-          command: "./scripts/cleanup-temp.sh"
+          command: './scripts/cleanup-temp.sh'
 ```
 
 **Agent lifecycle**:
@@ -570,7 +570,7 @@ hooks:
   Stop:
     - hooks:
         - type: command
-          command: "./scripts/agent-summary.sh"
+          command: './scripts/agent-summary.sh'
 ```
 
 ## Related Documentation

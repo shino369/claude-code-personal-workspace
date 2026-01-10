@@ -651,12 +651,12 @@ description: Safe file operations with validation
 allowed-tools: Write, Edit
 hooks:
   PreToolUse:
-    - matcher: "Write|Edit"
+    - matcher: 'Write|Edit'
       hooks:
         - type: command
-          command: "./scripts/backup.sh $TOOL_INPUT"
+          command: './scripts/backup.sh $TOOL_INPUT'
         - type: command
-          command: "./scripts/validate.sh $TOOL_INPUT"
+          command: './scripts/validate.sh $TOOL_INPUT'
 ---
 
 ## Your Task

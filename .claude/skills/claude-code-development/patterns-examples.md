@@ -700,7 +700,7 @@ Optional service: `$2` (defaults to all services)
 ```yaml
 hooks:
   PreToolUse:
-    - matcher: "Bash"
+    - matcher: 'Bash'
       hooks:
         - type: command
           command: |
@@ -734,7 +734,7 @@ hooks:
 ```yaml
 hooks:
   PreToolUse:
-    - matcher: "Write|Edit"
+    - matcher: 'Write|Edit'
       hooks:
         - type: command
           command: |
@@ -764,7 +764,7 @@ hooks:
 ```yaml
 hooks:
   PostToolUse:
-    - matcher: "Write|Edit"
+    - matcher: 'Write|Edit'
       hooks:
         - type: command
           command: |

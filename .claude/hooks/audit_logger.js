@@ -28,7 +28,7 @@ function appendLogEntry(logFile, entry) {
       if (!Array.isArray(logs)) {
         logs = [logs];
       }
-    } catch (err) {
+    } catch (_err) {
       // If file is corrupted, start fresh
       logs = [];
     }
@@ -45,8 +45,14 @@ function sanitizeForLogging(data, maxContentLength = 500) {
   if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
     const sanitized = {};
     for (const [key, value] of Object.entries(data)) {
-      if (['content', 'new_source'].includes(key) && typeof value === 'string' && value.length > maxContentLength) {
-        sanitized[key] = value.slice(0, maxContentLength) + `... (truncated, total length: ${value.length})`;
+      if (
+        ['content', 'new_source'].includes(key) &&
+        typeof value === 'string' &&
+        value.length > maxContentLength
+      ) {
+        sanitized[key] =
+          value.slice(0, maxContentLength) +
+          `... (truncated, total length: ${value.length})`;
       } else if (typeof value === 'object' && value !== null) {
         sanitized[key] = sanitizeForLogging(value, maxContentLength);
       } else {
@@ -55,7 +61,7 @@ function sanitizeForLogging(data, maxContentLength = 500) {
     }
     return sanitized;
   } else if (Array.isArray(data)) {
-    return data.map(item => sanitizeForLogging(item, maxContentLength));
+    return data.map((item) => sanitizeForLogging(item, maxContentLength));
   } else {
     return data;
   }
@@ -87,11 +93,11 @@ function main() {
           tool_input: sanitizeForLogging(input.tool_input || {}),
           tool_response: sanitizeForLogging(input.tool_response || {}),
           cwd: input.cwd,
-          permission_mode: input.permission_mode
+          permission_mode: input.permission_mode,
         };
 
         // Remove undefined values for cleaner logs
-        Object.keys(logEntry).forEach(key => {
+        Object.keys(logEntry).forEach((key) => {
           if (logEntry[key] === undefined || logEntry[key] === null) {
             delete logEntry[key];
           }

@@ -10,12 +10,14 @@ This directory contains hook scripts for Claude Code that automatically execute 
 **Purpose:** Records Claude Code's working history for audit and review purposes.
 
 **What it does:**
+
 - Logs all tool usage to `/logs/<YYYYMMDD>/logging.json`
 - Creates a new log file for each day
 - Records timestamps, tool names, inputs, outputs, and session information
 - Truncates large content (>500 chars) to keep log files manageable
 
 **Log Structure:**
+
 ```
 logs/
 └── 20260110/
@@ -23,6 +25,7 @@ logs/
 ```
 
 **Log Entry Format:**
+
 ```json
 {
   "timestamp": "2026-01-10T10:30:45.123Z",
@@ -42,6 +45,7 @@ logs/
 **Purpose:** Automatically formats files using prettier after editing or writing.
 
 **What it does:**
+
 - Runs prettier on formattable files after Edit or Write operations
 - Supports common file types: .js, .jsx, .ts, .tsx, .json, .css, .scss, .html, .md, .yaml, etc.
 - Skips files that aren't formattable or don't exist
@@ -49,11 +53,13 @@ logs/
 
 **Prerequisites:**
 Prettier must be installed in the workspace. To install:
+
 ```bash
 pnpm add -D prettier
 ```
 
 **Optional:** Create a `.prettierrc` file to customize formatting:
+
 ```json
 {
   "semi": true,
@@ -99,6 +105,7 @@ Hooks are configured in `.claude/settings.json`:
 ## Viewing Hooks
 
 To view and manage hooks interactively:
+
 ```
 /hooks
 ```
@@ -106,6 +113,7 @@ To view and manage hooks interactively:
 ## Debugging Hooks
 
 To see detailed hook execution information:
+
 ```bash
 claude --debug
 ```
@@ -120,6 +128,7 @@ claude --debug
 ## Disabling Hooks
 
 To temporarily disable hooks, you can:
+
 1. Run `/hooks` and remove the hooks from the UI
 2. Edit `.claude/settings.json` and remove or comment out the hooks section
 3. Restart Claude Code for changes to take effect

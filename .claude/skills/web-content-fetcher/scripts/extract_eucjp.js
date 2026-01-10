@@ -12,10 +12,10 @@
  *   npm install @mozilla/readability jsdom iconv-lite
  */
 
-const fs = require("fs");
-const iconv = require("iconv-lite");
-const { Readability } = require("@mozilla/readability");
-const { JSDOM } = require("jsdom");
+const fs = require('fs');
+const iconv = require('iconv-lite');
+const { Readability } = require('@mozilla/readability');
+const { JSDOM } = require('jsdom');
 
 /**
  * Convert HTML to markdown-like text format
@@ -23,7 +23,7 @@ const { JSDOM } = require("jsdom");
 function htmlToMarkdown(html) {
   const dom = new JSDOM(html);
   const doc = dom.window.document;
-  let result = [];
+  const result = [];
 
   function processNode(node) {
     if (node.nodeType === 3) {
@@ -35,31 +35,33 @@ function htmlToMarkdown(html) {
       return;
     }
 
-    if (node.nodeType !== 1) return; // Not an element
+    if (node.nodeType !== 1) {
+      return;
+    } // Not an element
 
     const tagName = node.tagName.toLowerCase();
 
     switch (tagName) {
-      case "h1":
+      case 'h1':
         result.push(`\n# ${node.textContent.trim()}\n`);
         break;
-      case "h2":
+      case 'h2':
         result.push(`\n## ${node.textContent.trim()}\n`);
         break;
-      case "h3":
+      case 'h3':
         result.push(`\n### ${node.textContent.trim()}\n`);
         break;
-      case "h4":
+      case 'h4':
         result.push(`\n#### ${node.textContent.trim()}\n`);
         break;
-      case "p":
+      case 'p':
         result.push(`\n${node.textContent.trim()}\n`);
         break;
-      case "br":
-        result.push("\n");
+      case 'br':
+        result.push('\n');
         break;
-      case "a":
-        const href = node.getAttribute("href");
+      case 'a':
+        const href = node.getAttribute('href');
         const text = node.textContent.trim();
         if (href && text) {
           result.push(`[${text}](${href})`);
@@ -67,12 +69,12 @@ function htmlToMarkdown(html) {
           result.push(text);
         }
         break;
-      case "strong":
-      case "b":
+      case 'strong':
+      case 'b':
         result.push(`**${node.textContent.trim()}**`);
         break;
-      case "em":
-      case "i":
+      case 'em':
+      case 'i':
         result.push(`*${node.textContent.trim()}*`);
         break;
       default:
@@ -82,9 +84,9 @@ function htmlToMarkdown(html) {
 
   processNode(doc.body);
   return result
-    .join(" ")
-    .replace(/ +/g, " ")
-    .replace(/\n\n\n+/g, "\n\n")
+    .join(' ')
+    .replace(/ +/g, ' ')
+    .replace(/\n\n\n+/g, '\n\n')
     .trim();
 }
 
@@ -98,7 +100,7 @@ function extractArticle(htmlFilePath) {
 
   // Read file as buffer and decode from EUC-JP
   const htmlBuffer = fs.readFileSync(htmlFilePath);
-  const htmlContent = iconv.decode(htmlBuffer, "eucjp");
+  const htmlContent = iconv.decode(htmlBuffer, 'eucjp');
 
   // Parse with JSDOM
   const dom = new JSDOM(htmlContent);
@@ -109,14 +111,14 @@ function extractArticle(htmlFilePath) {
     // Fallback: try to extract from main content area
     const doc = dom.window.document;
     const mainContent =
-      doc.querySelector("article") ||
-      doc.querySelector(".articleBody") ||
-      doc.querySelector("#main");
+      doc.querySelector('article') ||
+      doc.querySelector('.articleBody') ||
+      doc.querySelector('#main');
 
     if (mainContent) {
       return `# ${doc.title}\n\n${htmlToMarkdown(mainContent.innerHTML)}`;
     } else {
-      throw new Error("Failed to extract article content");
+      throw new Error('Failed to extract article content');
     }
   }
 
@@ -127,7 +129,7 @@ function extractArticle(htmlFilePath) {
 // Main execution
 function main() {
   if (process.argv.length !== 3) {
-    console.error("Usage: node extract_eucjp.js <html_file>");
+    console.error('Usage: node extract_eucjp.js <html_file>');
     process.exit(1);
   }
 

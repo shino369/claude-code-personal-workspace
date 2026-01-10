@@ -646,10 +646,10 @@ name: validated-edits
 description: File editing with validation
 hooks:
   PreToolUse:
-    - matcher: "Write|Edit"
+    - matcher: 'Write|Edit'
       hooks:
         - type: command
-          command: "./scripts/validate-syntax.sh $TOOL_INPUT"
+          command: './scripts/validate-syntax.sh $TOOL_INPUT'
 ---
 ```
 

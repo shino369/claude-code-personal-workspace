@@ -58,20 +58,20 @@ name: component-name
 description: Component description
 hooks:
   PreToolUse:
-    - matcher: "Bash"
+    - matcher: 'Bash'
       hooks:
         - type: command
-          command: "./scripts/validate.sh $TOOL_INPUT"
+          command: './scripts/validate.sh $TOOL_INPUT'
           once: true
   PostToolUse:
-    - matcher: "Write|Edit"
+    - matcher: 'Write|Edit'
       hooks:
         - type: command
-          command: "./scripts/format.sh"
+          command: './scripts/format.sh'
   Stop:
     - hooks:
         - type: command
-          command: "./scripts/cleanup.sh"
+          command: './scripts/cleanup.sh'
 ---
 ```
 
@@ -103,10 +103,10 @@ Example:
 
 ```yaml
 PreToolUse:
-  - matcher: "Bash"
+  - matcher: 'Bash'
     hooks:
       - type: command
-        command: "./scripts/validate-bash-command.sh $TOOL_INPUT"
+        command: './scripts/validate-bash-command.sh $TOOL_INPUT'
 ```
 
 ### PermissionRequest
@@ -135,10 +135,10 @@ Example:
 
 ```yaml
 PermissionRequest:
-  - matcher: "Bash"
+  - matcher: 'Bash'
     hooks:
       - type: command
-        command: "./scripts/permission-handler.sh $TOOL_INPUT"
+        command: './scripts/permission-handler.sh $TOOL_INPUT'
 ```
 
 ### PostToolUse
@@ -168,10 +168,10 @@ Example:
 
 ```yaml
 PostToolUse:
-  - matcher: "Write|Edit"
+  - matcher: 'Write|Edit'
     hooks:
       - type: command
-        command: "./scripts/lint-file.sh"
+        command: './scripts/lint-file.sh'
 ```
 
 ### SubagentStart
@@ -194,10 +194,10 @@ Example:
 
 ```yaml
 SubagentStart:
-  - matcher: "translator"
+  - matcher: 'translator'
     hooks:
       - type: command
-        command: "./scripts/setup-translation-env.sh"
+        command: './scripts/setup-translation-env.sh'
 ```
 
 ### SubagentStop
@@ -220,10 +220,10 @@ Example:
 
 ```yaml
 SubagentStop:
-  - matcher: "translator"
+  - matcher: 'translator'
     hooks:
       - type: command
-        command: "./scripts/cleanup-translation-env.sh"
+        command: './scripts/cleanup-translation-env.sh'
 ```
 
 ### Stop
@@ -247,7 +247,7 @@ Example:
 Stop:
   - hooks:
       - type: command
-        command: "./scripts/final-cleanup.sh"
+        command: './scripts/final-cleanup.sh'
 ```
 
 ### Notification
@@ -270,14 +270,14 @@ Example:
 
 ```yaml
 Notification:
-  - matcher: "permission_prompt"
+  - matcher: 'permission_prompt'
     hooks:
       - type: command
-        command: "./scripts/permission-alert.sh"
-  - matcher: "idle_prompt"
+        command: './scripts/permission-alert.sh'
+  - matcher: 'idle_prompt'
     hooks:
       - type: command
-        command: "./scripts/idle-notification.sh"
+        command: './scripts/idle-notification.sh'
 ```
 
 ### UserPromptSubmit
@@ -300,7 +300,7 @@ Example:
 UserPromptSubmit:
   - hooks:
       - type: command
-        command: "./scripts/prompt-validator.py"
+        command: './scripts/prompt-validator.py'
 ```
 
 ### PreCompact
@@ -320,14 +320,14 @@ Example:
 
 ```yaml
 PreCompact:
-  - matcher: "manual"
+  - matcher: 'manual'
     hooks:
       - type: command
-        command: "./scripts/pre-compact-manual.sh"
-  - matcher: "auto"
+        command: './scripts/pre-compact-manual.sh'
+  - matcher: 'auto'
     hooks:
       - type: command
-        command: "./scripts/pre-compact-auto.sh"
+        command: './scripts/pre-compact-auto.sh'
 ```
 
 ### SessionStart
@@ -365,14 +365,14 @@ Example:
 
 ```yaml
 SessionStart:
-  - matcher: "startup"
+  - matcher: 'startup'
     hooks:
       - type: command
-        command: "./scripts/session-setup.sh"
-  - matcher: "resume"
+        command: './scripts/session-setup.sh'
+  - matcher: 'resume'
     hooks:
       - type: command
-        command: "./scripts/session-resume.sh"
+        command: './scripts/session-resume.sh'
 ```
 
 ### SessionEnd
@@ -402,7 +402,7 @@ Example:
 SessionEnd:
   - hooks:
       - type: command
-        command: "./scripts/session-cleanup.sh"
+        command: './scripts/session-cleanup.sh'
 ```
 
 ## Hook Types
@@ -423,7 +423,7 @@ Example:
 ```yaml
 hooks:
   - type: command
-    command: "./scripts/validate.sh $TOOL_INPUT"
+    command: './scripts/validate.sh $TOOL_INPUT'
     once: false
     timeout: 30
 ```
@@ -462,7 +462,7 @@ Injects text into the conversation context or uses an LLM to evaluate whether to
 ```yaml
 hooks:
   - type: prompt
-    prompt: "Remember to follow security best practices."
+    prompt: 'Remember to follow security best practices.'
     once: true
 ```
 
@@ -471,7 +471,7 @@ hooks:
 ```yaml
 hooks:
   - type: prompt
-    prompt: "Evaluate if Claude should stop: $ARGUMENTS. Check if all tasks are complete."
+    prompt: 'Evaluate if Claude should stop: $ARGUMENTS. Check if all tasks are complete.'
     timeout: 30
 ```
 
@@ -505,25 +505,25 @@ Match tool names:
 **Single tool**:
 
 ```yaml
-matcher: "Bash"
+matcher: 'Bash'
 ```
 
 **Multiple tools (OR)**:
 
 ```yaml
-matcher: "Write|Edit"
+matcher: 'Write|Edit'
 ```
 
 **Pattern matching**:
 
 ```yaml
-matcher: "Write|Edit|NotebookEdit"
+matcher: 'Write|Edit|NotebookEdit'
 ```
 
 **All tools**:
 
 ```yaml
-matcher: ".*"
+matcher: '.*'
 ```
 
 ### Agent Matchers (SubagentStart, SubagentStop)
@@ -533,19 +533,19 @@ Match agent names:
 **Single agent**:
 
 ```yaml
-matcher: "translator"
+matcher: 'translator'
 ```
 
 **Multiple agents (OR)**:
 
 ```yaml
-matcher: "translator|code-reviewer"
+matcher: 'translator|code-reviewer'
 ```
 
 **Pattern matching**:
 
 ```yaml
-matcher: ".*-reviewer" # Matches any agent ending with -reviewer
+matcher: '.*-reviewer' # Matches any agent ending with -reviewer
 ```
 
 ### No Matcher (Stop)
@@ -556,7 +556,7 @@ Stop hooks don't use matchers:
 Stop:
   - hooks:
       - type: command
-        command: "./cleanup.sh"
+        command: './cleanup.sh'
 ```
 
 ## Hook Scope
@@ -600,7 +600,7 @@ Run hook only once per session:
 ```yaml
 hooks:
   - type: command
-    command: "./scripts/expensive-setup.sh"
+    command: './scripts/expensive-setup.sh'
     once: true
 ```
 
@@ -626,7 +626,7 @@ Hooks can access environment variables:
 ```yaml
 hooks:
   - type: command
-    command: "./scripts/deploy.sh $DEPLOYMENT_ENV"
+    command: './scripts/deploy.sh $DEPLOYMENT_ENV'
 ```
 
 **Available variables**:
@@ -643,14 +643,14 @@ Multiple hooks can be chained:
 
 ```yaml
 PreToolUse:
-  - matcher: "Write"
+  - matcher: 'Write'
     hooks:
       - type: command
-        command: "./scripts/backup.sh $TOOL_INPUT"
+        command: './scripts/backup.sh $TOOL_INPUT'
       - type: command
-        command: "./scripts/validate.sh $TOOL_INPUT"
+        command: './scripts/validate.sh $TOOL_INPUT'
       - type: prompt
-        prompt: "Remember to review changes carefully."
+        prompt: 'Remember to review changes carefully.'
 ```
 
 **Execution order**:
@@ -727,7 +727,7 @@ Validate before dangerous operations:
 ```yaml
 hooks:
   PreToolUse:
-    - matcher: "Bash"
+    - matcher: 'Bash'
       hooks:
         - type: command
           command: |
@@ -744,10 +744,10 @@ Format code after editing:
 ```yaml
 hooks:
   PostToolUse:
-    - matcher: "Write|Edit"
+    - matcher: 'Write|Edit'
       hooks:
         - type: command
-          command: "./scripts/format-code.sh"
+          command: './scripts/format-code.sh'
 ```
 
 ### Backup Before Modification
@@ -757,10 +757,10 @@ Create backups before changing files:
 ```yaml
 hooks:
   PreToolUse:
-    - matcher: "Write|Edit"
+    - matcher: 'Write|Edit'
       hooks:
         - type: command
-          command: "./scripts/backup.sh $TOOL_INPUT"
+          command: './scripts/backup.sh $TOOL_INPUT'
 ```
 
 ### Environment Setup/Teardown
@@ -770,16 +770,16 @@ Setup and cleanup for agents:
 ```yaml
 hooks:
   SubagentStart:
-    - matcher: "deployment-agent"
+    - matcher: 'deployment-agent'
       hooks:
         - type: command
-          command: "./scripts/setup-deploy-env.sh"
+          command: './scripts/setup-deploy-env.sh'
           once: true
   SubagentStop:
-    - matcher: "deployment-agent"
+    - matcher: 'deployment-agent'
       hooks:
         - type: command
-          command: "./scripts/cleanup-deploy-env.sh"
+          command: './scripts/cleanup-deploy-env.sh'
 ```
 
 ### Logging and Monitoring
@@ -789,10 +789,10 @@ Track tool usage:
 ```yaml
 hooks:
   PostToolUse:
-    - matcher: ".*"
+    - matcher: '.*'
       hooks:
         - type: command
-          command: "./scripts/log-tool-usage.sh $TOOL_NAME"
+          command: './scripts/log-tool-usage.sh $TOOL_NAME'
 ```
 
 ### Conditional Reminders
@@ -802,14 +802,14 @@ Inject context-aware reminders:
 ```yaml
 hooks:
   PreToolUse:
-    - matcher: "Bash"
+    - matcher: 'Bash'
       hooks:
         - type: prompt
-          prompt: "Double-check bash commands for safety."
-    - matcher: "Write|Edit"
+          prompt: 'Double-check bash commands for safety.'
+    - matcher: 'Write|Edit'
       hooks:
         - type: prompt
-          prompt: "Remember to maintain code style consistency."
+          prompt: 'Remember to maintain code style consistency.'
 ```
 
 ### Git Operations
@@ -819,10 +819,10 @@ Auto-stage changes:
 ```yaml
 hooks:
   PostToolUse:
-    - matcher: "Write|Edit"
+    - matcher: 'Write|Edit'
       hooks:
         - type: command
-          command: "git add $TOOL_INPUT"
+          command: 'git add $TOOL_INPUT'
 ```
 
 ## Troubleshooting
