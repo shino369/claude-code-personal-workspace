@@ -63,10 +63,12 @@ Final output to user
 
 ## Output Directory Structure
 
-### For File Translations
+### For File Translations and URL Translations
 
 ```
 output/tasks/YYYYMMDD_translate_[description]/
+├── original/                    # For URL translations only
+│   └── fetched_content.md      # Fetched web content
 ├── translated/
 │   └── [filename]_[lang].md    # Final deliverable (e.g., README_ja.md)
 └── tmp/
@@ -76,6 +78,8 @@ output/tasks/YYYYMMDD_translate_[description]/
     ├── stage3_final.md          # Final translation (same as translated/)
     └── stage3_summary.md        # Refinement summary and QA notes
 ```
+
+**Note**: The `original/` directory is created only for URL translations to store the fetched web content.
 
 **Example**:
 
@@ -100,7 +104,7 @@ Output is displayed directly in the conversation with all three stages visible.
 ### Basic Command
 
 ```bash
-/translate [--lang <en|ja|cn>] [--tone <casual|formal>] <content>
+/translate [--lang <en|ja|cn>] [--tone <casual|formal>] [--url <URL>] <content>
 ```
 
 ### Parameters
@@ -114,7 +118,12 @@ Output is displayed directly in the conversation with all three stages visible.
   - `casual`: Conversational tone
   - `formal`: Professional/academic tone
 
-- `<content>`: Text to translate or file reference using `@`
+- `--url <URL>`: Fetch content from a URL to translate (optional)
+  - Alternative to inline text or file references
+  - Uses web-content-fetcher skill with tiered approach
+  - Fetched content saved to `original/fetched_content.md`
+
+- `<content>`: Text to translate, file reference using `@`, or omitted when using `--url`
 
 ### Examples
 
@@ -152,6 +161,36 @@ Claude will ask for target language, then proceed with translation.
 ```
 
 Leverages the **engineering-terminology** skill for accurate technical translation.
+
+#### Example 5: Translate from URL
+
+```bash
+/translate --lang en --url https://automaton-media.com/articles/newsjp/20260109-401932/
+```
+
+Fetches Japanese article from URL, translates to English.
+
+**Output**:
+
+- Original content: `output/tasks/20260110_translate_article/original/fetched_content.md`
+- Final translation: `output/tasks/20260110_translate_article/translated/article_en.md`
+- Intermediate: `output/tasks/20260110_translate_article/tmp/`
+
+#### Example 6: URL with tone specification
+
+```bash
+/translate --lang ja --tone formal --url https://example.com/blog/post
+```
+
+Fetches content from URL, translates to Japanese in formal tone.
+
+#### Example 7: Direct URL without --url flag
+
+```bash
+/translate --lang cn https://example.com/article
+```
+
+Detects URL automatically, fetches and translates to Traditional Chinese.
 
 ## Features
 
@@ -199,6 +238,18 @@ Leverages the **engineering-terminology** skill for accurate technical translati
   - Japanese: です・ます体 or である体, formal vocabulary (漢語)
   - Chinese: Literary vocabulary, 成語 usage, formal connectors
 
+### URL Translation Support
+
+The system can fetch and translate web content directly from URLs using the integrated `web-content-fetcher` skill:
+
+- **Automatic content extraction**: Removes navigation, ads, sidebars, and extracts clean article content
+- **Size handling**: Handles articles of any size using tiered fetching strategy
+- **Encoding support**: Handles UTF-8, EUC-JP, and other encodings
+- **Structured storage**: Fetched content saved to `original/` directory for reference
+- **Transparent workflow**: Seamlessly integrated with three-stage translation process
+
+Use `--url <URL>` parameter to translate web content without manual copying.
+
 ## Skills Detail
 
 ### translation-expertise
@@ -215,7 +266,6 @@ A comprehensive translation methodology skill using **language-based organizatio
 - `chinese-traditional.md` (535 lines) - Complete Traditional Chinese reference: classical influences, regional variations (Taiwan/Hong Kong), punctuation, formality levels
 - `translation-challenges.md` (603 lines) - Cross-language challenges with detailed examples: idioms, cultural references, honorifics, wordplay
 - `tools-resources.md` (527 lines) - 45+ curated resources: dictionaries, corpus databases, grammar references, terminology tools
-
 
 **Covers**:
 
@@ -243,7 +293,6 @@ A comprehensive technical terminology skill with **domain-based organization** p
 - `glossaries/ai-ml.md` (265 lines) - ~185 terms: neural networks, LLM, transformers, RAG, embeddings, fine-tuning
 - `glossaries/hardware-electronics.md` (290 lines) - ~180 terms: circuit, semiconductor, processor, PCB, FPGA
 
-
 **Provides expert knowledge in**:
 
 - Software engineering (API, framework, database, algorithms, design patterns)
@@ -270,6 +319,25 @@ Includes:
 - Document formatting conventions
 - Writing process best practices
 - Common writing patterns (compare-contrast, cause-effect)
+
+### web-content-fetcher
+
+**File**: `.claude/skills/web-content-fetcher/SKILL.md` (492 lines)
+
+Expert guidance for fetching and parsing web content from URLs, used by the translation system when `--url` parameter is provided.
+
+**Includes**:
+
+- 3-tier fetching strategy:
+  - **Tier 1**: WebFetch tool (< 50KB) - Fast, AI-powered extraction
+  - **Tier 2**: curl + Task agent (any size) - Recommended default for 99% of cases
+  - **Tier 3**: curl + scripts (edge cases) - extract_article.js, extract_eucjp.js for special encoding
+- Tool limitation reference (WebFetch: 50KB, Read: 256KB)
+- Directory structure conventions (`original/`, `tmp/`, `translated/`)
+- Troubleshooting guide (encoding issues, anti-bot protection, authentication)
+- Scripts for edge cases (Japanese EUC-JP encoding handling)
+
+**Use when**: Translating web articles, blog posts, or online documentation via URL
 
 ## Subagent Configuration
 
@@ -301,6 +369,8 @@ The single subagent takes on three different roles based on instructions:
 - File-based workflow with structured outputs
 - Cultural adaptation and nuance preservation
 - Consistent terminology management
+- URL content fetching with web-content-fetcher skill integration
+- Automatic encoding detection (UTF-8, EUC-JP, etc.)
 
 ## Skills Architecture
 
@@ -427,6 +497,27 @@ Every translation is checked for:
    - Writes `tmp/stage3_summary.md` (summary)
    - Writes `translated/README_ja.md` (deliverable)
 6. Reports file locations to user
+
+### URL Translation
+
+1. User runs `/translate --lang en --url https://example.com/article`
+2. Main agent uses web-content-fetcher skill to fetch content:
+   - Try WebFetch first (fast for small articles)
+   - Fall back to curl + Task agent for larger content
+   - Handle encoding issues (EUC-JP for Japanese sites)
+3. Main agent creates directory structure:
+   ```
+   output/tasks/20260110_translate_article/
+   ├── original/          (stores fetched content)
+   ├── translated/        (final output)
+   └── tmp/               (intermediate files)
+   ```
+4. Fetched content saved to `original/fetched_content.md`
+5. Main agent invokes trilingual-translator three times (same as file translation):
+   - Stage 1: Reads fetched_content.md, creates initial translation
+   - Stage 2: Reviews initial translation
+   - Stage 3: Produces final polished translation
+6. Reports all file locations to user
 
 ## Technical Details
 
