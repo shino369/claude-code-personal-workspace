@@ -228,20 +228,6 @@ Extract:
 → [Description of what happens]
 ```
 
-**Bash Command Execution**:
-Commands can execute bash commands using `!` prefix:
-
-```markdown
----
-allowed-tools: Bash(git status:*), Bash(git diff:*)
----
-
-## Context
-
-- Current git status: !`git status`
-- Current diff: !`git diff HEAD`
-```
-
 **Best Practices**:
 
 - **User-facing**: Commands are for users, not internal automation

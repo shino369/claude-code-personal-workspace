@@ -16,7 +16,9 @@
       "Bash(pwd)",
       "Bash(echo *)",
       "Bash(cat *)",
-      "Bash(type *)"
+      "Bash(type *)",
+      "Bash(curl *)",
+      "Bash(mkdir *)"
     ],
     "ask": ["Bash(rm *)"],
     "deny": [
@@ -37,7 +39,6 @@
       "Edit(./**/*.pem)",
       "Edit(./**/*.key)",
       "Bash(npm *)",
-      "Bash(curl *)",
       "Bash(wget *)",
       "Bash(Invoke-WebRequest *)",
       "Bash(iwr *)",

@@ -54,14 +54,48 @@ Command line arguments: `$ARGUMENTS`
 
 4. **Set up working directory** (for file translations and URL fetching):
    - Create task directory: `output/tasks/YYYYMMDD_translate_[brief_description]/`
-   - Create subdirectories: `tmp/` (intermediate files) and `translated/` (final output)
+   - Create subdirectories:
+     - `original/` - Original fetched/source content
+     - `tmp/` - Stage 1, 2, 3 intermediate files
+     - `translated/` - Final deliverable
    - Example: `output/tasks/20260110_translate_readme/`
-     - `tmp/` - Stage 1, 2, 3 intermediate files, fetched URL content
-     - `translated/` - Final deliverable (README_ja.md, article_ja.md)
+     - `original/` - fetched_content.md (for URLs) or source files
+     - `tmp/` - stage1_initial.md, stage1_notes.md, stage2_feedback.md, stage3_final.md, stage3_summary.md
+     - `translated/` - article_cn.md (final output)
    - Use current date in YYYYMMDD format
    - Use brief description based on content, filename, or URL domain/title
 
-5. **Execute Multi-Agent Three-Stage Workflow**:
+5. **Fetch URL content** (if --url is provided):
+
+   **IMPORTANT**: Use the web-content-fetcher skill's tiered approach:
+
+   **Tier 1: Try WebFetch first** (< 50KB content):
+   - Use WebFetch tool with prompt: "Extract article content"
+   - If successful, save to `{task_dir}/original/fetched_content.md`
+   - If "Prompt too long" error, proceed to Tier 2
+
+   **Tier 2: curl + Extraction Script** (recommended for most cases):
+
+   ```bash
+   # Fetch raw HTML
+   curl -s "URL" > {task_dir}/original/raw_html.html
+
+   # Choose extraction method based on encoding:
+   # Standard UTF-8 sites:
+   node .claude/skills/web-content-fetcher/scripts/extract_article.js {task_dir}/original/raw_html.html > {task_dir}/original/fetched_content.md
+
+   # EUC-JP encoded sites (4gamer, etc.):
+   node .claude/skills/web-content-fetcher/scripts/extract_eucjp.js {task_dir}/original/raw_html.html > {task_dir}/original/fetched_content.md
+
+   # Python option:
+   python .claude/skills/web-content-fetcher/scripts/extract_article.py {task_dir}/original/raw_html.html > {task_dir}/original/fetched_content.md
+   ```
+
+   **Note**: Use the centralized scripts in `.claude/skills/web-content-fetcher/scripts/` - do NOT create new scripts in the task directory.
+
+   The fetched content will be passed to the translation subagents in the workflow.
+
+6. **Execute Multi-Agent Three-Stage Workflow**:
 
    You will orchestrate THREE sequential subagent invocations using the same trilingual-translator subagent, but with different roles:
 
@@ -99,22 +133,24 @@ Command line arguments: `$ARGUMENTS`
    ```
    You are assigned the role of INITIAL TRANSLATOR (Translator A) in a three-stage workflow.
 
-   **Your Task**: Fetch content from URL and create the first draft translation.
+   **Your Task**: Create the first draft translation from pre-fetched URL content.
 
-   **Source URL**: [the URL to fetch]
+   **Source URL**: [the original URL]
+   **Source Language**: [detected language]
    **Target Language**: [English/Japanese/Chinese Traditional]
    **Tone**: [casual/formal/your professional judgment]
    **Task Directory**: output/tasks/YYYYMMDD_translate_[description]/
+   **Original Directory**: {task_dir}/original/
    **Temp Directory**: {task_dir}/tmp/
 
+   **Fetched Content**:
+   [paste the entire fetched content here]
+
    **Instructions**:
-   1. Use WebFetch tool to extract the main article content from the URL
-      - Focus on title, article body, and relevant metadata
-      - Ignore navigation, ads, and sidebar content
-   2. Save the fetched content to: {temp_dir}/fetched_content.md
-   3. Analyze and translate the content
-   4. Write initial translation to: {temp_dir}/stage1_initial.md
-   5. Write analysis and notes to: {temp_dir}/stage1_notes.md
+   1. Read and analyze the fetched content provided above
+   2. Create the initial translation to the target language
+   3. Write initial translation to: {temp_dir}/stage1_initial.md
+   4. Write analysis and notes to: {temp_dir}/stage1_notes.md
 
    **stage1_notes.md format**:
    ## Source Information
@@ -176,7 +212,7 @@ Command line arguments: `$ARGUMENTS`
    ```
    PROOFREADER (Translator B) - Review from files
 
-   Source File: [path] OR Fetched Content: {temp_dir}/fetched_content.md
+   Source File: [path] OR Fetched Content: {task_dir}/original/fetched_content.md
    Initial Translation: {temp_dir}/stage1_initial.md
    Notes: {temp_dir}/stage1_notes.md
 
@@ -202,7 +238,7 @@ Command line arguments: `$ARGUMENTS`
    ```
    REFINER (Translator C) - Create final from files
 
-   Source File: [path] OR Fetched Content: {temp_dir}/fetched_content.md
+   Source File: [path] OR Fetched Content: {task_dir}/original/fetched_content.md
    Initial Translation: {temp_dir}/stage1_initial.md
    Proofreader Feedback: {temp_dir}/stage2_feedback.md
    Target Language: [en/ja/cn]
@@ -221,11 +257,11 @@ Command line arguments: `$ARGUMENTS`
    - Chinese Traditional: [basename]_cn.md
    ```
 
-6. **Present results**:
+7. **Present results**:
    - Inline: Show all outputs in conversation
    - Files/URLs: Report locations:
+     - Original content (for URLs): {task_dir}/original/fetched_content.md
      - Final translation: {task_dir}/translated/[filename]
-     - Fetched content (for URLs): {task_dir}/tmp/fetched_content.md
      - Intermediate files: {task_dir}/tmp/
 
 ## Examples
@@ -308,11 +344,20 @@ Command line arguments: `$ARGUMENTS`
 
 This command uses a true collaborative multi-agent approach:
 
-1. **Main Agent (you)**: Parse arguments, orchestrate the three-stage workflow
-2. **Translator A**: Create initial translation draft
+1. **Main Agent (you)**: Parse arguments, fetch URL content (if --url provided), save to original/ directory, orchestrate the three-stage workflow
+2. **Translator A**: Create initial translation draft from provided content
 3. **Translator B**: Review Translator A's work and provide feedback
 4. **Translator C**: Refine based on Translator B's feedback to produce final version
 5. **Skills**: Each translator has access to specialized knowledge
+
+**URL Fetching Strategy**:
+
+- The main orchestrator agent handles URL fetching using the web-content-fetcher skill's tiered approach
+- Try WebFetch first (fast for small content), fall back to curl + extraction scripts for larger content
+- Always use centralized scripts from `.claude/skills/web-content-fetcher/scripts/`
+- Fetched content is saved to `{task_dir}/original/fetched_content.md`
+- Content is then passed directly to translation subagents in their prompts
+- This ensures reliable content fetching and keeps subagents focused on translation
 
 This separation ensures:
 
