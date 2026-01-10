@@ -69,6 +69,18 @@ Command line arguments: `$ARGUMENTS`
 
    **IMPORTANT**: Use the `web-content-fetcher` agent skill for tiered approach.
 
+5.5. **Download images** (if fetched content contains media URLs):
+
+   **For Twitter/X and other media-rich content**:
+   - Parse the fetched content for image URLs (look for `### Media` section with `URL:` entries)
+   - Download each image using curl to `{task_dir}/original/`:
+     ```bash
+     curl -s "IMAGE_URL" -o "{task_dir}/original/image_1.jpg"
+     curl -s "IMAGE_URL" -o "{task_dir}/original/image_2.jpg"
+     ```
+   - Name images sequentially: `image_1.jpg`, `image_2.jpg`, etc.
+   - Keep track of which image corresponds to which description from the fetched content
+
 6. **Execute Multi-Agent Three-Stage Workflow**:
 
    You will orchestrate THREE sequential subagent invocations using the same trilingual-translator subagent, but with different roles:
@@ -224,6 +236,21 @@ Command line arguments: `$ARGUMENTS`
    4. Write summary to {temp_dir}/stage3_summary.md
    5. Write final deliverable to {task_dir}/translated/[basename]_[lang].md
       - For URLs, use descriptive name like: article_[lang].md or [site-name]_article_[lang].md
+   6. **For content with images**:
+      - Include images in the final translation using markdown image syntax
+      - Use relative paths: `![description](../original/image_1.jpg)`
+      - Translate the image descriptions/alt text to the target language
+      - Preserve the original layout and structure (headers, sections, formatting)
+      - Example format for Twitter/X posts:
+        ```markdown
+        ### Media Content
+
+        ![translated description](../original/image_1.jpg)
+
+        **Image Description:** [translated detailed description]
+        - Panel 1: [description]
+        - Panel 2: [description]
+        ```
 
    Output file naming:
    - English: [basename]_en.md

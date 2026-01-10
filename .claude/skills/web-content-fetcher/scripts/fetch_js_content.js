@@ -24,7 +24,77 @@
 import { chromium } from 'playwright';
 import { writeFileSync } from 'fs';
 import { parseArgs } from 'node:util';
+import { resolve } from 'path';
 import { runIfMain } from '#utils/module-runner.js';
+
+/**
+ * Validate URL to prevent SSRF attacks
+ * @param {string} url - The URL to validate
+ * @throws {Error} If URL is invalid or uses unsafe protocol
+ */
+export function validateUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    const allowedProtocols = ['http:', 'https:', 'file:'];
+
+    if (!allowedProtocols.includes(urlObj.protocol)) {
+      throw new Error(`Invalid protocol: ${urlObj.protocol}. Only http:, https:, and file: are allowed.`);
+    }
+
+    // Additional check for file:// URLs - prevent access to sensitive locations
+    if (urlObj.protocol === 'file:') {
+      const path = urlObj.pathname.toLowerCase();
+      // Block common sensitive paths (basic protection)
+      // Note: Windows paths in URLs look like /C:/Windows/System32
+      const blockedPaths = ['/etc/', '/sys/', '/proc/', '/windows/system32/', ':/windows/system32/'];
+      if (blockedPaths.some(blocked => path.includes(blocked))) {
+        throw new Error('Access to sensitive system directories is not allowed.');
+      }
+    }
+  } catch (error) {
+    if (error.message.includes('Invalid URL')) {
+      throw new Error(`Invalid URL format: ${url}`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Validate and sanitize output file path to prevent path traversal
+ * @param {string} filePath - The file path to validate
+ * @returns {string} Resolved safe file path
+ * @throws {Error} If path is unsafe
+ */
+export function validateOutputPath(filePath) {
+  // Resolve to absolute path
+  const resolvedPath = resolve(filePath);
+  const currentDir = process.cwd();
+
+  // Ensure the path is within current directory or its subdirectories
+  // This prevents writing to arbitrary locations
+  if (!resolvedPath.startsWith(currentDir)) {
+    throw new Error(`Output path must be within current directory. Attempted: ${resolvedPath}`);
+  }
+
+  return resolvedPath;
+}
+
+/**
+ * Validate timeout value
+ * @param {number} timeout - Timeout in milliseconds
+ * @returns {number} Validated timeout
+ * @throws {Error} If timeout is invalid
+ */
+export function validateTimeout(timeout) {
+  const MIN_TIMEOUT = 1000; // 1 second
+  const MAX_TIMEOUT = 300000; // 5 minutes
+
+  if (isNaN(timeout) || timeout < MIN_TIMEOUT || timeout > MAX_TIMEOUT) {
+    throw new Error(`Timeout must be between ${MIN_TIMEOUT} and ${MAX_TIMEOUT} milliseconds.`);
+  }
+
+  return timeout;
+}
 
 /**
  * Detect site type and return appropriate selectors
@@ -59,9 +129,9 @@ export async function extractTwitterContent(page) {
     /* eslint-disable no-undef -- Code runs in browser context where document is defined */
     /* c8 ignore start -- Browser context code */
     const tweetData = await page.evaluate(() => {
-      // Extract tweet text
-      const tweetTextElement = document.querySelector('[data-testid="tweetText"]');
-      const tweetText = tweetTextElement ? tweetTextElement.innerText : 'Tweet text not found';
+      // Extract all tweet text elements at once
+      const tweetTextElements = Array.from(document.querySelectorAll('[data-testid="tweetText"]'));
+      const tweetText = tweetTextElements[0] ? tweetTextElements[0].innerText : 'Tweet text not found';
 
       // Extract author info
       const userNameElement = document.querySelector('[data-testid="User-Name"]');
@@ -71,26 +141,22 @@ export async function extractTwitterContent(page) {
       const timeElement = document.querySelector('time');
       const timestamp = timeElement ? timeElement.getAttribute('datetime') : 'Unknown';
 
-      // Extract quoted tweet if present
-      let quotedTweet = null;
-      const quotedTweetElement = document.querySelector('[data-testid="tweetText"]');
-      if (quotedTweetElement && document.querySelectorAll('[data-testid="tweetText"]').length > 1) {
-        const quotedTexts = Array.from(document.querySelectorAll('[data-testid="tweetText"]'));
-        if (quotedTexts.length > 1) {
-          quotedTweet = quotedTexts[1].innerText;
-        }
-      }
+      // Extract quoted tweet if present (will be the second tweet text element)
+      const quotedTweet = tweetTextElements.length > 1 ? tweetTextElements[1].innerText : null;
 
-      // Extract media alt texts if present
+      // Extract media alt texts and URLs if present
       const mediaElements = Array.from(document.querySelectorAll('[data-testid="tweetPhoto"] img'));
-      const mediaAlts = mediaElements.map(img => img.alt).filter(alt => alt);
+      const media = mediaElements.map(img => ({
+        url: img.src,
+        alt: img.alt || 'Image'
+      }));
 
       return {
         userName,
         tweetText,
         timestamp,
         quotedTweet,
-        mediaAlts
+        media
       };
     });
     /* c8 ignore stop */
@@ -119,10 +185,11 @@ export function formatTwitterMarkdown(tweetData) {
     markdown += `> ${tweetData.quotedTweet}\n\n`;
   }
 
-  if (tweetData.mediaAlts && tweetData.mediaAlts.length > 0) {
-    markdown += `### Media Descriptions\n\n`;
-    tweetData.mediaAlts.forEach((alt, i) => {
-      markdown += `${i + 1}. ${alt}\n`;
+  if (tweetData.media && tweetData.media.length > 0) {
+    markdown += `### Media\n\n`;
+    tweetData.media.forEach((item, i) => {
+      markdown += `${i + 1}. ${item.alt}\n`;
+      markdown += `   - URL: ${item.url}\n`;
     });
     markdown += `\n`;
   }
@@ -278,7 +345,6 @@ export async function main() {
   const url = positionals[0];
   const outputFile = values.output;
   const selector = values.selector;
-  const timeout = parseInt(values.timeout, 10);
 
   if (!url) {
     console.error('Error: URL is required');
@@ -287,6 +353,18 @@ export async function main() {
   }
 
   try {
+    // Validate URL to prevent SSRF
+    validateUrl(url);
+
+    // Validate timeout
+    const timeout = validateTimeout(parseInt(values.timeout, 10));
+
+    // Validate output path if provided
+    let validatedOutputFile = null;
+    if (outputFile) {
+      validatedOutputFile = validateOutputPath(outputFile);
+    }
+
     console.error(`Fetching content from: ${url}`);
 
     // Get site-specific configuration for logging
@@ -301,9 +379,9 @@ export async function main() {
     const markdown = await fetchContent(url, { selector, timeout });
 
     // Output result
-    if (outputFile) {
-      writeFileSync(outputFile, markdown, 'utf-8');
-      console.error(`Content saved to: ${outputFile}`);
+    if (validatedOutputFile) {
+      writeFileSync(validatedOutputFile, markdown, 'utf-8');
+      console.error(`Content saved to: ${validatedOutputFile}`);
     } else {
       console.log(markdown);
     }
