@@ -7,11 +7,11 @@ import path from 'path';
 
 // Mock child_process module
 vi.mock('child_process', () => ({
-  execSync: vi.fn(),
+  spawnSync: vi.fn(),
 }));
 
 // Import after mocking
-const { execSync } = await import('child_process');
+const { spawnSync } = await import('child_process');
 const { processHookInput, runPrettier } = await import('../auto_format.js');
 
 describe('auto_format', () => {
@@ -32,7 +32,7 @@ describe('auto_format', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Default: prettier is available and succeeds
-    execSync.mockImplementation(() => {});
+    spawnSync.mockImplementation(() => ({ status: 0, stderr: '' }));
   });
 
   describe('processHookInput', () => {
@@ -45,7 +45,7 @@ describe('auto_format', () => {
       const result = processHookInput(input);
 
       expect(result).toBe(false);
-      expect(execSync).not.toHaveBeenCalled();
+      expect(spawnSync).not.toHaveBeenCalled();
     });
 
     test('should return false when file_path is missing', () => {
@@ -57,7 +57,7 @@ describe('auto_format', () => {
       const result = processHookInput(input);
 
       expect(result).toBe(false);
-      expect(execSync).not.toHaveBeenCalled();
+      expect(spawnSync).not.toHaveBeenCalled();
     });
 
     test('should return false for non-formattable files', () => {
@@ -72,7 +72,7 @@ describe('auto_format', () => {
       const result = processHookInput(input);
 
       expect(result).toBe(false);
-      expect(execSync).not.toHaveBeenCalled();
+      expect(spawnSync).not.toHaveBeenCalled();
     });
 
     test('should return false when file does not exist', () => {
@@ -84,7 +84,7 @@ describe('auto_format', () => {
       const result = processHookInput(input);
 
       expect(result).toBe(false);
-      expect(execSync).not.toHaveBeenCalled();
+      expect(spawnSync).not.toHaveBeenCalled();
     });
 
     test('should format JavaScript file successfully', () => {
@@ -103,8 +103,9 @@ describe('auto_format', () => {
       const result = processHookInput(input);
 
       expect(result).toBe(true);
-      expect(execSync).toHaveBeenCalledWith(
-        `pnpm prettier --write "${testFile}"`,
+      expect(spawnSync).toHaveBeenCalledWith(
+        'pnpm',
+        ['prettier', '--write', testFile],
         expect.any(Object)
       );
       expect(consoleLogSpy).toHaveBeenCalledWith(
@@ -144,8 +145,11 @@ describe('auto_format', () => {
       const testFile = path.join(testDir, 'bad.js');
       fs.writeFileSync(testFile, 'const x=1;');
 
-      execSync.mockImplementation(() => {
-        throw new Error('Prettier error');
+      spawnSync.mockImplementation((cmd, args) => {
+        if (args && args.includes('--write')) {
+          return { status: 1, stderr: 'Prettier error' };
+        }
+        return { status: 0, stderr: '' };
       });
 
       const consoleErrorSpy = vi
@@ -173,20 +177,26 @@ describe('auto_format', () => {
       const result = runPrettier('test.js');
 
       expect(result).toBe(true);
-      expect(execSync).toHaveBeenCalledWith('pnpm prettier --version', {
-        stdio: 'ignore',
-      });
-      expect(execSync).toHaveBeenCalledWith(
-        'pnpm prettier --write "test.js"',
+      expect(spawnSync).toHaveBeenCalledWith(
+        'pnpm',
+        ['prettier', '--version'],
+        {
+          stdio: 'ignore',
+        }
+      );
+      expect(spawnSync).toHaveBeenCalledWith(
+        'pnpm',
+        ['prettier', '--write', 'test.js'],
         expect.any(Object)
       );
     });
 
     test('should return false and log error when prettier is not available', () => {
-      execSync.mockImplementation((cmd) => {
-        if (cmd.includes('--version')) {
-          throw new Error('prettier not found');
+      spawnSync.mockImplementation((cmd, args) => {
+        if (args && args.includes('--version')) {
+          return { status: 1, stderr: 'prettier not found' };
         }
+        return { status: 0, stderr: '' };
       });
 
       const consoleErrorSpy = vi
@@ -202,10 +212,33 @@ describe('auto_format', () => {
     });
 
     test('should return false when prettier fails to format', () => {
-      execSync.mockImplementation((cmd) => {
-        if (cmd.includes('--write')) {
-          throw new Error('formatting error');
+      spawnSync.mockImplementation((cmd, args) => {
+        if (args && args.includes('--write')) {
+          return { status: 1, stderr: 'formatting error' };
         }
+        return { status: 0, stderr: '' };
+      });
+
+      const consoleErrorSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+
+      const result = runPrettier('test.js');
+
+      expect(result).toBe(false);
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Prettier formatting failed')
+      );
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    test('should return false when prettier fails with empty stderr', () => {
+      spawnSync.mockImplementation((cmd, args) => {
+        if (args && args.includes('--write')) {
+          return { status: 1, stderr: '' };
+        }
+        return { status: 0, stderr: '' };
       });
 
       const consoleErrorSpy = vi

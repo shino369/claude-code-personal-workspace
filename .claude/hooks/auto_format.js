@@ -3,7 +3,7 @@
  * Auto-formatting hook for Claude Code.
  * Runs prettier on formattable files after Edit or Write operations.
  */
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { runIfMain } from '#utils/module-runner.js';
@@ -45,13 +45,23 @@ function fileExists(filePath) {
 export function runPrettier(filePath) {
   try {
     // Check if prettier is available (use pnpm as per workspace config)
-    execSync('pnpm prettier --version', { stdio: 'ignore' });
+    const versionCheck = spawnSync('pnpm', ['prettier', '--version'], {
+      stdio: 'ignore',
+    });
 
-    // Run prettier
-    execSync(`pnpm prettier --write "${filePath}"`, {
+    if (versionCheck.status !== 0) {
+      throw new Error('Prettier not available');
+    }
+
+    // Run prettier with file path as argument (prevents command injection)
+    const result = spawnSync('pnpm', ['prettier', '--write', filePath], {
       stdio: 'pipe',
       encoding: 'utf-8',
     });
+
+    if (result.status !== 0) {
+      throw new Error(result.stderr || 'Prettier formatting failed');
+    }
 
     return true;
   } catch (err) {
