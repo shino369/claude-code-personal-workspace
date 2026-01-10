@@ -12,7 +12,7 @@ This workspace is configured with different files to support personal tasks, wit
 
 - `./CLAUDE.md` to serve as main memory
 - `./.claude/rules/*` for extended rules
-- `./.claude/setting.json` for workspace config
+- `./.claude/settings.json` for workspace config
 - `./.claude/agents/*` for task-specialized subagents
 - `./.claude/skills/*` for progressively disclosured knowledge
 
