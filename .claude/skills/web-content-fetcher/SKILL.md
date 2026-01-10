@@ -1,21 +1,26 @@
 ---
 name: web-content-fetcher
-description: Expert guidance for fetching and parsing web content from URLs, handling various content sizes, and working around tool limitations. Use when fetching articles, documentation, or any web content for translation, analysis, or archiving.
-allowed-tools: Bash(curl *), Bash(mkdir *), Read, Grep, Task
+description: Expert guidance for fetching and parsing web content from URLs, handling various content sizes, JavaScript-rendered sites, and working around tool limitations. Use when fetching articles, documentation, social media posts, or any web content for translation, analysis, or archiving.
+allowed-tools: Bash(curl *), Bash(mkdir *), Bash(node *), Read, Grep, Task
 ---
 
 # Web Content Fetcher
 
-Expert knowledge for fetching and parsing web content, handling size limitations, and extracting clean article content from HTML.
+Expert knowledge for fetching and parsing web content, handling size limitations, JavaScript-rendered sites, and extracting clean article content from HTML.
 
 ## Overview
 
-This skill provides battle-tested strategies for fetching web content in Claude Code, addressing two critical limitations:
+This skill provides battle-tested strategies for fetching web content in Claude Code, addressing critical challenges:
 
 1. **WebFetch tool limitation**: Effectively handles ~50KB max content size
 2. **Read tool limitation**: 256KB max file size per call
+3. **JavaScript-rendered content**: Twitter/X, React SPAs, and dynamic sites require special handling
 
-The recommended approach uses a **two-stage workflow**: fetch raw content with curl, then extract clean content using Task agents.
+**Four-tier approach**:
+- **Tier 1**: WebFetch for small content (< 50KB)
+- **Tier 2**: curl + Task agent for any size static content ⭐ **DEFAULT**
+- **Tier 3**: Specialized scripts for edge cases (EUC-JP encoding, complex HTML)
+- **Tier 4**: Playwright for JavaScript-rendered sites (Twitter/X, React SPAs)
 
 ## Tool Limitations Reference
 
@@ -118,6 +123,57 @@ WebFetch:
 
 **Note**: This tier is rarely needed. Task agent (Tier 2) handles 99% of cases including large files and complex HTML. Only use scripts when Task agent explicitly fails or for special encoding requirements.
 
+### Tier 4: JavaScript-Rendered Content - Playwright
+
+**Use When**: Website requires JavaScript to load content (Twitter/X, React SPAs, dynamic websites), static fetch returns error messages or empty content
+
+**Workflow**:
+
+1. Create task directory: `output/tasks/YYYYMMDD_taskname/original/`
+2. Run Playwright script: `node scripts/fetch_js_content.js URL --output original/fetched_content.md`
+
+**Example**:
+
+```bash
+1. mkdir -p output/tasks/20260111_twitter_post/original
+2. node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
+   "https://x.com/user/status/123456789" \
+   --output output/tasks/20260111_twitter_post/original/fetched_content.md
+```
+
+**Requirements** (one-time setup):
+
+```bash
+cd .claude/skills/web-content-fetcher
+pnpm add -D playwright --save-catalog-name=dev
+pnpm exec playwright install chromium
+```
+
+**Supported Sites**:
+
+- Twitter/X (automatic tweet extraction)
+- React-based single-page applications
+- Any site requiring JavaScript rendering
+- Dynamic content loaded via AJAX
+
+**Options**:
+
+- `--output <file>`: Output file path (default: stdout)
+- `--selector <sel>`: CSS selector to wait for (auto-detected for Twitter/X)
+- `--timeout <ms>`: Page load timeout (default: 30000)
+
+**Best For**:
+
+- Social media posts (Twitter/X, etc.)
+- Modern web applications using React/Vue/Angular
+- Content that doesn't appear without JavaScript
+- Sites with client-side rendering
+
+**Pros**: Handles JavaScript rendering, auto-detects site types, extracts structured content
+**Cons**: Slower than static fetching, requires Chromium browser installation
+
+**Note**: This is the only solution for JavaScript-dependent sites. Traditional curl cannot execute JavaScript.
+
 ## Standard Workflow (Recommended)
 
 This workflow using Tier 2 (curl + Task agent) works for nearly all cases:
@@ -219,6 +275,11 @@ Use this flowchart to choose the right approach:
 
 ```
 Need to fetch web content?
+│
+├─ JavaScript-rendered site (Twitter/X, React SPA, dynamic content)?
+│  └─ Use Playwright script (Tier 4)
+│     ├─ Success? → Done ✓
+│     └─ Still failing? → Check browser/timeout settings
 │
 ├─ Size unknown or small expected content?
 │  └─ Try WebFetch (Tier 1)
@@ -326,6 +387,85 @@ node .claude/skills/web-content-fetcher/scripts/extract_eucjp.js raw_html.html >
 
 **Note**: Always try Task agent (Tier 2) first with encoding detection instructions. Only use this script if Task agent cannot properly handle the encoding.
 
+### Playwright for JavaScript-Rendered Content
+
+**Script**: `scripts/fetch_js_content.js`
+
+**Purpose**: Fetch and extract content from JavaScript-rendered websites using headless browser (Twitter/X, React SPAs, dynamic content)
+
+**Requirements**:
+
+```bash
+cd .claude/skills/web-content-fetcher
+pnpm add -D playwright --save-catalog-name=dev
+pnpm exec playwright install chromium
+```
+
+**Usage**:
+
+```bash
+node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js <url> [options]
+
+Options:
+  --output <file>    Output file path (default: stdout)
+  --selector <sel>   CSS selector to wait for (default: auto-detect)
+  --timeout <ms>     Page load timeout (default: 30000)
+```
+
+**Best For**:
+
+- Twitter/X posts (automatic tweet extraction with metadata)
+- Facebook, LinkedIn, Instagram (with proper authentication)
+- React/Vue/Angular single-page applications
+- Content loaded dynamically via JavaScript/AJAX
+- Sites that show "JavaScript required" error with static fetch
+
+**Example Workflows**:
+
+**Twitter/X Post**:
+```bash
+node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
+  "https://x.com/user/status/123456789" \
+  --output output/tasks/20260111_twitter/original/fetched_content.md
+```
+
+**React SPA**:
+```bash
+node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
+  "https://example-react-app.com/article" \
+  --selector ".main-content" \
+  --timeout 60000 \
+  --output fetched_content.md
+```
+
+**How It Works**:
+
+1. Launches headless Chromium browser
+2. Navigates to URL and waits for JavaScript to execute
+3. Auto-detects site type (Twitter/X has custom extraction logic)
+4. Waits for content to load (specified selector or default)
+5. Extracts clean content to markdown
+6. Closes browser and returns result
+
+**Site-Specific Features**:
+
+- **Twitter/X**: Automatically extracts tweet text, author, timestamp, quoted tweets, and media descriptions
+- **Generic Sites**: Extracts main content area (article, main, [role="main"])
+- **Custom Selectors**: Specify exact element to wait for and extract
+
+**Troubleshooting**:
+
+- **Timeout errors**: Increase `--timeout` value (default 30000ms)
+- **Content not found**: Specify `--selector` for the main content element
+- **Authentication required**: This script doesn't handle login flows (use browser extensions or API instead)
+
+**Performance Notes**:
+
+- Slower than static fetch (3-10 seconds vs <1 second)
+- Requires ~200MB Chromium browser installation
+- Uses more memory (headless browser process)
+- Only use when JavaScript is truly required
+
 ## Common Patterns
 
 ### Pattern 1: Fetch for Translation
@@ -362,6 +502,16 @@ node .claude/skills/web-content-fetcher/scripts/extract_eucjp.js raw_html.html >
    OR
    curl -b "session=COOKIE" URL > raw_html.html
 2. Task agent: Extract content
+```
+
+### Pattern 5: Fetch JavaScript-Rendered Content (Twitter/X, SPAs)
+
+```
+1. mkdir -p output/tasks/20260111_twitter_post/original
+2. node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
+   "https://x.com/user/status/123456789" \
+   --output output/tasks/20260111_twitter_post/original/fetched_content.md
+3. Use fetched_content.md for translation/analysis
 ```
 
 ## Troubleshooting
@@ -453,17 +603,50 @@ curl -L URL > raw_html.html
 curl --max-time 60 URL > raw_html.html
 ```
 
+### Issue: Page requires JavaScript / Shows "JavaScript not available"
+
+**Symptoms**:
+
+- curl or WebFetch returns error message like "JavaScript is not available"
+- Fetched HTML contains empty state objects or no content
+- Page is a React/Vue/Angular SPA or social media site
+
+**Solution**: Use Playwright script (Tier 4):
+
+```bash
+node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
+  "URL" \
+  --output fetched_content.md \
+  --timeout 60000
+```
+
+**Common sites requiring JavaScript**:
+
+- Twitter/X (x.com)
+- Modern single-page applications
+- Dynamic dashboards
+- Content-heavy React/Vue apps
+
+**Setup required** (one-time):
+
+```bash
+cd .claude/skills/web-content-fetcher
+pnpm add -D playwright --save-catalog-name=dev
+pnpm exec playwright install chromium
+```
+
 ## Best Practices Summary
 
 1. **Always use task directories**: Organize content in `output/tasks/YYYYMMDD_taskname/`
-2. **Keep raw HTML**: Save to `original/raw_html.html` for reference and re-processing
+2. **Keep raw HTML**: Save to `original/raw_html.html` for reference and re-processing (not needed for Tier 4 Playwright)
 3. **Default to Tier 2**: curl + Task agent works for nearly all cases and handles any content size
-4. **Clean content format**: Always save extracted content as markdown in `fetched_content.md`
-5. **Descriptive naming**: Use date prefix and descriptive task names
-6. **Error handling**: Try WebFetch for small content, fall back to curl + Task agent if needed
-7. **Task agent for extraction**: Let AI handle pagination, encoding detection, and parsing complexity
-8. **Scripts for edge cases**: Tier 3 scripts (extract_article.js, extract_eucjp.js) available when Task agent fails or for special encoding requirements
-9. **Progressive approach**: Start with simplest tier (WebFetch), move to Task agent (default), only use scripts if absolutely needed
+4. **Use Playwright for JavaScript sites**: Twitter/X, React SPAs, and dynamic content require Tier 4
+5. **Clean content format**: Always save extracted content as markdown in `fetched_content.md`
+6. **Descriptive naming**: Use date prefix and descriptive task names
+7. **Error handling**: Try WebFetch for small content, fall back to curl + Task agent if needed
+8. **Task agent for extraction**: Let AI handle pagination, encoding detection, and parsing complexity
+9. **Scripts for edge cases**: Tier 3 scripts (extract_article.js, extract_eucjp.js) available when Task agent fails or for special encoding requirements
+10. **Progressive approach**: Check if JavaScript required first (Tier 4), try WebFetch (Tier 1), default to Task agent (Tier 2), scripts only if needed (Tier 3)
 
 ## Quick Reference Commands
 
@@ -489,4 +672,18 @@ curl -L "URL" > raw_html.html
 
 ```bash
 curl -s -A "Mozilla/5.0" "URL" > raw_html.html
+```
+
+**Fetch JavaScript-rendered content**:
+
+```bash
+node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js "URL" --output content.md
+```
+
+**Fetch Twitter/X post**:
+
+```bash
+node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
+  "https://x.com/user/status/123456789" \
+  --output twitter_post.md
 ```

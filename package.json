@@ -30,6 +30,7 @@
     "globals": "catalog:dev",
     "iconv-lite": "catalog:dev",
     "jsdom": "catalog:dev",
+    "playwright": "catalog:dev",
     "prettier": "catalog:dev",
     "vitest": "catalog:dev"
   }

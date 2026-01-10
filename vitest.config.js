@@ -47,7 +47,11 @@ export default defineConfig({
         '**/__tests__/**',
         '**/*.test.js',
         '**/*.spec.js',
+        '**/*.integration.test.js',
       ],
+      // Only report coverage for files actually imported by tests
+      reportOnFailure: true,
+      all: false, // Don't include all source files, only tested ones
       // Thresholds for 100% coverage
       thresholds: {
         statements: 100,

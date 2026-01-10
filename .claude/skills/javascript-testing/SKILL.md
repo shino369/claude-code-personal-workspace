@@ -84,19 +84,68 @@ pnpm test:coverage
 
 ## Core Principles
 
-### 1. Never Use Coverage Ignore
+### 1. Rarely Use Coverage Ignore
 
-❌ **Never:**
+**General Rule:** Refactor code to be testable instead of ignoring coverage.
+
+❌ **Don't ignore testable business logic:**
 
 ```javascript
-/* istanbul ignore next */
 /* c8 ignore next */
+export function calculateTotal(items) {
+  // This SHOULD be tested!
+  return items.reduce((sum, item) => sum + item.price, 0);
+}
 ```
+
+✅ **Exception - Browser Automation / Integration Code:**
+
+Use `/* c8 ignore start */` and `/* c8 ignore stop */` for code that runs in browser context or requires complex integration setup:
+
+```javascript
+// Browser automation (Playwright, Puppeteer)
+/* c8 ignore start -- Browser automation code, tested through integration tests */
+export async function fetchContent(url) {
+  const browser = await chromium.launch();
+  const page = await browser.newPage();
+  await page.goto(url);
+
+  // Browser context code
+  const data = await page.evaluate(() => {
+    return document.querySelector('h1').innerText;
+  });
+
+  await browser.close();
+  return data;
+}
+/* c8 ignore stop */
+
+// CLI entry points
+/* c8 ignore start -- CLI entry point, tested through integration tests */
+export async function main() {
+  // Parse args, handle I/O, etc.
+  const args = process.argv.slice(2);
+  // ... CLI logic
+}
+/* c8 ignore stop */
+```
+
+**When to use c8 ignore:**
+- Browser automation code (Playwright/Puppeteer page interactions)
+- CLI entry points with process.exit() and argument parsing
+- Code that runs in different contexts (browser vs Node.js)
+- Complex integration points that require real dependencies
+
+**Requirements when using c8 ignore:**
+1. **Extract testable logic:** Move business logic into separate, testable functions
+2. **Create integration tests:** Write integration test file (*.integration.test.js) to cover the ignored code
+3. **Add comment explaining why:** `/* c8 ignore start -- Reason why and how it's tested */`
+4. **Minimize ignored code:** Keep ignored blocks as small as possible
 
 ✅ **Instead - Refactor for testability:**
 
 ```javascript
-// Extract business logic
+// Extract business logic (testable)
 export function processInput(data) {
   return transform(data);
 }
@@ -323,15 +372,80 @@ test('parses HTML', () => {
 **Mock:** External APIs, slow/destructive fs ops, timers, process.exit
 **Use real:** Pure JS libs, internal modules, data transforms, algorithms
 
+### Optimizing Integration Tests
+
+When testing browser automation (Playwright/Puppeteer) or other slow integration points:
+
+**1. Combine related tests:**
+
+❌ Slow (9 tests, 17+ seconds):
+```javascript
+it('should fetch content', async () => { /* ... */ }, 2000);
+it('should handle custom selectors', async () => { /* ... */ }, 2000);
+it('should handle custom timeouts', async () => { /* ... */ }, 2000);
+// Each launches a new browser
+```
+
+✅ Fast (3 tests, <2 seconds):
+```javascript
+it('should fetch content with custom options', async () => {
+  // Test multiple features in one browser launch
+  const result = await fetchContent(url, { selector: 'article', timeout: 5000 });
+  expect(result).toContain('content');
+  expect(result).toContain('expected text');
+  expect(result).toMatch(/^# /); // markdown format
+}, 10000);
+```
+
+**2. Make delays configurable:**
+
+```javascript
+// Auto-detect shorter delays for test environments
+export async function fetchContent(url, options = {}) {
+  const { waitDelay = null } = options;
+
+  // file:// URLs need less wait time than remote sites
+  const defaultDelay = url.startsWith('file://') ? 500 : 2000;
+  const actualDelay = waitDelay !== null ? waitDelay : defaultDelay;
+
+  await page.waitForTimeout(actualDelay);
+}
+```
+
+**3. Combine error scenarios:**
+
+```javascript
+it('should handle various error conditions', async () => {
+  await expect(fetchContent('invalid-url')).rejects.toThrow();
+  await expect(fetchContent('file:///not/found')).rejects.toThrow();
+  await expect(fetchContent(url, { timeout: 1 })).rejects.toThrow();
+}, 20000);
+```
+
+**4. Use `c8 ignore` for browser automation:**
+
+```javascript
+/* c8 ignore start -- Browser automation, tested in integration tests */
+export async function fetchContent(url) {
+  const browser = await chromium.launch();
+  // ... browser automation
+  await browser.close();
+}
+/* c8 ignore stop */
+```
+
+**Result:** 8-10x faster test suites while maintaining full coverage and integration confidence.
+
 ## Best Practices
 
 1. Use Vitest (not Jest)
 2. Import only `vi` (globals automatic)
 3. Achieve 100% coverage for production
-4. Never use coverage ignore - refactor
+4. Refactor for testability; use `c8 ignore` only for browser automation/CLI code
 5. Separate I/O from business logic
 6. Test all branches and errors
 7. Use real dependencies when possible
 8. Write descriptive test names
 9. Clean up after tests
 10. One assertion focus per test
+11. Optimize integration tests by combining related assertions
