@@ -29,7 +29,7 @@ This system provides professional-grade translation capabilities through a multi
     └── translate.md                   # /translate slash command
 ```
 
-### True Multi-Agent Workflow
+### Multi-Agent Workflow
 
 The system uses a **collaborative multi-agent approach** where the same subagent is invoked three times with different roles:
 
@@ -201,33 +201,59 @@ Leverages the **engineering-terminology** skill for accurate technical translati
 
 ## Skills Detail
 
-### engineering-terminology
-
-**File**: `.claude/skills/engineering-terminology/SKILL.md` (600+ lines)
-
-Provides expert knowledge in:
-
-- Software engineering (API, framework, database, algorithms)
-- Hardware engineering (circuit, semiconductor, processor)
-- Mechanical engineering (tolerance, assembly, specification)
-- DevOps & Cloud (container, pipeline, monitoring, load balancer)
-- Data engineering (ETL, schema, data warehouse, query)
-
-Includes comprehensive translation tables for common technical terms across all three languages.
-
 ### translation-expertise
 
-**File**: `.claude/skills/translation-expertise/SKILL.md` (300+ lines)
+**Files**: `.claude/skills/translation-expertise/` (2,836 lines across 6 files)
 
-Covers:
+A comprehensive translation methodology skill using **language-based organization** for efficient access to all information about each language in one place.
+
+**Structure (Language-Based Organization)**:
+
+- `SKILL.md` (284 lines) - Overview, workflow, best practices, quick reference
+- `english.md` (372 lines) - Complete English reference: characteristics, punctuation, formality levels, writing conventions
+- `japanese.md` (515 lines) - Complete Japanese reference: all 5 politeness levels (plain, です・ます, である, formal, honorific), punctuation, particles, formality handling
+- `chinese-traditional.md` (535 lines) - Complete Traditional Chinese reference: classical influences, regional variations (Taiwan/Hong Kong), punctuation, formality levels
+- `translation-challenges.md` (603 lines) - Cross-language challenges with detailed examples: idioms, cultural references, honorifics, wordplay
+- `tools-resources.md` (527 lines) - 45+ curated resources: dictionaries, corpus databases, grammar references, terminology tools
+
+
+**Covers**:
 
 - Translation philosophy and core principles
-- Language-specific characteristics and considerations
-- Three-stage translation workflow methodology
+- Three-stage translation workflow methodology (Initial → Proofread → Refine)
+- Language-specific characteristics and writing conventions
 - Handling idioms, cultural references, and wordplay
 - Formality level management across languages
 - Punctuation conventions for each language
 - Quality assurance checklist
+
+### engineering-terminology
+
+**Files**: `.claude/skills/engineering-terminology/` (1,810 lines across 7 files)
+
+A comprehensive technical terminology skill with **domain-based organization** providing 1,075+ technical terms across 6 major domains.
+
+**Structure (Domain-Based Organization)**:
+
+- `SKILL.md` (229 lines) - Guidelines, usage patterns, quick reference
+- `glossaries/software-engineering.md` (231 lines) - ~170 terms: API, framework, database, algorithms, design patterns
+- `glossaries/web-development.md` (289 lines) - ~200 terms: React, Vue, Angular, frontend/backend, HTTP, REST, GraphQL
+- `glossaries/devops-cloud.md` (249 lines) - ~160 terms: container, Kubernetes, CI/CD, pipeline, monitoring, load balancer
+- `glossaries/data-engineering.md` (257 lines) - ~180 terms: ETL, schema, data warehouse, query optimization, streaming
+- `glossaries/ai-ml.md` (265 lines) - ~185 terms: neural networks, LLM, transformers, RAG, embeddings, fine-tuning
+- `glossaries/hardware-electronics.md` (290 lines) - ~180 terms: circuit, semiconductor, processor, PCB, FPGA
+
+
+**Provides expert knowledge in**:
+
+- Software engineering (API, framework, database, algorithms, design patterns)
+- Web development (React, Vue, Angular, frontend/backend, REST, GraphQL)
+- DevOps & Cloud (container, Kubernetes, CI/CD, pipeline, monitoring)
+- Data engineering (ETL, schema, data warehouse, query optimization)
+- AI/ML (neural networks, LLM, transformers, RAG, embeddings)
+- Hardware engineering (circuit, semiconductor, processor, PCB, FPGA)
+
+Includes comprehensive trilingual translation tables (EN/JA/CN) for all terms with usage context and examples.
 
 ### document-writing
 
@@ -270,9 +296,62 @@ The single subagent takes on three different roles based on instructions:
 
 - Native-level proficiency in EN/JA/CN
 - Technical document translation expertise
+- Comprehensive terminology (1,075+ terms across 6 domains)
+- Language-based reference access (all info about each language in one place)
 - File-based workflow with structured outputs
 - Cultural adaptation and nuance preservation
 - Consistent terminology management
+
+## Skills Architecture
+
+The translation system's skills use progressive disclosure patterns to manage large amounts of information effectively while keeping individual files focused and navigable.
+
+### Progressive Disclosure
+
+Large skills are split into manageable, focused files rather than monolithic documents:
+
+- **Main SKILL.md**: Overview, essential guidance, workflow, and links to detailed references
+- **Reference files**: Detailed information organized by logical groupings (language or domain)
+- **Benefits**:
+  - Faster loading and parsing
+  - Easier navigation to relevant information
+  - Focused content without overwhelming context
+  - Better maintainability and updates
+
+### Organization Strategies
+
+Different skills use different organizational strategies based on their usage patterns:
+
+**translation-expertise: Language-Based Organization**
+
+Each language (English, Japanese, Traditional Chinese) has its own comprehensive reference file containing all information about that language:
+
+- `english.md` - Everything about English in one place
+- `japanese.md` - Everything about Japanese in one place
+- `chinese-traditional.md` - Everything about Traditional Chinese in one place
+- `translation-challenges.md` - Cross-language issues and solutions
+- `tools-resources.md` - External references and resources
+
+**Rationale**: When translating EN→JA, you need all English information together and all Japanese information together. Language-based organization matches the natural translation workflow where you reference the source language characteristics, then the target language characteristics, without jumping between multiple topic files.
+
+**engineering-terminology: Domain-Based Organization**
+
+Technical terms are grouped by domain (software, web, DevOps, data, AI/ML, hardware) with each domain in its own glossary file:
+
+- `glossaries/software-engineering.md` - Core software development terms
+- `glossaries/web-development.md` - Frontend/backend web technologies
+- `glossaries/devops-cloud.md` - Infrastructure and deployment
+- `glossaries/data-engineering.md` - Data processing and analytics
+- `glossaries/ai-ml.md` - Machine learning and AI concepts
+- `glossaries/hardware-electronics.md` - Hardware and electronics terms
+
+**Rationale**: Technical translation typically focuses on one domain at a time. When translating React documentation, you work primarily with web-development terms. When translating a machine learning paper, you work with AI/ML terms. Domain-based organization reduces cognitive load by presenting only the relevant terminology for the task.
+
+### Automatic Skill Loading
+
+All three skills (engineering-terminology, translation-expertise, document-writing) are automatically loaded into the trilingual-translator subagent's context at startup through the `skills:` field in the subagent's frontmatter. No user action or manual loading is required.
+
+The main SKILL.md of each skill is loaded first, providing immediate access to essential guidance. Reference files are linked from the main SKILL.md and can be accessed as needed.
 
 ## Quality Assurance
 
