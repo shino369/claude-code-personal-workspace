@@ -1,6 +1,7 @@
 ---
 description: Translate text between English, Japanese, and Chinese (Traditional) using a multi-stage professional translation workflow
-argument-hint: [--lang <en|ja|cn>] [--tone <casual|formal>] <text or file reference>
+argument-hint: [--lang <en|ja|cn>] [--tone <casual|formal>] [--url <URL>] <text or file reference>
+model: inherit
 ---
 
 # Professional Trilingual Translation
@@ -20,7 +21,9 @@ The command accepts the following arguments:
   - `casual`: Conversational, informal tone
   - `formal`: Professional, academic tone
 
-- Remaining text: The content to translate (can be inline text or file references using @)
+- `--url <URL>`: Fetch content from a URL to translate (alternative to inline text or file references)
+
+- Remaining text: The content to translate (can be inline text, file references using @, or omitted when using --url)
 
 ## Command Arguments Provided
 
@@ -31,8 +34,13 @@ Command line arguments: `$ARGUMENTS`
 1. **Parse the arguments** from `$ARGUMENTS`:
    - Extract the `--lang` value if provided
    - Extract the `--tone` value if provided (optional)
-   - Extract the text/file content to translate
-   - Determine if input is a file reference (starts with @) or inline text
+   - Extract the `--url` value if provided
+   - Extract the text/file content to translate (if not using --url)
+   - Determine input type:
+     - URL (when --url is provided)
+     - File reference (starts with @)
+     - Inline text
+     - Direct URL (if argument looks like a URL even without --url flag)
 
 2. **If `--lang` is not specified**, ask the user to specify the target language:
    - Use the AskUserQuestion tool to present language options:
@@ -44,14 +52,14 @@ Command line arguments: `$ARGUMENTS`
    - Analyze the provided text to identify whether it's in English, Japanese, or Chinese
    - If unclear, ask the user to confirm the source language
 
-4. **Set up working directory** (for file translations):
+4. **Set up working directory** (for file translations and URL fetching):
    - Create task directory: `output/tasks/YYYYMMDD_translate_[brief_description]/`
    - Create subdirectories: `tmp/` (intermediate files) and `translated/` (final output)
    - Example: `output/tasks/20260110_translate_readme/`
-     - `tmp/` - Stage 1, 2, 3 intermediate files
-     - `translated/` - Final deliverable (README_ja.md)
+     - `tmp/` - Stage 1, 2, 3 intermediate files, fetched URL content
+     - `translated/` - Final deliverable (README_ja.md, article_ja.md)
    - Use current date in YYYYMMDD format
-   - Use brief description based on content or filename
+   - Use brief description based on content, filename, or URL domain/title
 
 5. **Execute Multi-Agent Three-Stage Workflow**:
 
@@ -84,6 +92,41 @@ Command line arguments: `$ARGUMENTS`
 
    ## Notes for Proofreader
    [Areas that may need review, uncertainties, alternatives considered]
+   ```
+
+   **For URL translations**, invoke trilingual-translator with:
+
+   ```
+   You are assigned the role of INITIAL TRANSLATOR (Translator A) in a three-stage workflow.
+
+   **Your Task**: Fetch content from URL and create the first draft translation.
+
+   **Source URL**: [the URL to fetch]
+   **Target Language**: [English/Japanese/Chinese Traditional]
+   **Tone**: [casual/formal/your professional judgment]
+   **Task Directory**: output/tasks/YYYYMMDD_translate_[description]/
+   **Temp Directory**: {task_dir}/tmp/
+
+   **Instructions**:
+   1. Use WebFetch tool to extract the main article content from the URL
+      - Focus on title, article body, and relevant metadata
+      - Ignore navigation, ads, and sidebar content
+   2. Save the fetched content to: {temp_dir}/fetched_content.md
+   3. Analyze and translate the content
+   4. Write initial translation to: {temp_dir}/stage1_initial.md
+   5. Write analysis and notes to: {temp_dir}/stage1_notes.md
+
+   **stage1_notes.md format**:
+   ## Source Information
+   - URL: [original URL]
+   - Fetch date: [current date]
+   - Content type: [article/blog/documentation/etc.]
+
+   ## Initial Translation Analysis
+   - Text type, key challenges, terminology glossary
+
+   ## Notes for Proofreader
+   - Areas needing review, uncertainties, alternatives
    ```
 
    **For file translations**, invoke trilingual-translator with:
@@ -128,12 +171,12 @@ Command line arguments: `$ARGUMENTS`
    terminology consistency, cultural adaptation, summary for refiner
    ```
 
-   **For file translations**, invoke with:
+   **For file translations and URL translations**, invoke with:
 
    ```
    PROOFREADER (Translator B) - Review from files
 
-   Source File: [path]
+   Source File: [path] OR Fetched Content: {temp_dir}/fetched_content.md
    Initial Translation: {temp_dir}/stage1_initial.md
    Notes: {temp_dir}/stage1_notes.md
 
@@ -154,12 +197,12 @@ Command line arguments: `$ARGUMENTS`
    Output: Final translation, refinement summary, quality assurance, translator's notes
    ```
 
-   **For file translations**, invoke with:
+   **For file translations and URL translations**, invoke with:
 
    ```
    REFINER (Translator C) - Create final from files
 
-   Source File: [path]
+   Source File: [path] OR Fetched Content: {temp_dir}/fetched_content.md
    Initial Translation: {temp_dir}/stage1_initial.md
    Proofreader Feedback: {temp_dir}/stage2_feedback.md
    Target Language: [en/ja/cn]
@@ -170,6 +213,7 @@ Command line arguments: `$ARGUMENTS`
    3. Write to {temp_dir}/stage3_final.md
    4. Write summary to {temp_dir}/stage3_summary.md
    5. Write final deliverable to {task_dir}/translated/[basename]_[lang].md
+      - For URLs, use descriptive name like: article_[lang].md or [site-name]_article_[lang].md
 
    Output file naming:
    - English: [basename]_en.md
@@ -179,8 +223,9 @@ Command line arguments: `$ARGUMENTS`
 
 6. **Present results**:
    - Inline: Show all outputs in conversation
-   - Files: Report locations:
+   - Files/URLs: Report locations:
      - Final translation: {task_dir}/translated/[filename]
+     - Fetched content (for URLs): {task_dir}/tmp/fetched_content.md
      - Intermediate files: {task_dir}/tmp/
 
 ## Examples
@@ -216,6 +261,30 @@ Command line arguments: `$ARGUMENTS`
 ```
 
 → Ask user for target language and let agent decide tone
+
+**Example 5: Translate from URL**
+
+```
+/translate --lang en --url https://automaton-media.com/articles/newsjp/20260109-401932/
+```
+
+→ Fetch Japanese article from URL, translate to English
+
+**Example 6: URL with tone specification**
+
+```
+/translate --lang ja --tone formal --url https://example.com/blog/post
+```
+
+→ Fetch content from URL, translate to Japanese in formal tone
+
+**Example 7: Direct URL without --url flag**
+
+```
+/translate --lang cn https://example.com/article
+```
+
+→ Detect URL, fetch and translate to Traditional Chinese
 
 ## Important Notes
 
