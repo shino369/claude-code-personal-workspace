@@ -1,7 +1,3 @@
----
-Author: shino369
----
-
 # Claude Code Personal Workspace
 
 Personal Claude Code Workspace for assisting different daily tasks. From programming to documentation, research, consultation, translation to generative-AI development.
