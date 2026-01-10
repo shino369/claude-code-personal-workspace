@@ -9,7 +9,7 @@ import {
   extractTwitterContent,
   extractGenericContent,
   fetchContent,
-  main
+  main,
 } from '../fetch_js_content.js';
 
 describe('fetch_js_content.js', () => {
@@ -23,12 +23,16 @@ describe('fetch_js_content.js', () => {
     it('should accept valid https URLs', () => {
       expect(() => validateUrl('https://example.com')).not.toThrow();
       expect(() => validateUrl('https://x.com/user/status/123')).not.toThrow();
-      expect(() => validateUrl('https://example.com:443/path?query=value')).not.toThrow();
+      expect(() =>
+        validateUrl('https://example.com:443/path?query=value')
+      ).not.toThrow();
     });
 
     it('should accept valid file:// URLs', () => {
       expect(() => validateUrl('file:///path/to/file.html')).not.toThrow();
-      expect(() => validateUrl('file://localhost/path/to/file.html')).not.toThrow();
+      expect(() =>
+        validateUrl('file://localhost/path/to/file.html')
+      ).not.toThrow();
     });
 
     it('should reject invalid URL formats', () => {
@@ -38,24 +42,42 @@ describe('fetch_js_content.js', () => {
     });
 
     it('should reject unsafe protocols', () => {
-      expect(() => validateUrl('javascript:alert(1)')).toThrow('Invalid protocol: javascript:');
-      expect(() => validateUrl('data:text/html,<script>alert(1)</script>')).toThrow('Invalid protocol: data:');
-      expect(() => validateUrl('ftp://example.com')).toThrow('Invalid protocol: ftp:');
+      expect(() => validateUrl('javascript:alert(1)')).toThrow(
+        'Invalid protocol: javascript:'
+      );
+      expect(() =>
+        validateUrl('data:text/html,<script>alert(1)</script>')
+      ).toThrow('Invalid protocol: data:');
+      expect(() => validateUrl('ftp://example.com')).toThrow(
+        'Invalid protocol: ftp:'
+      );
     });
 
     it('should reject file:// URLs to sensitive system paths', () => {
-      expect(() => validateUrl('file:///etc/passwd')).toThrow('Access to sensitive system directories');
-      expect(() => validateUrl('file:///sys/kernel')).toThrow('Access to sensitive system directories');
-      expect(() => validateUrl('file:///proc/cpuinfo')).toThrow('Access to sensitive system directories');
-      expect(() => validateUrl('file:///C:/Windows/System32/config')).toThrow('Access to sensitive system directories');
+      expect(() => validateUrl('file:///etc/passwd')).toThrow(
+        'Access to sensitive system directories'
+      );
+      expect(() => validateUrl('file:///sys/kernel')).toThrow(
+        'Access to sensitive system directories'
+      );
+      expect(() => validateUrl('file:///proc/cpuinfo')).toThrow(
+        'Access to sensitive system directories'
+      );
+      expect(() => validateUrl('file:///C:/Windows/System32/config')).toThrow(
+        'Access to sensitive system directories'
+      );
     });
 
     it('should handle case-insensitive path checks for Windows', () => {
-      expect(() => validateUrl('file:///C:/WINDOWS/SYSTEM32/file')).toThrow('Access to sensitive system directories');
+      expect(() => validateUrl('file:///C:/WINDOWS/SYSTEM32/file')).toThrow(
+        'Access to sensitive system directories'
+      );
     });
 
     it('should allow file:// URLs to non-sensitive paths', () => {
-      expect(() => validateUrl('file:///home/user/documents/file.html')).not.toThrow();
+      expect(() =>
+        validateUrl('file:///home/user/documents/file.html')
+      ).not.toThrow();
       expect(() => validateUrl('file:///tmp/test.html')).not.toThrow();
     });
   });
@@ -80,13 +102,21 @@ describe('fetch_js_content.js', () => {
     });
 
     it('should reject path traversal attempts', () => {
-      expect(() => validateOutputPath('../../../etc/passwd')).toThrow('Output path must be within current directory');
-      expect(() => validateOutputPath('../../outside/file.md')).toThrow('Output path must be within current directory');
+      expect(() => validateOutputPath('../../../etc/passwd')).toThrow(
+        'Output path must be within current directory'
+      );
+      expect(() => validateOutputPath('../../outside/file.md')).toThrow(
+        'Output path must be within current directory'
+      );
     });
 
     it('should reject absolute paths outside current directory', () => {
-      expect(() => validateOutputPath('/etc/passwd')).toThrow('Output path must be within current directory');
-      expect(() => validateOutputPath('C:\\Windows\\System32\\file.txt')).toThrow('Output path must be within current directory');
+      expect(() => validateOutputPath('/etc/passwd')).toThrow(
+        'Output path must be within current directory'
+      );
+      expect(() =>
+        validateOutputPath('C:\\Windows\\System32\\file.txt')
+      ).toThrow('Output path must be within current directory');
     });
 
     it('should handle complex path traversal with valid segments', () => {
@@ -95,8 +125,11 @@ describe('fetch_js_content.js', () => {
     });
 
     it('should reject paths that resolve outside current directory', () => {
-      const outsidePath = process.cwd().split(/[/\\]/).slice(0, -2).join('/') + '/outside.md';
-      expect(() => validateOutputPath(outsidePath)).toThrow('Output path must be within current directory');
+      const outsidePath =
+        process.cwd().split(/[/\\]/).slice(0, -2).join('/') + '/outside.md';
+      expect(() => validateOutputPath(outsidePath)).toThrow(
+        'Output path must be within current directory'
+      );
     });
   });
 
@@ -117,22 +150,42 @@ describe('fetch_js_content.js', () => {
     });
 
     it('should reject timeout below minimum', () => {
-      expect(() => validateTimeout(500)).toThrow('Timeout must be between 1000 and 300000 milliseconds');
-      expect(() => validateTimeout(999)).toThrow('Timeout must be between 1000 and 300000 milliseconds');
-      expect(() => validateTimeout(0)).toThrow('Timeout must be between 1000 and 300000 milliseconds');
-      expect(() => validateTimeout(-1000)).toThrow('Timeout must be between 1000 and 300000 milliseconds');
+      expect(() => validateTimeout(500)).toThrow(
+        'Timeout must be between 1000 and 300000 milliseconds'
+      );
+      expect(() => validateTimeout(999)).toThrow(
+        'Timeout must be between 1000 and 300000 milliseconds'
+      );
+      expect(() => validateTimeout(0)).toThrow(
+        'Timeout must be between 1000 and 300000 milliseconds'
+      );
+      expect(() => validateTimeout(-1000)).toThrow(
+        'Timeout must be between 1000 and 300000 milliseconds'
+      );
     });
 
     it('should reject timeout above maximum', () => {
-      expect(() => validateTimeout(300001)).toThrow('Timeout must be between 1000 and 300000 milliseconds');
-      expect(() => validateTimeout(600000)).toThrow('Timeout must be between 1000 and 300000 milliseconds');
-      expect(() => validateTimeout(999999999)).toThrow('Timeout must be between 1000 and 300000 milliseconds');
+      expect(() => validateTimeout(300001)).toThrow(
+        'Timeout must be between 1000 and 300000 milliseconds'
+      );
+      expect(() => validateTimeout(600000)).toThrow(
+        'Timeout must be between 1000 and 300000 milliseconds'
+      );
+      expect(() => validateTimeout(999999999)).toThrow(
+        'Timeout must be between 1000 and 300000 milliseconds'
+      );
     });
 
     it('should reject non-numeric timeouts', () => {
-      expect(() => validateTimeout(NaN)).toThrow('Timeout must be between 1000 and 300000 milliseconds');
-      expect(() => validateTimeout(Infinity)).toThrow('Timeout must be between 1000 and 300000 milliseconds');
-      expect(() => validateTimeout(-Infinity)).toThrow('Timeout must be between 1000 and 300000 milliseconds');
+      expect(() => validateTimeout(NaN)).toThrow(
+        'Timeout must be between 1000 and 300000 milliseconds'
+      );
+      expect(() => validateTimeout(Infinity)).toThrow(
+        'Timeout must be between 1000 and 300000 milliseconds'
+      );
+      expect(() => validateTimeout(-Infinity)).toThrow(
+        'Timeout must be between 1000 and 300000 milliseconds'
+      );
     });
 
     it('should handle string inputs that convert to valid numbers', () => {
@@ -141,7 +194,9 @@ describe('fetch_js_content.js', () => {
     });
 
     it('should reject string inputs that convert to NaN', () => {
-      expect(() => validateTimeout(parseInt('invalid', 10))).toThrow('Timeout must be between 1000 and 300000 milliseconds');
+      expect(() => validateTimeout(parseInt('invalid', 10))).toThrow(
+        'Timeout must be between 1000 and 300000 milliseconds'
+      );
     });
   });
 
@@ -162,7 +217,10 @@ describe('fetch_js_content.js', () => {
     });
 
     it('should use custom selector for Twitter when provided', () => {
-      const config = getSiteConfig('https://x.com/user/status/123', '.custom-selector');
+      const config = getSiteConfig(
+        'https://x.com/user/status/123',
+        '.custom-selector'
+      );
 
       expect(config.name).toBe('Twitter/X');
       expect(config.waitSelector).toBe('.custom-selector');
@@ -191,7 +249,7 @@ describe('fetch_js_content.js', () => {
         timestamp: '2026-01-11T12:00:00.000Z',
         tweetText: 'This is a test tweet',
         quotedTweet: null,
-        media: []
+        media: [],
       };
 
       const markdown = formatTwitterMarkdown(tweetData);
@@ -209,7 +267,7 @@ describe('fetch_js_content.js', () => {
         timestamp: '2026-01-11T12:00:00.000Z',
         tweetText: 'Main tweet',
         quotedTweet: 'Quoted tweet content',
-        media: []
+        media: [],
       };
 
       const markdown = formatTwitterMarkdown(tweetData);
@@ -226,8 +284,8 @@ describe('fetch_js_content.js', () => {
         quotedTweet: null,
         media: [
           { url: 'https://example.com/img1.jpg', alt: 'Image 1 description' },
-          { url: 'https://example.com/img2.jpg', alt: 'Image 2 description' }
-        ]
+          { url: 'https://example.com/img2.jpg', alt: 'Image 2 description' },
+        ],
       };
 
       const markdown = formatTwitterMarkdown(tweetData);
@@ -245,7 +303,7 @@ describe('fetch_js_content.js', () => {
         timestamp: '2026-01-11T12:00:00.000Z',
         tweetText: 'Complex tweet',
         quotedTweet: 'Quoted',
-        media: [{ url: 'https://example.com/img.jpg', alt: 'Media' }]
+        media: [{ url: 'https://example.com/img.jpg', alt: 'Media' }],
       };
 
       const markdown = formatTwitterMarkdown(tweetData);
@@ -260,7 +318,7 @@ describe('fetch_js_content.js', () => {
         timestamp: '2026-01-11T12:00:00.000Z',
         tweetText: 'Tweet',
         quotedTweet: null,
-        media: []
+        media: [],
       };
 
       const markdown = formatTwitterMarkdown(tweetData);
@@ -273,7 +331,7 @@ describe('fetch_js_content.js', () => {
     it('should format basic content', () => {
       const content = {
         title: 'Test Article',
-        content: 'This is the article content.\nMultiple lines here.'
+        content: 'This is the article content.\nMultiple lines here.',
       };
 
       const markdown = formatGenericMarkdown(content);
@@ -286,7 +344,7 @@ describe('fetch_js_content.js', () => {
     it('should handle content with special characters', () => {
       const content = {
         title: 'Article with "quotes" & symbols',
-        content: 'Content with <html> & special chars'
+        content: 'Content with <html> & special chars',
       };
 
       const markdown = formatGenericMarkdown(content);
@@ -298,13 +356,61 @@ describe('fetch_js_content.js', () => {
     it('should handle empty content', () => {
       const content = {
         title: 'Empty',
-        content: ''
+        content: '',
       };
 
       const markdown = formatGenericMarkdown(content);
 
       expect(markdown).toContain('# Empty');
       expect(markdown).toMatch(/# Empty\n\n\n$/);
+    });
+
+    it('should format content with media', () => {
+      const content = {
+        title: 'Article with Images',
+        content: 'This article has images.',
+        media: [
+          { url: 'https://example.com/img1.jpg', alt: 'First image' },
+          { url: 'https://example.com/img2.jpg', alt: 'Second image' },
+        ],
+      };
+
+      const markdown = formatGenericMarkdown(content);
+
+      expect(markdown).toContain('# Article with Images');
+      expect(markdown).toContain('This article has images.');
+      expect(markdown).toContain('### Media');
+      expect(markdown).toContain('1. First image');
+      expect(markdown).toContain('URL: https://example.com/img1.jpg');
+      expect(markdown).toContain('2. Second image');
+      expect(markdown).toContain('URL: https://example.com/img2.jpg');
+    });
+
+    it('should handle content with empty media array', () => {
+      const content = {
+        title: 'No Images',
+        content: 'Content without images',
+        media: [],
+      };
+
+      const markdown = formatGenericMarkdown(content);
+
+      expect(markdown).toContain('# No Images');
+      expect(markdown).toContain('Content without images');
+      expect(markdown).not.toContain('### Media');
+    });
+
+    it('should handle content without media field', () => {
+      const content = {
+        title: 'Legacy Content',
+        content: 'Old format without media field',
+      };
+
+      const markdown = formatGenericMarkdown(content);
+
+      expect(markdown).toContain('# Legacy Content');
+      expect(markdown).toContain('Old format without media field');
+      expect(markdown).not.toContain('### Media');
     });
   });
 
@@ -313,7 +419,7 @@ describe('fetch_js_content.js', () => {
 
     beforeEach(() => {
       mockPage = {
-        evaluate: vi.fn()
+        evaluate: vi.fn(),
       };
     });
 
@@ -323,7 +429,7 @@ describe('fetch_js_content.js', () => {
         tweetText: 'Tweet content',
         timestamp: '2026-01-11T12:00:00.000Z',
         quotedTweet: null,
-        media: []
+        media: [],
       });
 
       const result = await extractTwitterContent(mockPage);
@@ -337,9 +443,9 @@ describe('fetch_js_content.js', () => {
     it('should handle extraction errors', async () => {
       mockPage.evaluate.mockRejectedValue(new Error('Evaluation failed'));
 
-      await expect(extractTwitterContent(mockPage))
-        .rejects
-        .toThrow('Failed to extract Twitter content: Evaluation failed');
+      await expect(extractTwitterContent(mockPage)).rejects.toThrow(
+        'Failed to extract Twitter content: Evaluation failed'
+      );
     });
 
     it('should extract tweet with all fields', async () => {
@@ -350,8 +456,8 @@ describe('fetch_js_content.js', () => {
         quotedTweet: 'Quoted',
         media: [
           { url: 'https://example.com/img1.jpg', alt: 'Media 1' },
-          { url: 'https://example.com/img2.jpg', alt: 'Media 2' }
-        ]
+          { url: 'https://example.com/img2.jpg', alt: 'Media 2' },
+        ],
       });
 
       const result = await extractTwitterContent(mockPage);
@@ -370,14 +476,14 @@ describe('fetch_js_content.js', () => {
 
     beforeEach(() => {
       mockPage = {
-        evaluate: vi.fn()
+        evaluate: vi.fn(),
       };
     });
 
     it('should extract generic page content', async () => {
       mockPage.evaluate.mockResolvedValue({
         title: 'Page Title',
-        content: 'Page content here'
+        content: 'Page content here',
       });
 
       const result = await extractGenericContent(mockPage);
@@ -390,15 +496,15 @@ describe('fetch_js_content.js', () => {
     it('should handle extraction errors', async () => {
       mockPage.evaluate.mockRejectedValue(new Error('Evaluation failed'));
 
-      await expect(extractGenericContent(mockPage))
-        .rejects
-        .toThrow('Failed to extract generic content: Evaluation failed');
+      await expect(extractGenericContent(mockPage)).rejects.toThrow(
+        'Failed to extract generic content: Evaluation failed'
+      );
     });
 
     it('should handle minimal content', async () => {
       mockPage.evaluate.mockResolvedValue({
         title: 'Untitled',
-        content: 'No content found'
+        content: 'No content found',
       });
 
       const result = await extractGenericContent(mockPage);
@@ -416,7 +522,7 @@ describe('fetch_js_content.js', () => {
           timestamp: '2026-01-11T12:00:00.000Z',
           tweetText: 'Tweet',
           quotedTweet: undefined,
-          media: []
+          media: [],
         };
 
         const markdown = formatTwitterMarkdown(tweetData);
@@ -430,7 +536,7 @@ describe('fetch_js_content.js', () => {
           timestamp: '2026-01-11T12:00:00.000Z',
           tweetText: 'Tweet',
           quotedTweet: null,
-          media: []
+          media: [],
         };
 
         const markdown = formatTwitterMarkdown(tweetData);
@@ -444,7 +550,7 @@ describe('fetch_js_content.js', () => {
           timestamp: '2026-01-11T12:00:00.000Z',
           tweetText: 'Tweet',
           quotedTweet: null,
-          media: undefined
+          media: undefined,
         };
 
         const markdown = formatTwitterMarkdown(tweetData);
@@ -458,7 +564,7 @@ describe('fetch_js_content.js', () => {
           timestamp: '2026-01-11T12:00:00.000Z',
           tweetText: 'Tweet',
           quotedTweet: null,
-          media: null
+          media: null,
         };
 
         const markdown = formatTwitterMarkdown(tweetData);
@@ -501,7 +607,7 @@ describe('fetch_js_content.js', () => {
         const longTitle = 'A'.repeat(1000);
         const content = {
           title: longTitle,
-          content: 'Content'
+          content: 'Content',
         };
 
         const markdown = formatGenericMarkdown(content);
@@ -512,7 +618,7 @@ describe('fetch_js_content.js', () => {
       it('should handle newlines in title', () => {
         const content = {
           title: 'Title\nWith\nNewlines',
-          content: 'Content'
+          content: 'Content',
         };
 
         const markdown = formatGenericMarkdown(content);
@@ -566,7 +672,9 @@ describe('fetch_js_content.js', () => {
 
       expect(exitCode).toBe(1);
       expect(consoleErrorSpy).toHaveBeenCalledWith('Error: URL is required');
-      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Usage:'));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Usage:')
+      );
     });
 
     it('should be exported as a function', () => {

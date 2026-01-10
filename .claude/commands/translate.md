@@ -69,17 +69,9 @@ Command line arguments: `$ARGUMENTS`
 
    **IMPORTANT**: Use the `web-content-fetcher` agent skill for tiered approach.
 
-5.5. **Download images** (if fetched content contains media URLs):
-
-   **For Twitter/X and other media-rich content**:
-   - Parse the fetched content for image URLs (look for `### Media` section with `URL:` entries)
-   - Download each image using curl to `{task_dir}/original/`:
-     ```bash
-     curl -s "IMAGE_URL" -o "{task_dir}/original/image_1.jpg"
-     curl -s "IMAGE_URL" -o "{task_dir}/original/image_2.jpg"
-     ```
-   - Name images sequentially: `image_1.jpg`, `image_2.jpg`, etc.
-   - Keep track of which image corresponds to which description from the fetched content
+   **Download images** (if fetched content contains media URLs)
+   - Parse `### Media` section for image URLs
+   - Keep track of which image corresponds to which description
 
 6. **Execute Multi-Agent Three-Stage Workflow**:
 
@@ -134,9 +126,11 @@ Command line arguments: `$ARGUMENTS`
 
    **Instructions**:
    1. Read and analyze the fetched content provided above
-   2. Create the initial translation to the target language
-   3. Write initial translation to: {temp_dir}/stage1_initial.md
-   4. Write analysis and notes to: {temp_dir}/stage1_notes.md
+   2. If content has images, check `{task_dir}/original/` for actual file extensions
+   3. Create the initial translation to the target language
+   4. Write initial translation to: {temp_dir}/stage1_initial.md
+   5. Write analysis and notes to: {temp_dir}/stage1_notes.md
+   6. **When referencing images**: Use actual file extensions (`.webp`, `.jpg`, `.png`, etc.)
 
    **stage1_notes.md format**:
    ## Source Information
@@ -167,9 +161,11 @@ Command line arguments: `$ARGUMENTS`
 
    **Instructions**:
    1. Read the source file using the Read tool
-   2. Analyze and translate the content
-   3. Write initial translation to: {temp_dir}/stage1_initial.md
-   4. Write analysis and notes to: {temp_dir}/stage1_notes.md
+   2. If content has images, check `{task_dir}/original/` for actual file extensions
+   3. Analyze and translate the content
+   4. Write initial translation to: {temp_dir}/stage1_initial.md
+   5. Write analysis and notes to: {temp_dir}/stage1_notes.md
+   6. **When referencing images**: Use actual file extensions (`.webp`, `.jpg`, `.png`, etc.)
 
    **stage1_notes.md format**:
    ## Initial Translation Analysis
@@ -221,7 +217,7 @@ Command line arguments: `$ARGUMENTS`
 
    **For file translations and URL translations**, invoke with:
 
-   ```
+   ````
    REFINER (Translator C) - Create final from files
 
    Source File: [path] OR Fetched Content: {task_dir}/original/fetched_content.md
@@ -237,26 +233,30 @@ Command line arguments: `$ARGUMENTS`
    5. Write final deliverable to {task_dir}/translated/[basename]_[lang].md
       - For URLs, use descriptive name like: article_[lang].md or [site-name]_article_[lang].md
    6. **For content with images**:
-      - Include images in the final translation using markdown image syntax
-      - Use relative paths: `![description](../original/image_1.jpg)`
+      - **IMPORTANT**: Check actual files in `{task_dir}/original/` to get correct extensions (`.jpg`, `.webp`, `.png`, etc.)
+      - Use the actual file extension found: `image_1.webp`, `image_2.jpg`, etc.
+      - Include images using markdown syntax with relative paths: `![description](../original/image_N.ext)`
       - Translate the image descriptions/alt text to the target language
       - Preserve the original layout and structure (headers, sections, formatting)
-      - Example format for Twitter/X posts:
+      - Example format:
         ```markdown
+
+        Main content...
+
         ### Media Content
 
-        ![translated description](../original/image_1.jpg)
+        ![translated description](../original/image_1.webp)
 
         **Image Description:** [translated detailed description]
-        - Panel 1: [description]
-        - Panel 2: [description]
         ```
+      - For multi-panel images: Break down each panel/section
+      - For infographics: Translate visible text and explain visual info
 
    Output file naming:
    - English: [basename]_en.md
    - Japanese: [basename]_ja.md
    - Chinese Traditional: [basename]_cn.md
-   ```
+   ````
 
 7. **Present results**:
    - Inline: Show all outputs in conversation
@@ -323,6 +323,14 @@ Command line arguments: `$ARGUMENTS`
 
 → Detect URL, fetch and translate to Traditional Chinese
 
+**Example 8: Threads post with image**
+
+```
+/translate --lang cn --url https://www.threads.com/@user/post/ABC123
+```
+
+→ Fetch Threads post with images, download images, translate to Traditional Chinese with embedded images
+
 ## Important Notes
 
 - This command uses a **true multi-agent workflow** with THREE sequential subagent invocations:
@@ -336,6 +344,12 @@ Command line arguments: `$ARGUMENTS`
   - **engineering-terminology**: For technical/engineering content
   - **translation-expertise**: For professional translation methodology
   - **document-writing**: For language-specific writing conventions
+  - **web-content-fetcher**: For URL fetching with universal image extraction
+
+- **Universal image extraction**: Works for ALL websites (Twitter/X, Threads, blogs, news, etc.)
+  - Images are automatically extracted from main content area
+  - Small images (< 100x100px) like icons/logos are filtered out
+  - Final translation includes embedded images with translated descriptions
 
 - You should ALWAYS use the Task tool THREE times sequentially to orchestrate the workflow
 - Do NOT attempt to translate yourself - delegate to the specialized subagent
@@ -354,9 +368,12 @@ This command uses a true collaborative multi-agent approach:
 **URL Fetching Strategy**:
 
 - The main orchestrator agent handles URL fetching using the web-content-fetcher skill's tiered approach
-- Try WebFetch first (fast for small content), fall back to curl + extraction scripts for larger content
+- Try WebFetch first (fast for small content), fall back to curl + extraction for larger content
+- For JavaScript-rendered sites (Twitter/X, Threads), use Playwright-based fetch_js_content.js
 - Always use centralized scripts from `.claude/skills/web-content-fetcher/scripts/`
 - Fetched content is saved to `{task_dir}/original/fetched_content.md`
+- **Universal image extraction**: All images from main content are automatically extracted with URLs
+- Images are downloaded to `{task_dir}/original/` and included in translation
 - Content is then passed directly to translation subagents in their prompts
 - This ensures reliable content fetching and keeps subagents focused on translation
 

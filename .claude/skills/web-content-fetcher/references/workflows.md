@@ -22,6 +22,7 @@ mkdir -p output/tasks/YYYYMMDD_descriptive_name/original
 **Convention**: `YYYYMMDD_` prefix based on current date
 
 **Example**:
+
 ```bash
 mkdir -p output/tasks/20260111_article_translation/original
 ```
@@ -40,6 +41,7 @@ curl -s "URL" > output/tasks/YYYYMMDD_taskname/original/raw_html.html
 - `--max-time 30`: Set timeout
 
 **Example**:
+
 ```bash
 curl -s -L "https://example.com/article" > output/tasks/20260111_article_translation/original/raw_html.html
 ```
@@ -146,6 +148,7 @@ curl -s "https://example.com/article" > output/tasks/20260111_translate_article/
 ```
 
 Task agent prompt:
+
 ```
 Read the HTML file at output/tasks/20260111_translate_article/original/raw_html.html
 and extract the main article content. Save clean markdown to:
@@ -172,6 +175,7 @@ curl -s "https://example.com/research-paper" > output/tasks/20260111_analyze_art
 ```
 
 Task agent prompt:
+
 ```
 Read the HTML file at output/tasks/20260111_analyze_article/original/raw_html.html
 and extract the main article content. Save clean markdown to:
@@ -201,6 +205,7 @@ done
 ```
 
 Task agent prompt (run for each page):
+
 ```
 Read the HTML file at output/tasks/20260111_series_analysis/original/page[N].html
 and extract the main article content. Save clean markdown to:
@@ -217,16 +222,19 @@ cat output/tasks/20260111_series_analysis/original/page*.md > output/tasks/20260
 **Use case**: Fetching content behind authentication/login
 
 **Bearer Token**:
+
 ```bash
 curl -H "Authorization: Bearer YOUR_TOKEN" "https://api.example.com/article" > raw_html.html
 ```
 
 **Cookie-based Authentication**:
+
 ```bash
 curl -b "session=YOUR_SESSION_COOKIE" "https://example.com/members/article" > raw_html.html
 ```
 
 **Basic Authentication**:
+
 ```bash
 curl -u username:password "https://example.com/protected/article" > raw_html.html
 ```

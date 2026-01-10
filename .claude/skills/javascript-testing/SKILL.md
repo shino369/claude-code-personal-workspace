@@ -131,14 +131,16 @@ export async function main() {
 ```
 
 **When to use c8 ignore:**
+
 - Browser automation code (Playwright/Puppeteer page interactions)
 - CLI entry points with process.exit() and argument parsing
 - Code that runs in different contexts (browser vs Node.js)
 - Complex integration points that require real dependencies
 
 **Requirements when using c8 ignore:**
+
 1. **Extract testable logic:** Move business logic into separate, testable functions
-2. **Create integration tests:** Write integration test file (*.integration.test.js) to cover the ignored code
+2. **Create integration tests:** Write integration test file (\*.integration.test.js) to cover the ignored code
 3. **Add comment explaining why:** `/* c8 ignore start -- Reason why and how it's tested */`
 4. **Minimize ignored code:** Keep ignored blocks as small as possible
 
@@ -379,18 +381,29 @@ When testing browser automation (Playwright/Puppeteer) or other slow integration
 **1. Combine related tests:**
 
 ❌ Slow (9 tests, 17+ seconds):
+
 ```javascript
-it('should fetch content', async () => { /* ... */ }, 2000);
-it('should handle custom selectors', async () => { /* ... */ }, 2000);
-it('should handle custom timeouts', async () => { /* ... */ }, 2000);
+it('should fetch content', async () => {
+  /* ... */
+}, 2000);
+it('should handle custom selectors', async () => {
+  /* ... */
+}, 2000);
+it('should handle custom timeouts', async () => {
+  /* ... */
+}, 2000);
 // Each launches a new browser
 ```
 
 ✅ Fast (3 tests, <2 seconds):
+
 ```javascript
 it('should fetch content with custom options', async () => {
   // Test multiple features in one browser launch
-  const result = await fetchContent(url, { selector: 'article', timeout: 5000 });
+  const result = await fetchContent(url, {
+    selector: 'article',
+    timeout: 5000,
+  });
   expect(result).toContain('content');
   expect(result).toContain('expected text');
   expect(result).toMatch(/^# /); // markdown format

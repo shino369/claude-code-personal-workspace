@@ -56,7 +56,7 @@ describe('fetch_js_content.js - Integration Tests', () => {
       // Test basic fetch, custom selector, and formatting in one test
       const result = await fetchContent(fileUrl, {
         selector: 'article',
-        timeout: 5000
+        timeout: 5000,
       });
 
       // Verify content extraction
@@ -87,7 +87,7 @@ describe('fetch_js_content.js - Integration Tests', () => {
       await expect(
         fetchContent(fileUrl, {
           selector: '.does-not-exist',
-          timeout: 100
+          timeout: 100,
         })
       ).rejects.toThrow();
     }, 20000);
@@ -101,7 +101,7 @@ describe('fetch_js_content.js - Integration Tests', () => {
       try {
         await fetchContent(fileUrl, {
           selector: '.does-not-exist',
-          timeout: 100
+          timeout: 100,
         });
       } catch (_error) {
         // Expected to fail

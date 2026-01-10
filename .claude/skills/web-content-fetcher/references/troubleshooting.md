@@ -42,6 +42,7 @@ Grep pattern="article title" path="raw_html.html"
 ### Issue: Extracted content is messy or incomplete
 
 **Symptoms**:
+
 - Navigation menus mixed with content
 - Missing paragraphs or sections
 - Excessive formatting or HTML remnants
@@ -49,6 +50,7 @@ Grep pattern="article title" path="raw_html.html"
 **Solutions**:
 
 1. **Improve Task agent prompt** (be more specific):
+
 ```
 "Read the HTML file at [path]. Extract ONLY the main article content including:
 - Article title (h1)
@@ -61,6 +63,7 @@ Save clean markdown to fetched_content.md"
 2. **Check if page uses JavaScript rendering** (may need Playwright - Tier 4)
 
 3. **Manually inspect raw_html.html** to understand page structure:
+
 ```bash
 # Check page structure
 grep -i "<article" raw_html.html
@@ -68,6 +71,7 @@ grep -i "class=\"content" raw_html.html
 ```
 
 4. **Provide specific HTML structure details** to Task agent:
+
 ```
 "The main content is in <article class='post-content'>. Extract only from that section."
 ```
@@ -75,6 +79,7 @@ grep -i "class=\"content" raw_html.html
 ### Issue: Japanese text shows garbled characters (mojibake/文字化け)
 
 **Symptoms**:
+
 - Japanese characters appear as `�`, `�`, or random symbols
 - Text is unreadable despite being from a Japanese site
 
@@ -95,6 +100,7 @@ node .claude/skills/web-content-fetcher/scripts/extract_eucjp.js raw_html.html >
 ```
 
 **Common sites requiring special encoding handling**:
+
 - 4gamer.net
 - Older Japanese gaming/news sites
 - Japanese government and academic sites
@@ -102,6 +108,7 @@ node .claude/skills/web-content-fetcher/scripts/extract_eucjp.js raw_html.html >
 **How to identify EUC-JP encoding**:
 
 1. Check HTML meta tag in raw file:
+
 ```bash
 grep -i "charset" raw_html.html
 # Look for: <meta charset="EUC-JP"> or charset=euc-jp
@@ -112,6 +119,7 @@ grep -i "charset" raw_html.html
 ### Issue: Page has anti-bot protection
 
 **Symptoms**:
+
 - HTTP 403 Forbidden error
 - Cloudflare challenge page
 - "Access denied" message
@@ -119,11 +127,13 @@ grep -i "charset" raw_html.html
 **Solutions**:
 
 1. **Add user agent**:
+
 ```bash
 curl -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "URL" > raw_html.html
 ```
 
 2. **Add common browser headers**:
+
 ```bash
 curl -H "Accept-Language: en-US,en;q=0.9" \
      -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
@@ -133,11 +143,13 @@ curl -H "Accept-Language: en-US,en;q=0.9" \
 ```
 
 3. **Use cookies if you have session**:
+
 ```bash
 curl -b "session=abc123" "URL" > raw_html.html
 ```
 
 4. **Use Playwright** (for complex bot detection):
+
 ```bash
 node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js "URL" --output content.md
 ```
@@ -145,6 +157,7 @@ node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js "URL" --outp
 ### Issue: Content requires authentication
 
 **Symptoms**:
+
 - HTTP 401 Unauthorized
 - Login page returned instead of content
 - "Members only" message
@@ -152,22 +165,26 @@ node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js "URL" --outp
 **Solutions**:
 
 **Bearer Token Authentication**:
+
 ```bash
 curl -H "Authorization: Bearer YOUR_TOKEN" "URL" > raw_html.html
 ```
 
 **Cookie-based Authentication**:
+
 ```bash
 # Export cookies from browser, then:
 curl -b "session=YOUR_SESSION_COOKIE; auth=YOUR_AUTH_COOKIE" "URL" > raw_html.html
 ```
 
 **Basic Authentication**:
+
 ```bash
 curl -u username:password "URL" > raw_html.html
 ```
 
 **Multiple Headers**:
+
 ```bash
 curl -H "Authorization: Bearer TOKEN" \
      -H "X-API-Key: KEY" \
@@ -177,6 +194,7 @@ curl -H "Authorization: Bearer TOKEN" \
 ### Issue: Page redirects to different domain
 
 **Symptoms**:
+
 - Fetched content is redirect page or error
 - Content is from different domain than expected
 
@@ -187,6 +205,7 @@ curl -L "URL" > raw_html.html
 ```
 
 **Check redirect chain**:
+
 ```bash
 curl -I -L "URL"
 # Shows all HTTP headers and redirects
@@ -195,6 +214,7 @@ curl -I -L "URL"
 ### Issue: Timeout or slow connection
 
 **Symptoms**:
+
 - curl hangs or takes very long
 - "Operation timed out" error
 
@@ -206,11 +226,13 @@ curl --max-time 60 "URL" > raw_html.html
 ```
 
 **With progress bar** (remove `-s` flag):
+
 ```bash
 curl -L --max-time 60 "URL" > raw_html.html
 ```
 
 **Check connection first**:
+
 ```bash
 curl -I --max-time 10 "URL"
 # Returns headers quickly to test connectivity
@@ -219,6 +241,7 @@ curl -I --max-time 10 "URL"
 ### Issue: Page requires JavaScript / Shows "JavaScript not available"
 
 **Symptoms**:
+
 - curl or WebFetch returns error message like "JavaScript is not available"
 - Fetched HTML contains empty state objects `<div id="root"></div>` with no content
 - Page is a React/Vue/Angular SPA or social media site
@@ -241,12 +264,14 @@ node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
 ```
 
 **Common sites requiring JavaScript**:
+
 - Twitter/X (x.com)
 - Modern single-page applications (React/Vue/Angular)
 - Dynamic dashboards
 - Content loaded via AJAX after page load
 
 **Setup required** (one-time):
+
 ```bash
 cd .claude/skills/web-content-fetcher
 pnpm add -D playwright --save-catalog-name=dev
@@ -256,12 +281,14 @@ pnpm exec playwright install chromium
 ### Issue: Playwright timeout errors
 
 **Symptoms**:
+
 - "Timeout 30000ms exceeded" error
 - Page loads but content not found
 
 **Solutions**:
 
 1. **Increase timeout**:
+
 ```bash
 node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
   "URL" \
@@ -270,6 +297,7 @@ node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
 ```
 
 2. **Specify exact selector to wait for**:
+
 ```bash
 node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
   "URL" \
@@ -278,12 +306,14 @@ node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
 ```
 
 3. **Check if content requires user interaction** (scrolling, clicking):
+
 - Script doesn't handle interaction
 - Consider official API instead
 
 ### Issue: Downloaded file is HTML when expecting binary
 
 **Symptoms**:
+
 - Expected PDF/image but got HTML
 - File shows "404 Not Found" or error page
 
@@ -301,6 +331,7 @@ fi
 ```
 
 **Or use fail flag**:
+
 ```bash
 # Exit on HTTP error
 curl -f "URL" > raw_html.html || echo "Download failed"
@@ -311,21 +342,25 @@ curl -f "URL" > raw_html.html || echo "Download failed"
 ### Basic Fetch Operations
 
 **Simple fetch**:
+
 ```bash
 curl -s "URL" > raw_html.html
 ```
 
 **Fetch with redirects**:
+
 ```bash
 curl -s -L "URL" > raw_html.html
 ```
 
 **Fetch with user agent**:
+
 ```bash
 curl -s -A "Mozilla/5.0" "URL" > raw_html.html
 ```
 
 **Fetch with timeout**:
+
 ```bash
 curl -s --max-time 30 "URL" > raw_html.html
 ```
@@ -333,21 +368,25 @@ curl -s --max-time 30 "URL" > raw_html.html
 ### Error Handling
 
 **Fetch with error handling**:
+
 ```bash
 curl -f -s -L --max-time 30 -A "Mozilla/5.0" "URL" > raw_html.html || echo "Fetch failed"
 ```
 
 **Check HTTP status**:
+
 ```bash
 curl -w "%{http_code}" -o raw_html.html "URL"
 ```
 
 **Get headers only**:
+
 ```bash
 curl -I "URL"
 ```
 
 **Silent fetch with status**:
+
 ```bash
 HTTP_CODE=$(curl -s -w "%{http_code}" -o raw_html.html "URL")
 echo "Status: $HTTP_CODE"
@@ -356,16 +395,19 @@ echo "Status: $HTTP_CODE"
 ### Authentication
 
 **Bearer token**:
+
 ```bash
 curl -H "Authorization: Bearer TOKEN" "URL" > raw_html.html
 ```
 
 **Cookie authentication**:
+
 ```bash
 curl -b "session=COOKIE" "URL" > raw_html.html
 ```
 
 **Basic authentication**:
+
 ```bash
 curl -u username:password "URL" > raw_html.html
 ```
@@ -373,6 +415,7 @@ curl -u username:password "URL" > raw_html.html
 ### JavaScript-Rendered Content
 
 **Fetch Twitter/X post**:
+
 ```bash
 node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
   "https://x.com/user/status/123456789" \
@@ -380,6 +423,7 @@ node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
 ```
 
 **Fetch React SPA**:
+
 ```bash
 node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
   "https://react-app.com/page" \
@@ -391,16 +435,19 @@ node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
 ### Content Inspection
 
 **Check encoding**:
+
 ```bash
 grep -i "charset" raw_html.html | head -5
 ```
 
 **Check for JavaScript requirement**:
+
 ```bash
 grep -i "javascript" raw_html.html | head -5
 ```
 
 **Check main content areas**:
+
 ```bash
 grep -i "<article" raw_html.html
 grep -i "class=\"content" raw_html.html
@@ -408,6 +455,7 @@ grep -i "<main" raw_html.html
 ```
 
 **Count HTML size**:
+
 ```bash
 wc -c raw_html.html  # Size in bytes
 ```
@@ -415,21 +463,25 @@ wc -c raw_html.html  # Size in bytes
 ### Debugging
 
 **Fetch and show headers**:
+
 ```bash
 curl -v "URL" > raw_html.html 2>&1 | grep "< HTTP"
 ```
 
 **Test connectivity**:
+
 ```bash
 curl -I --max-time 10 "URL"
 ```
 
 **Show redirect chain**:
+
 ```bash
 curl -I -L "URL"
 ```
 
 **Check final URL after redirects**:
+
 ```bash
 curl -Ls -o /dev/null -w "%{url_effective}" "URL"
 ```

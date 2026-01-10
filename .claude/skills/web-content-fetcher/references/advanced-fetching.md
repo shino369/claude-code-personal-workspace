@@ -205,12 +205,14 @@ node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
 ### Site-Specific Features
 
 **Twitter/X**:
+
 - Automatically extracts tweet text, author, timestamp
 - Includes quoted tweets if present
 - Extracts media descriptions (alt text)
 - No need to specify selector
 
 **Generic Sites**:
+
 - Extracts main content area (article, main, [role="main"])
 - Waits for page load and JavaScript execution
 - Can specify custom selector for precise extraction
@@ -244,11 +246,13 @@ node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
 - Site shows "JavaScript required" or similar error
 
 **Pros**:
+
 - Handles JavaScript rendering
 - Auto-detects site types
 - Extracts structured content
 
 **Cons**:
+
 - Slower than static fetching
 - Requires Chromium browser installation
 - Higher resource usage
@@ -286,16 +290,19 @@ node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
 ### Limitations
 
 **Authentication**: This script doesn't handle login flows. For authenticated content:
+
 - Use browser extensions to export cookies
 - Use official APIs if available
 - Manual login + cookie export
 
 **Rate Limiting**: Respect site rate limits and robots.txt. Consider:
+
 - Adding delays between requests
 - Using official APIs when available
 - Checking terms of service
 
 **Dynamic Content**: Some sites load content asynchronously after initial render. If content is missing:
+
 - Increase `--timeout` value
 - Specify exact `--selector` to wait for
 - Check if content requires user interaction (scrolling, clicking)

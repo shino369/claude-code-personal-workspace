@@ -38,7 +38,9 @@ export function validateUrl(url) {
     const allowedProtocols = ['http:', 'https:', 'file:'];
 
     if (!allowedProtocols.includes(urlObj.protocol)) {
-      throw new Error(`Invalid protocol: ${urlObj.protocol}. Only http:, https:, and file: are allowed.`);
+      throw new Error(
+        `Invalid protocol: ${urlObj.protocol}. Only http:, https:, and file: are allowed.`
+      );
     }
 
     // Additional check for file:// URLs - prevent access to sensitive locations
@@ -46,9 +48,17 @@ export function validateUrl(url) {
       const path = urlObj.pathname.toLowerCase();
       // Block common sensitive paths (basic protection)
       // Note: Windows paths in URLs look like /C:/Windows/System32
-      const blockedPaths = ['/etc/', '/sys/', '/proc/', '/windows/system32/', ':/windows/system32/'];
-      if (blockedPaths.some(blocked => path.includes(blocked))) {
-        throw new Error('Access to sensitive system directories is not allowed.');
+      const blockedPaths = [
+        '/etc/',
+        '/sys/',
+        '/proc/',
+        '/windows/system32/',
+        ':/windows/system32/',
+      ];
+      if (blockedPaths.some((blocked) => path.includes(blocked))) {
+        throw new Error(
+          'Access to sensitive system directories is not allowed.'
+        );
       }
     }
   } catch (error) {
@@ -73,7 +83,9 @@ export function validateOutputPath(filePath) {
   // Ensure the path is within current directory or its subdirectories
   // This prevents writing to arbitrary locations
   if (!resolvedPath.startsWith(currentDir)) {
-    throw new Error(`Output path must be within current directory. Attempted: ${resolvedPath}`);
+    throw new Error(
+      `Output path must be within current directory. Attempted: ${resolvedPath}`
+    );
   }
 
   return resolvedPath;
@@ -90,7 +102,9 @@ export function validateTimeout(timeout) {
   const MAX_TIMEOUT = 300000; // 5 minutes
 
   if (isNaN(timeout) || timeout < MIN_TIMEOUT || timeout > MAX_TIMEOUT) {
-    throw new Error(`Timeout must be between ${MIN_TIMEOUT} and ${MAX_TIMEOUT} milliseconds.`);
+    throw new Error(
+      `Timeout must be between ${MIN_TIMEOUT} and ${MAX_TIMEOUT} milliseconds.`
+    );
   }
 
   return timeout;
@@ -107,7 +121,7 @@ export function getSiteConfig(url, customSelector = null) {
     return {
       name: 'Twitter/X',
       waitSelector: customSelector || 'article[data-testid="tweet"]',
-      extractFunction: extractTwitterContent
+      extractFunction: extractTwitterContent,
     };
   }
 
@@ -115,7 +129,7 @@ export function getSiteConfig(url, customSelector = null) {
   return {
     name: 'Generic',
     waitSelector: customSelector || 'body',
-    extractFunction: extractGenericContent
+    extractFunction: extractGenericContent,
   };
 }
 
@@ -130,25 +144,36 @@ export async function extractTwitterContent(page) {
     /* c8 ignore start -- Browser context code */
     const tweetData = await page.evaluate(() => {
       // Extract all tweet text elements at once
-      const tweetTextElements = Array.from(document.querySelectorAll('[data-testid="tweetText"]'));
-      const tweetText = tweetTextElements[0] ? tweetTextElements[0].innerText : 'Tweet text not found';
+      const tweetTextElements = Array.from(
+        document.querySelectorAll('[data-testid="tweetText"]')
+      );
+      const tweetText = tweetTextElements[0]
+        ? tweetTextElements[0].innerText
+        : 'Tweet text not found';
 
       // Extract author info
-      const userNameElement = document.querySelector('[data-testid="User-Name"]');
+      const userNameElement = document.querySelector(
+        '[data-testid="User-Name"]'
+      );
       const userName = userNameElement ? userNameElement.innerText : 'Unknown';
 
       // Extract timestamp
       const timeElement = document.querySelector('time');
-      const timestamp = timeElement ? timeElement.getAttribute('datetime') : 'Unknown';
+      const timestamp = timeElement
+        ? timeElement.getAttribute('datetime')
+        : 'Unknown';
 
       // Extract quoted tweet if present (will be the second tweet text element)
-      const quotedTweet = tweetTextElements.length > 1 ? tweetTextElements[1].innerText : null;
+      const quotedTweet =
+        tweetTextElements.length > 1 ? tweetTextElements[1].innerText : null;
 
       // Extract media alt texts and URLs if present
-      const mediaElements = Array.from(document.querySelectorAll('[data-testid="tweetPhoto"] img'));
-      const media = mediaElements.map(img => ({
+      const mediaElements = Array.from(
+        document.querySelectorAll('[data-testid="tweetPhoto"] img')
+      );
+      const media = mediaElements.map((img) => ({
         url: img.src,
-        alt: img.alt || 'Image'
+        alt: img.alt || 'Image',
       }));
 
       return {
@@ -156,7 +181,7 @@ export async function extractTwitterContent(page) {
         tweetText,
         timestamp,
         quotedTweet,
-        media
+        media,
       };
     });
     /* c8 ignore stop */
@@ -215,7 +240,7 @@ export async function extractGenericContent(page) {
         '.content',
         '#content',
         '.main-content',
-        'body'
+        'body',
       ];
 
       let mainElement = null;
@@ -229,14 +254,31 @@ export async function extractGenericContent(page) {
       }
 
       // Extract title
-      const title = document.querySelector('h1')?.innerText || document.title || 'Untitled';
+      const title =
+        document.querySelector('h1')?.innerText || document.title || 'Untitled';
 
       // Extract text content
-      const textContent = mainElement.innerText || mainElement.textContent || 'No content found';
+      const textContent =
+        mainElement.innerText || mainElement.textContent || 'No content found';
+
+      // Extract images from main content area
+      const imageElements = Array.from(mainElement.querySelectorAll('img'));
+      const media = imageElements
+        .filter((img) => {
+          // Filter out tiny images (likely icons/logos)
+          const width = img.width || img.naturalWidth || 0;
+          const height = img.height || img.naturalHeight || 0;
+          return width > 100 && height > 100;
+        })
+        .map((img) => ({
+          url: img.src,
+          alt: img.alt || 'Image',
+        }));
 
       return {
         title,
-        content: textContent
+        content: textContent,
+        media,
       };
     });
     /* c8 ignore stop */
@@ -250,12 +292,22 @@ export async function extractGenericContent(page) {
 
 /**
  * Format generic content as markdown
- * @param {object} content - Content object with title and content
+ * @param {object} content - Content object with title, content, and optional media
  * @returns {string} Formatted markdown
  */
 export function formatGenericMarkdown(content) {
   let markdown = `# ${content.title}\n\n`;
   markdown += `${content.content}\n`;
+
+  if (content.media && content.media.length > 0) {
+    markdown += `\n### Media\n\n`;
+    content.media.forEach((item, i) => {
+      markdown += `${i + 1}. ${item.alt}\n`;
+      markdown += `   - URL: ${item.url}\n`;
+    });
+    markdown += `\n`;
+  }
+
   return markdown;
 }
 
@@ -285,16 +337,14 @@ export async function fetchContent(url, options = {}) {
     // Launch browser
     browser = await chromium.launch({
       headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-dev-shm-usage',
-      ]
+      args: ['--no-sandbox', '--disable-dev-shm-usage'],
     });
 
     // Create browser context with viewport and user agent
     const context = await browser.newContext({
       viewport: { width: 1920, height: 1080 },
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     });
 
     // Create new page
@@ -303,7 +353,7 @@ export async function fetchContent(url, options = {}) {
     // Navigate to URL
     await page.goto(url, {
       waitUntil: 'domcontentloaded',
-      timeout: timeout
+      timeout: timeout,
     });
 
     // Wait for content to load
@@ -337,9 +387,9 @@ export async function main() {
       output: { type: 'string', short: 'o' },
       selector: { type: 'string', short: 's' },
       timeout: { type: 'string', short: 't', default: '30000' },
-      'full-page': { type: 'boolean', default: false }
+      'full-page': { type: 'boolean', default: false },
     },
-    allowPositionals: true
+    allowPositionals: true,
   });
 
   const url = positionals[0];

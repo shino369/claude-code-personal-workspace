@@ -17,6 +17,7 @@ This skill provides battle-tested strategies for fetching web content in Claude 
 3. **JavaScript-rendered content**: Twitter/X, React SPAs require special handling
 
 **Four-tier approach**:
+
 - **Tier 1**: WebFetch for small content (< 50KB)
 - **Tier 2**: curl + Task agent for any size static content ⭐ **DEFAULT**
 - **Tier 3**: Scripts for edge cases (EUC-JP encoding, complex HTML)
@@ -24,12 +25,12 @@ This skill provides battle-tested strategies for fetching web content in Claude 
 
 ## Quick Tool Limitations
 
-| Tool | Max Size | Best For | Limitation |
-|------|----------|----------|------------|
-| **WebFetch** | ~50KB | Small articles, first attempt | Prompt length constraints |
-| **Read** | 256KB | Reading fetched files | Large files need pagination |
-| **curl** | Unlimited | Any size content, raw downloads | No parsing |
-| **Task agent** | Unlimited | Extraction from any size HTML | Handles pagination automatically |
+| Tool           | Max Size  | Best For                        | Limitation                       |
+| -------------- | --------- | ------------------------------- | -------------------------------- |
+| **WebFetch**   | ~50KB     | Small articles, first attempt   | Prompt length constraints        |
+| **Read**       | 256KB     | Reading fetched files           | Large files need pagination      |
+| **curl**       | Unlimited | Any size content, raw downloads | No parsing                       |
+| **Task agent** | Unlimited | Extraction from any size HTML   | Handles pagination automatically |
 
 ## Tiered Fetching Strategy
 
@@ -38,6 +39,7 @@ This skill provides battle-tested strategies for fetching web content in Claude 
 **Use when**: Simple articles, API responses, first attempt on unknown content
 
 **Quick example**:
+
 ```
 WebFetch tool with url and extraction prompt
 ```
@@ -49,6 +51,7 @@ WebFetch tool with url and extraction prompt
 **Use when**: News articles, blog posts, WebFetch fails, any content of any size
 
 **Quick workflow**:
+
 ```bash
 # 1. Create directory
 mkdir -p output/tasks/YYYYMMDD_taskname/original
@@ -69,10 +72,12 @@ curl -s "URL" > output/tasks/YYYYMMDD_taskname/original/raw_html.html
 **Use when**: Task agent struggles with complex HTML or special encoding requirements (EUC-JP)
 
 **Available scripts**:
+
 - `scripts/extract_article.js` - Standard HTML with Mozilla Readability
 - `scripts/extract_eucjp.js` - Japanese EUC-JP encoded sites (4gamer.net)
 
 **Quick example**:
+
 ```bash
 node .claude/skills/web-content-fetcher/scripts/extract_article.js raw_html.html > fetched_content.md
 ```
@@ -86,20 +91,24 @@ node .claude/skills/web-content-fetcher/scripts/extract_article.js raw_html.html
 **Use when**: Twitter/X, React SPAs, dynamic sites, static fetch returns empty/error
 
 **Quick example**:
+
 ```bash
 node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
   "https://x.com/user/status/123456789" \
   --output fetched_content.md
 ```
 
-**Common sites**: Twitter/X, React/Vue/Angular SPAs, AJAX-loaded content
+**Common sites**: Twitter/X, Threads, Instagram, React/Vue/Angular SPAs, AJAX-loaded content
 
-**Twitter/X Features**:
-- Extracts tweet text, author, timestamp, quoted tweets
-- **Captures image URLs** with alt text for media-rich content
-- Output includes structured media information for downloading and translation workflows
+**Image Extraction**:
+
+- **Automatically extracts images if exist** (Twitter/X, Threads, blogs, etc.)
+- Captures image URLs with alt text from main content area
+- Filters out small images (icons/logos) automatically
+- Output includes structured Media section with URLs for downloading
 
 **Setup required** (one-time):
+
 ```bash
 cd .claude/skills/web-content-fetcher
 pnpm add -D playwright --save-catalog-name=dev
@@ -159,20 +168,26 @@ Read: output/tasks/20260111_taskname/original/fetched_content.md
 
 ## Common Use Cases
 
-**Translation**:
-1. Fetch content (Tier 2)
-2. Extract to `original/fetched_content.md`
-3. Pass to `/translate` command
+**Translation with images**:
+
+1. Fetch content (Tier 2 or Tier 4 for JS sites)
+2. Extract to `original/fetched_content.md` with readable format (includes Media section with image URLs)
+3. Download images using URLs from Media section
+4. Pass to `/translate` command
 
 **Analysis**:
-1. Fetch content (Tier 2)
-2. Extract to `original/fetched_content.md`
+
+1. Fetch content (Tier 2 or Tier 4)
+2. Extract to `original/fetched_content.md` with readable format
 3. Read and analyze
 
-**Twitter/X posts**:
+**Social media posts** (Twitter/X, Threads, Instagram):
+
 1. Use Playwright (Tier 4) directly
-2. Outputs to `fetched_content.md`
-3. Use for translation/analysis
+2. Automatically extracts text, images, and metadata
+3. Outputs to `fetched_content.md` with Media section in a readable format
+4. Download images from extracted URLs
+5. Use for translation/analysis
 
 **For all patterns**: See [references/workflows.md](references/workflows.md)
 
@@ -180,14 +195,14 @@ Read: output/tasks/20260111_taskname/original/fetched_content.md
 
 **Common issues and quick fixes**:
 
-| Issue | Quick Fix | Details |
-|-------|-----------|---------|
-| WebFetch "Prompt too long" | Switch to Tier 2 | [troubleshooting.md](references/troubleshooting.md) |
-| Read tool file too large | Use Task agent | [troubleshooting.md](references/troubleshooting.md) |
-| Garbled Japanese text | EUC-JP encoding issue | [troubleshooting.md](references/troubleshooting.md) |
-| JavaScript required | Use Playwright (Tier 4) | [troubleshooting.md](references/troubleshooting.md) |
-| Anti-bot protection | Add user agent | [troubleshooting.md](references/troubleshooting.md) |
-| Authentication required | Use curl with headers/cookies | [troubleshooting.md](references/troubleshooting.md) |
+| Issue                      | Quick Fix                     | Details                                             |
+| -------------------------- | ----------------------------- | --------------------------------------------------- |
+| WebFetch "Prompt too long" | Switch to Tier 2              | [troubleshooting.md](references/troubleshooting.md) |
+| Read tool file too large   | Use Task agent                | [troubleshooting.md](references/troubleshooting.md) |
+| Garbled Japanese text      | EUC-JP encoding issue         | [troubleshooting.md](references/troubleshooting.md) |
+| JavaScript required        | Use Playwright (Tier 4)       | [troubleshooting.md](references/troubleshooting.md) |
+| Anti-bot protection        | Add user agent                | [troubleshooting.md](references/troubleshooting.md) |
+| Authentication required    | Use curl with headers/cookies | [troubleshooting.md](references/troubleshooting.md) |
 
 **For complete troubleshooting guide**: See [references/troubleshooting.md](references/troubleshooting.md)
 
@@ -215,6 +230,7 @@ Read reference files when you need detailed guidance for specific scenarios.
 ## Quick Start Examples
 
 **Simple article**:
+
 ```bash
 mkdir -p output/tasks/20260111_article/original
 curl -s "https://example.com/article" > output/tasks/20260111_article/original/raw_html.html
@@ -222,6 +238,7 @@ curl -s "https://example.com/article" > output/tasks/20260111_article/original/r
 ```
 
 **Twitter/X post**:
+
 ```bash
 mkdir -p output/tasks/20260111_twitter/original
 node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
@@ -229,23 +246,39 @@ node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
   --output output/tasks/20260111_twitter/original/fetched_content.md
 ```
 
-**Output format for Twitter/X with images**:
-```markdown
-# Twitter/X Post
-**Author:** Username
-**Timestamp:** 2026-01-11T12:00:00.000Z
+**Threads post**:
 
-## Tweet Content
-Tweet text here...
-
-### Media
-1. Image description
-   - URL: https://pbs.twimg.com/media/xxx.jpg
-2. Another image
-   - URL: https://pbs.twimg.com/media/yyy.jpg
+```bash
+mkdir -p output/tasks/20260111_threads/original
+node .claude/skills/web-content-fetcher/scripts/fetch_js_content.js \
+  "https://www.threads.com/@user/post/ABC123" \
+  --output output/tasks/20260111_threads/original/fetched_content.md
 ```
 
+**Output format with images** (works for all sites):
+
+```markdown
+# Title
+
+Main content text here...
+
+### Media
+
+1. Image description or alt text
+   - URL: https://example.com/image1.jpg
+2. Another image
+   - URL: https://example.com/image2.jpg
+```
+
+**Note**:
+
+- Images are automatically extracted from the main content area
+- Small images (< 100x100px) like icons/logos are filtered out
+- Image formats: `.jpg`, `.png`, `.webp`, `.gif`, `.svg` - all preserved in URLs
+- When downloading, respect the original file extension
+
 **Japanese site (potential encoding issue)**:
+
 ```bash
 mkdir -p output/tasks/20260111_japanese/original
 curl -s "https://4gamer.net/..." > output/tasks/20260111_japanese/original/raw_html.html
