@@ -1,13 +1,13 @@
 {
-  "name": "claude-code-workspace",
+  "name": "claude-code-workspace-example",
   "version": "1.0.0",
-  "description": "",
+  "description": "An example to demostrate Claude Code feature",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
+  "author": "shino369",
   "license": "ISC",
   "packageManager": "pnpm@10.28.0",
   "dependencies": {
