@@ -15,8 +15,9 @@ This workspace is configured with different files to support personal tasks, wit
 - `./.claude/settings.json` for workspace config
 - `./.claude/agents/*` for task-specialized subagents
 - `./.claude/skills/*` for progressively disclosured knowledge
+- `./.claude/hooks/*` for claude code hooks
 
-For Claude Code generated file output, it should be located in the `output/tasks/${YYYYMMDD_task_name}/*`. It should follow the general structure below:
+For Claude Code generated file output, it should be located in the `output/tasks/<YYYYMMDD_task_name>/*`. It should follow the general structure below:
 
 ```
 output/
@@ -29,7 +30,7 @@ output/
     |   |   ├── STUDIES_some_task.md
     |   |   └── ...
     |   └── scripts/
-    |       ├── someScript.js
+    |       ├── some_script.js
     |       ├── some_script.py
     |       └── ...
     ├── 26260102_some_another_task

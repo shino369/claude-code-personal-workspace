@@ -91,5 +91,29 @@
   },
   "companyAnnouncements": [
     "Welcome! This workspace organizes outputs in output/tasks/YYYYMMDD_task_name/"
-  ]
+  ],
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/audit_logger.js",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/auto_format.js",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -19,10 +19,11 @@ The repository is set up to support:
 - `./.claude/settings.json` - Workspace configuration
 - `./.claude/agents/*` - Task-specialized subagents
 - `./.claude/skills/*` - Progressively disclosed knowledge
+- `./.claude/hooks/*` - for claude code hooks
 
 ### Output Organization
 
-All Claude Code generated files should be placed in `output/tasks/${YYYYMMDD_task_name}/`:
+All Claude Code generated files should be placed in `output/tasks/<YYYYMMDD_task_name>/`:
 
 ```
 output/
@@ -33,7 +34,7 @@ output/
     │   ├── studies/
     │   │   └── STUDIES_some_task.md
     │   └── scripts/
-    │       ├── someScript.js
+    │       ├── some_script.js
     │       └── some_script.py
     └── 20260102_another_task/
 ```
