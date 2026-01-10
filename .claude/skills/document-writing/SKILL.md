@@ -5,6 +5,9 @@ description: Expert knowledge in document and essay writing conventions for Engl
 
 # Document and Essay Writing
 
+> **Scope**: This skill focuses on monolingual writing conventions for English, Japanese, and Traditional Chinese.
+> For translation workflows, see the `translation-expertise` skill.
+
 ## Overview
 
 This skill provides comprehensive guidance on writing conventions, styles, and best practices for formal documents and essays in English, Japanese, and Traditional Chinese. Each language has distinct rhetorical traditions, organizational patterns, and stylistic conventions.
@@ -280,82 +283,59 @@ This skill provides comprehensive guidance on writing conventions, styles, and b
 - Section numbering (一、二、三 or 1、2、3)
 - Paragraph indentation (首行縮排)
 
-## Writing Process
+## Concrete Writing Examples
 
-### 1. Planning
+This section demonstrates how rhetorical structures manifest in actual writing.
 
-**Understand the Purpose**:
+### English: Deductive Approach Example
 
-- Who is the audience?
-- What is the goal?
-- What tone is appropriate?
-- What format/structure is required?
+**Topic**: The benefits of remote work
 
-**Research and Organize**:
+> Remote work has become increasingly valuable for modern organizations. First, it reduces overhead costs associated with maintaining physical office spaces, including rent, utilities, and equipment. Second, remote work expands the talent pool by removing geographic constraints, allowing companies to hire the best candidates regardless of location. Third, studies show that remote workers often report higher job satisfaction and productivity due to increased flexibility and reduced commute stress. These factors combine to make remote work an attractive option for both employers and employees.
 
-- Gather relevant information
-- Create outline
-- Identify key points
-- Plan logical flow
+**Analysis**:
 
-### 2. Drafting
+- Clear topic sentence stating the main point
+- Three supporting points with explicit markers (First, Second, Third)
+- Each point includes evidence or explanation
+- Concluding sentence ties ideas together
+- Direct, explicit communication style
 
-**For Each Language**:
+### Japanese: 起承転結 Structure Example
 
-**English**: Start with clear thesis, use topic sentences, provide evidence
-**Japanese**: Build gradually using 起承転結, maintain appropriate politeness
-**Chinese**: Use balanced structures, integrate 成語 appropriately
+**Topic**: リモートワークの価値 (The value of remote work)
 
-### 3. Revising
+> 近年、働き方改革の一環として、リモートワークが注目を集めている。(起)
+>
+> 従来のオフィス勤務では、通勤時間や固定的な勤務時間により、社員の生活が制約されていた。また、企業側も大規模なオフィススペースの維持に多額のコストを負担していた。(承)
+>
+> しかし、リモートワークの導入により、このような状況が一変した。社員は自宅や好きな場所で働くことができ、通勤のストレスから解放された。企業は優秀な人材を地域に関係なく採用できるようになり、組織の競争力が向上した。(転)
+>
+> このように、リモートワークは単なる働き方の選択肢ではなく、社会全体の価値観を変える可能性を秘めている。(結)
 
-**Content Review**:
+**Analysis**:
 
-- Logical flow and organization
-- Adequate support for claims
-- Clear and coherent arguments
-- Appropriate depth and scope
+- 起 (ki): Introduces remote work as part of work reform trend
+- 承 (shou): Develops context by describing traditional office problems
+- 転 (ten): Presents turning point with remote work's transformative impact
+- 結 (ketsu): Concludes with broader implication about societal values
+- Indirect, gradual build to conclusion
+- Uses passive voice (注目を集めている、解放された)
+- Formal academic tone with である体
 
-**Style Review**:
+### Chinese: Balanced Structure with 成語 Example
 
-- Tone consistency
-- Appropriate formality level
-- Effective word choice
-- Varied sentence structure
+**Topic**: 遠程辦公的優勢 (Advantages of remote work)
 
-### 4. Editing
+> 隨著科技日新月異,遠程辦公已成為現代企業不可忽視的趨勢。此種工作模式不僅能為企業節省成本,更能為員工帶來前所未有的便利。一方面,企業無需負擔龐大的辦公場地費用,可謂事半功倍;另一方面,員工得以免除通勤之苦,在家中即可完成工作,可謂兩全其美。由此可見,遠程辦公之於企業與員工,實為互惠互利、相得益彰之舉。綜上所述,遠程辦公不僅是工作方式的革新,更是提升生活品質的重要途徑。
 
-**Language-Specific Checks**:
+**Analysis**:
 
-**English**:
-
-- Grammar and syntax
-- Subject-verb agreement
-- Tense consistency
-- Article usage
-
-**Japanese**:
-
-- Appropriate politeness level
-- Correct particle usage
-- Consistent verb forms
-- Proper kanji usage
-
-**Chinese**:
-
-- Measure word accuracy
-- Character correctness
-- Punctuation conventions
-- 成語 usage appropriateness
-
-### 5. Proofreading
-
-**Final Checks**:
-
-- Spelling and typos
-- Punctuation
-- Formatting consistency
-- Citations and references
-- Page numbers and headers
+- Uses 成語 naturally: 日新月異 (rapid change), 事半功倍 (achieve more with less), 兩全其美 (best of both worlds), 相得益彰 (mutually beneficial)
+- Parallel structure: 一方面...另一方面 (on one hand...on the other hand)
+- Classical phrases: 由此可見 (from this we can see), 綜上所述 (in summary)
+- Balanced, elegant expression
+- Formal literary style with refined vocabulary
 
 ## Common Writing Patterns
 

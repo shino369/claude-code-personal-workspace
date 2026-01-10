@@ -19,74 +19,29 @@ This skill provides comprehensive translation expertise for English, Japanese, a
 4. **Contextual Accuracy**: Consider the broader context, not just individual words
 5. **Tone Preservation**: Maintain the original tone (formal, casual, technical, emotional)
 
-## Language-Specific Characteristics
+## Language-Specific References
 
-### English
+For comprehensive information about each language, see the dedicated language reference files:
 
-**Characteristics**:
+### [English](./english.md)
 
-- Subject-Verb-Object (SVO) word order
-- Explicit subject pronouns
-- Use of articles (a, an, the)
-- Direct communication style
-- Active voice preference
+**Key Features**: SVO word order, explicit subjects and articles, direct communication style, active voice preference.
 
-**Translation Considerations**:
+**Contains**: Structural features, formality indicators (informal/formal/academic), punctuation conventions, common idioms, phrasal verbs, modal verbs, translation strategies, regional variations (US/UK).
 
-- Can be more verbose than Japanese or Chinese
-- Idioms often don't translate directly
-- Requires clarity in pronoun references
-- Modal verbs convey nuance (may, might, could, should)
+### [Japanese (日本語)](./japanese.md)
 
-### Japanese (日本語)
+**Key Features**: SOV word order, context-dependent subject omission, three writing systems (hiragana, katakana, kanji), elaborate honorific systems (keigo).
 
-**Characteristics**:
+**Contains**: All five politeness levels (plain, polite, respectful, humble, beautification) with detailed explanations, gendered speech patterns, particle usage, writing system guidelines, translation strategies, cultural concepts.
 
-- Subject-Object-Verb (SOV) word order
-- Often omits subject pronouns (context-dependent)
-- Three writing systems: Hiragana, Katakana, Kanji
-- Indirect, high-context communication
-- Honorific language systems (敬語 - keigo)
+### [Chinese Traditional (繁體中文)](./chinese-traditional.md)
 
-**Levels of Politeness**:
+**Key Features**: SVO word order like English, no verb conjugation, measure words (classifiers) for counting, rich idiomatic expressions (成語).
 
-1. **Plain form** (普通形): Casual, used with close friends
-2. **Polite form** (丁寧語): Standard polite speech (-ます, -です)
-3. **Respectful form** (尊敬語): Elevating others' actions
-4. **Humble form** (謙譲語): Lowering one's own actions
-5. **Beautification** (美化語): Refined expressions (お/ご prefix)
+**Contains**: Comprehensive measure word list, regional variations (Taiwan/Hong Kong/Macau), four-character idioms (成語), formality indicators, punctuation conventions, translation strategies, terminology differences.
 
-**Translation Considerations**:
-
-- Determine appropriate politeness level
-- Consider whether to use kanji or katakana for loanwords
-- Watch for contextual subject/object omissions
-- Handle particles correctly (は、が、を、に、で、etc.)
-- Be aware of gendered speech patterns
-
-### Chinese Traditional (繁體中文)
-
-**Characteristics**:
-
-- Subject-Verb-Object (SVO) word order like English
-- No verb conjugation
-- Context-dependent subject omission
-- Measure words (classifiers) for counting
-- Rich idiomatic expressions (成語 - chengyu)
-
-**Regional Variations**:
-
-- **Taiwan Mandarin** (台灣華語): More formal, influenced by literary Chinese
-- **Hong Kong Cantonese** (香港粵語): Different spoken language, uses Traditional Chinese
-- **Macau**: Similar to Hong Kong with Portuguese influence
-
-**Translation Considerations**:
-
-- Choose appropriate measure words (個、位、本、張、etc.)
-- Decide on formal vs. colloquial vocabulary
-- Handle four-character idioms (成語) appropriately
-- Consider Taiwan vs. Hong Kong terminology differences
-- Watch for false friends with Simplified Chinese
+> **Quick Reference**: For translation work between any language pair, open both relevant language files side-by-side for comprehensive reference.
 
 ## Translation Workflow
 
@@ -113,7 +68,7 @@ This skill provides comprehensive translation expertise for English, Japanese, a
 - Verify sentence structure is natural in target language
 - Check verb tenses and aspects
 - Ensure particles (JA) or measure words (ZH) are correct
-- Validate punctuation follows target language conventions
+- Validate punctuation follows target language conventions (see language-specific files)
 
 **Terminology Consistency**:
 
@@ -124,7 +79,7 @@ This skill provides comprehensive translation expertise for English, Japanese, a
 
 **Cultural Adaptation**:
 
-- Verify idioms are culturally appropriate
+- Verify idioms are culturally appropriate (see [translation-challenges.md](./translation-challenges.md))
 - Check for culturally sensitive content
 - Ensure examples and analogies work in target culture
 - Adapt humor if necessary
@@ -156,96 +111,53 @@ This skill provides comprehensive translation expertise for English, Japanese, a
 
 ## Common Translation Challenges
 
+> **Detailed Examples**: See [translation-challenges.md](./translation-challenges.md) for extensive examples with reasoning.
+
 ### Challenge 1: Idioms and Expressions
 
-**Strategy**: Find equivalent expressions, not word-for-word translations
+**Strategy**: Find equivalent expressions, not word-for-word translations.
 
-**Examples**:
-
-| English                    | Japanese                  | Chinese Traditional      |
-| -------------------------- | ------------------------- | ------------------------ |
-| Break a leg                | 頑張って (ganbatte)       | 加油 (jiayou)            |
-| It's raining cats and dogs | 土砂降りだ (doshaburi da) | 傾盆大雨 (qingpen dayu)  |
-| Piece of cake              | 朝飯前 (asameshi mae)     | 小菜一碟 (xiaocai yidie) |
-| Cost an arm and a leg      | 目玉が飛び出るほど高い    | 價格不菲 (jiage bufei)   |
+**Examples**: "Break a leg" → 頑張って (JA) / 加油 (ZH); "Piece of cake" → 朝飯前 (JA) / 小菜一碟 (ZH)
 
 ### Challenge 2: Cultural References
 
-**Strategy**: Adapt or explain references unfamiliar to target culture
+**Strategy**: Adapt or explain references unfamiliar to target culture.
 
-**Approaches**:
-
-- **Direct translation + explanation**: Preserve reference with clarifying context
-- **Cultural adaptation**: Replace with equivalent reference from target culture
-- **Generalization**: Use more generic term if reference isn't critical
-- **Footnote**: Add explanatory note for important cultural context
+**Approaches**: Direct + explanation, cultural adaptation to equivalent concept, or generalization depending on context importance.
 
 ### Challenge 3: Wordplay and Puns
 
-**Strategy**: Recreate the effect, not the exact wordplay
+**Strategy**: Recreate the effect, not the exact wordplay.
 
-**Approaches**:
-
-- Find equivalent wordplay in target language
-- Explain the humor if recreation isn't possible
-- Focus on conveying the playful tone
-- Consider adding translator's note for critical wordplay
+**Approach**: Either explain the original wordplay with translator's note, or create new language-specific wordplay that achieves similar humor effect.
 
 ### Challenge 4: Formality Levels
 
-**English Formality Indicators**:
+**Strategy**: Match formality indicators across languages.
 
-- Vocabulary choice (buy vs. purchase, help vs. assist)
-- Sentence structure (simple vs. complex)
-- Contractions (don't vs. do not)
-- Personal pronouns usage
-
-**Japanese Formality Levels**:
-
-- Verb endings (食べる vs. 食べます vs. 召し上がる)
-- Pronoun choice (俺、僕、私、わたくし)
-- Honorific prefixes (お/ご)
-- Sentence endings (だ、です、でございます)
-
-**Chinese Formality Indicators**:
-
-- Vocabulary choice (吃 vs. 用餐, 謝謝 vs. 感謝)
-- Pronoun formality (你 vs. 您)
-- Classical vs. vernacular expressions
-- Sentence structure complexity
+**Key**: English uses vocabulary and contractions; Japanese uses verb endings and honorifics; Chinese uses vocabulary and pronouns (你/您).
 
 ### Challenge 5: Ambiguity Resolution
 
-**When source is ambiguous**:
+**Strategy**: Use context clues, research, and informed judgment when source is ambiguous.
 
-1. Analyze context for clues
-2. Research if domain-specific meaning exists
-3. Consult source language resources
-4. If unresolvable, choose most likely interpretation
-5. Note the ambiguity for reviewer
+**Process**: Analyze context, research domain-specific meanings, apply logic, choose most likely interpretation, and document reasoning.
 
-## Punctuation Conventions
+> **For Detailed Examples**: See [translation-challenges.md](./translation-challenges.md) for comprehensive examples with solutions.
 
-### English
+## Punctuation Quick Reference
 
-- Period (.), comma (,), semicolon (;), colon (:)
-- Quotation marks: "double" for quotes, 'single' for quotes within quotes
-- Em dash (—) for interruption or emphasis
-- Ellipsis (...) for trailing off
+**Key Differences** (See language-specific files for complete details):
 
-### Japanese
+- Period: . (EN) → 。(JA/ZH)
+- Comma: , (EN) → 、(JA) / 、or , (ZH)
+- Quotation marks: "..." (EN) →「...」(JA/ZH) or "..." (ZH alternative)
+- Book titles: "..." (EN) → 『...』(JA) /《...》(ZH)
+- Ellipsis: ... (EN) → …… (JA/ZH - six dots)
 
-- Period (。), comma (、)
-- Quotation marks: 「single」for quotes, 『double』for emphasis/titles
-- Middle dot (・) for separating items or foreign names
-- Wave dash (〜) for ranges
+**Important**: Use full-width punctuation for Japanese and Chinese text. Maintain consistency throughout the document.
 
-### Traditional Chinese
-
-- Period (。), comma (、or ,)
-- Quotation marks: 「single」or "double" (Taiwan), 「single」(Hong Kong)
-- Enumeration comma (、) vs. regular comma (,)
-- Book title marks《》for titles
+> **Detailed Conventions**: See [english.md](./english.md), [japanese.md](./japanese.md), or [chinese-traditional.md](./chinese-traditional.md) for complete punctuation rules.
 
 ## Quality Assurance Checklist
 
@@ -301,27 +213,72 @@ Before finalizing any translation:
 
 ## Tools and Resources
 
-**Dictionaries**:
+> **Comprehensive List**: See [tools-resources.md](./tools-resources.md) for detailed resources.
+
+**Essential Dictionaries**:
 
 - Jisho.org (Japanese-English)
 - MDBG (Chinese-English)
+- MOE Dictionary (Chinese official)
 - Weblio (Japanese)
-- MOE Dictionary (Chinese)
 
-**Corpus and Examples**:
+**Example Sentences**:
 
-- Tatoeba (example sentences)
+- Tatoeba (multilingual examples)
 - Reverso Context (translation in context)
-- Linguee (bilingual text comparison)
 
 **Grammar References**:
 
 - Tae Kim's Grammar Guide (Japanese)
-- IMABI (Japanese grammar)
 - Chinese Grammar Wiki (Chinese)
+- Purdue OWL (English)
 
-**Verification**:
+**Verification Tools**:
 
+- HiNative (ask native speakers)
 - Google N-gram Viewer (frequency analysis)
-- Native speaker forums (Lang-8, HiNative)
-- Professional translation communities
+- Reddit language communities
+
+> **For Complete Resource List**: See [tools-resources.md](./tools-resources.md) for comprehensive dictionaries, corpora, grammar references, verification tools, and professional resources.
+
+## Companion Files
+
+This skill includes the following companion documents for detailed reference:
+
+### Language-Specific References
+
+1. **[english.md](./english.md)**: Complete English language reference including structural features, formality indicators, punctuation conventions, common idioms, phrasal verbs, modal verbs, and translation strategies.
+
+2. **[japanese.md](./japanese.md)**: Complete Japanese language reference including all five politeness levels, gendered speech patterns, particle usage, writing system guidelines, and cultural concepts.
+
+3. **[chinese-traditional.md](./chinese-traditional.md)**: Complete Traditional Chinese language reference including measure words, regional variations (Taiwan/Hong Kong/Macau), four-character idioms (成語), and formality indicators.
+
+### Cross-Language References
+
+4. **[translation-challenges.md](./translation-challenges.md)**: Extensive examples of common translation challenges with detailed solutions, reasoning, and multiple approaches for idioms, cultural references, wordplay, formality, and ambiguity.
+
+5. **[tools-resources.md](./tools-resources.md)**: Curated list of dictionaries, corpora, grammar references, verification tools, and professional resources organized by category and language.
+
+## Quick Reference
+
+**When translating, remember**:
+
+1. Read entire source text first for context
+2. Create terminology glossary for consistency
+3. Choose appropriate formality level early
+4. Handle idioms culturally, not literally
+5. Verify punctuation conventions for target language
+6. Proofread for naturalness and accuracy
+7. Get native speaker feedback when possible
+8. Document difficult translation decisions
+
+**Default choices when uncertain**:
+
+- **Japanese**: Use です/ます polite form unless clear context suggests otherwise
+- **Chinese**: Use 您 for formal contexts, 你 for casual; prefer Taiwan terminology unless specified
+- **Punctuation**: Use「」for quotes in JA/ZH Taiwan style; use《》for book titles in Chinese
+- **Idioms**: When direct equivalent unclear, prioritize conveying meaning over preserving metaphor
+
+---
+
+**Note**: This is a core skill for trilingual translation work. For writing conventions specific to each language (document structure, essay formats, rhetorical patterns), see the `document-writing` skill. For technical terminology, see the `engineering-terminology` skill.

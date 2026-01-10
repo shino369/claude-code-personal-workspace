@@ -74,9 +74,9 @@ WebFetch:
 **Pros**: Fastest, one-step, AI-parsed
 **Cons**: Fails on large content
 
-### Tier 2: Medium Content (50KB-500KB) - Curl + Task Agent ⭐ RECOMMENDED DEFAULT
+### Tier 2: Any Size Content - Curl + Task Agent ⭐ RECOMMENDED DEFAULT
 
-**Use When**: News articles, blog posts, typical web pages, WebFetch fails
+**Use When**: News articles, blog posts, typical web pages, WebFetch fails, any content of any size
 
 **Workflow**:
 
@@ -92,27 +92,35 @@ WebFetch:
 3. Task agent: "Read HTML from [path], extract article content, save to fetched_content.md"
 ```
 
-**Pros**: Handles large files, AI-powered extraction, reliable
-**Cons**: Two-step process
+**Pros**: Handles files of any size, AI-powered extraction, reliable, no script creation needed
+**Cons**: Two-step process (but this is the standard workflow)
 
-### Tier 3: Large/Complex Content (> 500KB) - Script-Based
+### Tier 3: Script-Based Extraction - For Edge Cases Only
 
-**Use When**: Very large pages, complex DOM structures, multiple pages
+**Use When**: Task agent struggles with complex HTML, need precise control, or have special encoding requirements that Task agent cannot handle
 
 **Workflow**:
 
-1. Fetch with curl
-2. Use Python/Node.js script with specialized libraries
-3. Extract and save clean content
+1. Create task directory: `output/tasks/YYYYMMDD_taskname/original/`
+2. Fetch with curl: Save to `original/raw_html.html`
+3. Run extraction script: `node scripts/extract_article.js raw_html.html > fetched_content.md`
 
-**Pros**: Handles any size, full control
-**Cons**: Requires script creation
+**Example**:
 
-See [scripts/extract_article.py](scripts/extract_article.py) for reference implementation.
+```
+1. mkdir -p output/tasks/20260110_taskname/original
+2. curl -s URL > output/tasks/20260110_taskname/original/raw_html.html
+3. node .claude/skills/web-content-fetcher/scripts/extract_article.js raw_html.html > fetched_content.md
+```
+
+**Pros**: Precise control, handles specific edge cases
+**Cons**: Requires script setup, manual command execution, less flexible than Task agent
+
+**Note**: This tier is rarely needed. Task agent (Tier 2) handles 99% of cases including large files and complex HTML. Only use scripts when Task agent explicitly fails or for special encoding requirements.
 
 ## Standard Workflow (Recommended)
 
-This workflow works for 90% of cases:
+This workflow using Tier 2 (curl + Task agent) works for nearly all cases:
 
 ### Step 1: Create Task Directory
 
@@ -205,62 +213,6 @@ When extracting content, focus on:
    - Decode HTML entities
    - Use proper line breaks between paragraphs
 
-## Script-Based Parsing (Advanced)
-
-For Tier 3 scenarios, use specialized parsing libraries.
-
-### Node.js with Mozilla Readability
-
-**Best For**: JavaScript-heavy pages, modern web apps
-
-See [scripts/extract_article.js](scripts/extract_article.js) for implementation.
-
-**Usage**:
-
-```bash
-node .claude/skills/web-content-fetcher/scripts/extract_article.js raw_html.html > fetched_content.md
-```
-
-**Requirements**:
-
-```bash
-npm install @mozilla/readability jsdom
-```
-
-### Node.js with EUC-JP Support (Japanese Sites)
-
-**Best For**: Japanese websites using EUC-JP encoding (4gamer, etc.)
-
-**Special handling required**: Many Japanese websites (like 4gamer.net) use EUC-JP encoding instead of UTF-8. Standard extraction scripts will produce garbled text without proper decoding.
-
-See [scripts/extract_eucjp.js](scripts/extract_eucjp.js) for implementation.
-
-**Usage**:
-
-```bash
-node .claude/skills/web-content-fetcher/scripts/extract_eucjp.js raw_html.html > fetched_content.md
-```
-
-**Requirements**:
-
-```bash
-pnpm install @mozilla/readability jsdom iconv-lite
-```
-
-**When to use**:
-
-- Japanese gaming sites (4gamer, Famitsu, etc.)
-- Older Japanese news sites
-- Any site where extracted content shows garbled Japanese characters
-- If you see `�` or mojibake (文字化け) in extracted content
-
-**How it works**:
-
-1. Reads HTML file as binary buffer
-2. Decodes from EUC-JP encoding using iconv-lite
-3. Extracts article content using Mozilla Readability
-4. Outputs clean markdown
-
 ## Decision Tree
 
 Use this flowchart to choose the right approach:
@@ -268,17 +220,111 @@ Use this flowchart to choose the right approach:
 ```
 Need to fetch web content?
 │
-├─ Size unknown or first attempt?
+├─ Size unknown or small expected content?
 │  └─ Try WebFetch (Tier 1)
 │     ├─ Success? → Done ✓
-│     └─ "Prompt too long" error? → Continue
+│     └─ "Prompt too long" error? → Use Tier 2
 │
-├─ Typical article/blog/documentation?
+├─ Any other case (medium/large content, WebFetch failed)?
 │  └─ Use curl + Task agent (Tier 2) ⭐ DEFAULT
+│     ├─ Success? → Done ✓
+│     └─ Task agent struggles with complex HTML/encoding? → Use Tier 3
 │
-└─ Very large (> 500KB) or complex structure?
-   └─ Use curl + Script (Tier 3)
+└─ Edge cases (Task agent fails, special encoding)?
+   └─ Use curl + script (Tier 3)
+      ├─ Standard HTML → scripts/extract_article.js
+      └─ EUC-JP encoding → scripts/extract_eucjp.js
 ```
+
+## Script-Based Parsing (Tier 3)
+
+Use these scripts only when Task agent (Tier 2) fails or for special requirements. Most cases don't need scripts.
+
+### Node.js with Mozilla Readability
+
+**Script**: `scripts/extract_article.js`
+
+**Purpose**: Extract article content using Mozilla's Readability algorithm (same as Firefox Reader View)
+
+**Requirements**:
+
+```bash
+cd .claude/skills/web-content-fetcher
+pnpm install @mozilla/readability jsdom
+```
+
+**Usage**:
+
+```bash
+node .claude/skills/web-content-fetcher/scripts/extract_article.js path/to/raw_html.html > output.md
+```
+
+**Best For**:
+
+- Standard UTF-8 encoded HTML
+- Complex page structures Task agent struggles with
+- Consistent extraction using battle-tested algorithm
+
+**Example Workflow**:
+
+```bash
+# 1. Setup (one-time)
+cd .claude/skills/web-content-fetcher
+pnpm install @mozilla/readability jsdom
+
+# 2. Fetch and extract
+mkdir -p output/tasks/20260110_article/original
+cd output/tasks/20260110_article/original
+curl -s "https://example.com/article" > raw_html.html
+node .claude/skills/web-content-fetcher/scripts/extract_article.js raw_html.html > fetched_content.md
+```
+
+### Node.js with EUC-JP Support
+
+**Script**: `scripts/extract_eucjp.js`
+
+**Purpose**: Extract content from EUC-JP encoded Japanese websites (4gamer.net, older Japanese sites)
+
+**Requirements**:
+
+```bash
+cd .claude/skills/web-content-fetcher
+pnpm install @mozilla/readability jsdom iconv-lite
+```
+
+**Usage**:
+
+```bash
+node .claude/skills/web-content-fetcher/scripts/extract_eucjp.js path/to/raw_html.html > output.md
+```
+
+**Best For**:
+
+- Japanese websites with EUC-JP encoding (4gamer.net, government sites)
+- When you see garbled Japanese characters (mojibake/文字化け)
+- Sites that haven't migrated to UTF-8
+
+**Example Workflow**:
+
+```bash
+# 1. Setup (one-time)
+cd .claude/skills/web-content-fetcher
+pnpm install @mozilla/readability jsdom iconv-lite
+
+# 2. Fetch and extract
+mkdir -p output/tasks/20260110_4gamer_article/original
+cd output/tasks/20260110_4gamer_article/original
+curl -s "https://www.4gamer.net/games/999/G999999/..." > raw_html.html
+node .claude/skills/web-content-fetcher/scripts/extract_eucjp.js raw_html.html > fetched_content.md
+```
+
+**How to Identify EUC-JP Pages**:
+
+1. Extracted content shows garbled Japanese characters
+2. HTML meta tag shows: `<meta charset="EUC-JP">` or `charset=euc-jp`
+3. Common on older Japanese sites (4gamer.net, academic sites, government sites)
+
+**Note**: Always try Task agent (Tier 2) first with encoding detection instructions. Only use this script if Task agent cannot properly handle the encoding.
 
 ## Common Patterns
 
@@ -334,8 +380,8 @@ Need to fetch web content?
 
 1. Improve Task agent prompt (be more specific about what to include/exclude)
 2. Check if page uses JavaScript rendering (may need headless browser)
-3. Use Python readability library for better content detection (Tier 3)
-4. Manually inspect raw_html.html to understand page structure
+3. Manually inspect raw_html.html to understand page structure
+4. Refine extraction by providing Task agent with specific HTML structure details
 
 ### Issue: Japanese text shows garbled characters (mojibake/文字化け)
 
@@ -344,13 +390,23 @@ Need to fetch web content?
 - Japanese characters appear as `�`, `�`, or random symbols
 - Text is unreadable despite being from a Japanese site
 
-**Solution**: Use EUC-JP extraction script:
+**Cause**: Many Japanese websites (like 4gamer.net) use EUC-JP encoding instead of UTF-8.
+
+**Solution 1 (Try first)**: Use Task agent with specific encoding instructions:
+
+```
+Task agent prompt: "Read the HTML file at [path]. This file uses EUC-JP encoding.
+Detect the encoding, properly decode the content, then extract the article content.
+Save the clean markdown to fetched_content.md"
+```
+
+**Solution 2 (If Task agent fails)**: Use the EUC-JP extraction script:
 
 ```bash
 node .claude/skills/web-content-fetcher/scripts/extract_eucjp.js raw_html.html > fetched_content.md
 ```
 
-**Common sites requiring EUC-JP**:
+**Common sites requiring special encoding handling**:
 
 - 4gamer.net
 - Many older Japanese gaming/news sites
@@ -361,6 +417,7 @@ node .claude/skills/web-content-fetcher/scripts/extract_eucjp.js raw_html.html >
 1. If extracted content is garbled, check the HTML file's encoding
 2. Look for `<meta charset="EUC-JP">` or `charset=euc-jp` in raw HTML
 3. Common for sites that haven't migrated to UTF-8
+4. Task agent can usually detect and handle different encodings when instructed, but the extract_eucjp.js script is available if needed
 
 ### Issue: Page has anti-bot protection
 
@@ -400,12 +457,13 @@ curl --max-time 60 URL > raw_html.html
 
 1. **Always use task directories**: Organize content in `output/tasks/YYYYMMDD_taskname/`
 2. **Keep raw HTML**: Save to `original/raw_html.html` for reference and re-processing
-3. **Default to Tier 2**: curl + Task agent works for 90% of cases
+3. **Default to Tier 2**: curl + Task agent works for nearly all cases and handles any content size
 4. **Clean content format**: Always save extracted content as markdown in `fetched_content.md`
 5. **Descriptive naming**: Use date prefix and descriptive task names
-6. **Error handling**: Start with WebFetch, fall back to curl on failure
-7. **Task agent for extraction**: Let AI handle pagination and parsing complexity
-8. **Scripts for edge cases**: Only use scripts for very large or complex content
+6. **Error handling**: Try WebFetch for small content, fall back to curl + Task agent if needed
+7. **Task agent for extraction**: Let AI handle pagination, encoding detection, and parsing complexity
+8. **Scripts for edge cases**: Tier 3 scripts (extract_article.js, extract_eucjp.js) available when Task agent fails or for special encoding requirements
+9. **Progressive approach**: Start with simplest tier (WebFetch), move to Task agent (default), only use scripts if absolutely needed
 
 ## Quick Reference Commands
 

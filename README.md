@@ -49,7 +49,7 @@ Professional translation system supporting English ↔ Japanese ↔ Traditional 
 **Quick Start:**
 
 ```bash
-/translate --lang ja "Hello, how are you?"
+/translate --lang en "ぬるぽ ガッ"
 ```
 
 See [Claude Code Trilingual Translation System](./docs/translation/README.md) for overview.

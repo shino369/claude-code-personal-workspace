@@ -140,7 +140,7 @@ Translates to formal Japanese, displays all 3 stages in conversation.
 #### Example 3: Interactive Mode
 
 ```bash
-/translate "これは素晴らしい製品です"
+/translate "生きろ。 そなたは… ほら… あれだ。"
 ```
 
 Claude will ask for target language, then proceed with translation.
