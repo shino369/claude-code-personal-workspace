@@ -13,11 +13,13 @@ You will now translate content using the **trilingual-translator** subagent with
 The command accepts the following arguments:
 
 - `--lang <en|ja|cn>`: Target language (English, Japanese, or Chinese Traditional)
+
   - `en`: English
   - `ja`: Japanese (日本語)
   - `cn`: Chinese Traditional (繁體中文)
 
 - `--tone <casual|formal>`: Writing style (optional, defaults to agent's judgment)
+
   - `casual`: Conversational, informal tone
   - `formal`: Professional, academic tone
 
@@ -32,6 +34,7 @@ Command line arguments: `$ARGUMENTS`
 ## Your Task
 
 1. **Parse the arguments** from `$ARGUMENTS`:
+
    - Extract the `--lang` value if provided
    - Extract the `--tone` value if provided (optional)
    - Extract the `--url` value if provided
@@ -43,16 +46,19 @@ Command line arguments: `$ARGUMENTS`
      - Direct URL (if argument looks like a URL even without --url flag)
 
 2. **If `--lang` is not specified**, ask the user to specify the target language:
+
    - Use the AskUserQuestion tool to present language options:
      - English (en)
      - Japanese - 日本語 (ja)
      - Chinese Traditional - 繁體中文 (cn)
 
 3. **Determine the source language**:
+
    - Analyze the provided text to identify whether it's in English, Japanese, or Chinese
    - If unclear, ask the user to confirm the source language
 
 4. **Set up working directory** (for file translations and URL fetching):
+
    - Create task directory: `output/tasks/YYYYMMDD_translate_[brief_description]/`
    - Create subdirectories:
      - `original/` - Original fetched/source content
@@ -67,33 +73,7 @@ Command line arguments: `$ARGUMENTS`
 
 5. **Fetch URL content** (if --url is provided):
 
-   **IMPORTANT**: Use the web-content-fetcher skill's tiered approach:
-
-   **Tier 1: Try WebFetch first** (< 50KB content):
-   - Use WebFetch tool with prompt: "Extract article content"
-   - If successful, save to `{task_dir}/original/fetched_content.md`
-   - If "Prompt too long" error, proceed to Tier 2
-
-   **Tier 2: curl + Extraction Script** (recommended for most cases):
-
-   ```bash
-   # Fetch raw HTML
-   curl -s "URL" > {task_dir}/original/raw_html.html
-
-   # Choose extraction method based on encoding:
-   # Standard UTF-8 sites:
-   node .claude/skills/web-content-fetcher/scripts/extract_article.js {task_dir}/original/raw_html.html > {task_dir}/original/fetched_content.md
-
-   # EUC-JP encoded sites (4gamer, etc.):
-   node .claude/skills/web-content-fetcher/scripts/extract_eucjp.js {task_dir}/original/raw_html.html > {task_dir}/original/fetched_content.md
-
-   # Python option:
-   python .claude/skills/web-content-fetcher/scripts/extract_article.py {task_dir}/original/raw_html.html > {task_dir}/original/fetched_content.md
-   ```
-
-   **Note**: Use the centralized scripts in `.claude/skills/web-content-fetcher/scripts/` - do NOT create new scripts in the task directory.
-
-   The fetched content will be passed to the translation subagents in the workflow.
+   **IMPORTANT**: Use the `web-content-fetcher` agent skill for tiered approach.
 
 6. **Execute Multi-Agent Three-Stage Workflow**:
 
@@ -325,6 +305,7 @@ Command line arguments: `$ARGUMENTS`
 ## Important Notes
 
 - This command uses a **true multi-agent workflow** with THREE sequential subagent invocations:
+
   1. **Translator A** (Initial Translator): Creates first draft
   2. **Translator B** (Proofreader): Reviews and provides feedback
   3. **Translator C** (Refiner): Produces final polished translation
@@ -332,6 +313,7 @@ Command line arguments: `$ARGUMENTS`
 - All three agents are the same trilingual-translator subagent, but invoked with different roles/instructions
 
 - Each subagent has access to specialized skills:
+
   - **engineering-terminology**: For technical/engineering content
   - **translation-expertise**: For professional translation methodology
   - **document-writing**: For language-specific writing conventions

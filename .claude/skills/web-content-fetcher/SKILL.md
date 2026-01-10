@@ -209,24 +209,6 @@ When extracting content, focus on:
 
 For Tier 3 scenarios, use specialized parsing libraries.
 
-### Python with BeautifulSoup + Readability
-
-**Best For**: Complex HTML structures, multi-page content
-
-See [scripts/extract_article.py](scripts/extract_article.py) for implementation.
-
-**Usage**:
-
-```bash
-python .claude/skills/web-content-fetcher/scripts/extract_article.py raw_html.html > fetched_content.md
-```
-
-**Requirements**:
-
-```bash
-pip install beautifulsoup4 lxml readability-lxml
-```
-
 ### Node.js with Mozilla Readability
 
 **Best For**: JavaScript-heavy pages, modern web apps
@@ -262,7 +244,7 @@ node .claude/skills/web-content-fetcher/scripts/extract_eucjp.js raw_html.html >
 **Requirements**:
 
 ```bash
-npm install @mozilla/readability jsdom iconv-lite
+pnpm install @mozilla/readability jsdom iconv-lite
 ```
 
 **When to use**:
