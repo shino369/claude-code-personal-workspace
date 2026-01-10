@@ -12,15 +12,17 @@
  *   npm install @mozilla/readability jsdom iconv-lite
  */
 
-const fs = require('fs');
-const iconv = require('iconv-lite');
-const { Readability } = require('@mozilla/readability');
-const { JSDOM } = require('jsdom');
+import fs from 'fs';
+import iconv from 'iconv-lite';
+import { Readability } from '@mozilla/readability';
+import { JSDOM } from 'jsdom';
+import { runIfMain } from '#utils/module-runner.js';
 
 /**
  * Convert HTML to markdown-like text format
  */
-function htmlToMarkdown(html) {
+/* istanbul ignore next - JSDOM-dependent, tested via integration */
+export function htmlToMarkdown(html) {
   const dom = new JSDOM(html);
   const doc = dom.window.document;
   const result = [];
@@ -60,7 +62,7 @@ function htmlToMarkdown(html) {
       case 'br':
         result.push('\n');
         break;
-      case 'a':
+      case 'a': {
         const href = node.getAttribute('href');
         const text = node.textContent.trim();
         if (href && text) {
@@ -69,6 +71,7 @@ function htmlToMarkdown(html) {
           result.push(text);
         }
         break;
+      }
       case 'strong':
       case 'b':
         result.push(`**${node.textContent.trim()}**`);
@@ -91,9 +94,26 @@ function htmlToMarkdown(html) {
 }
 
 /**
+ * Extract content using fallback selectors when Readability fails
+ */
+export function extractWithFallback(dom) {
+  const doc = dom.window.document;
+  const mainContent =
+    doc.querySelector('article') ||
+    doc.querySelector('.articleBody') ||
+    doc.querySelector('#main');
+
+  if (mainContent) {
+    return `# ${doc.title}\n\n${htmlToMarkdown(mainContent.innerHTML)}`;
+  } else {
+    throw new Error('Failed to extract article content');
+  }
+}
+
+/**
  * Extract article from EUC-JP encoded HTML file
  */
-function extractArticle(htmlFilePath) {
+export function extractArticle(htmlFilePath) {
   if (!fs.existsSync(htmlFilePath)) {
     throw new Error(`File not found: ${htmlFilePath}`);
   }
@@ -108,18 +128,7 @@ function extractArticle(htmlFilePath) {
   const article = reader.parse();
 
   if (!article) {
-    // Fallback: try to extract from main content area
-    const doc = dom.window.document;
-    const mainContent =
-      doc.querySelector('article') ||
-      doc.querySelector('.articleBody') ||
-      doc.querySelector('#main');
-
-    if (mainContent) {
-      return `# ${doc.title}\n\n${htmlToMarkdown(mainContent.innerHTML)}`;
-    } else {
-      throw new Error('Failed to extract article content');
-    }
+    return extractWithFallback(dom);
   }
 
   const markdown = htmlToMarkdown(article.content);
@@ -127,7 +136,7 @@ function extractArticle(htmlFilePath) {
 }
 
 // Main execution
-function main() {
+export function main() {
   if (process.argv.length !== 3) {
     console.error('Usage: node extract_eucjp.js <html_file>');
     process.exit(1);
@@ -138,10 +147,12 @@ function main() {
   try {
     const articleContent = extractArticle(htmlFile);
     console.log(articleContent);
+    // No need for process.exit(0) - Node exits naturally on success
   } catch (error) {
     console.error(`Error extracting article: ${error.message}`);
-    process.exit(1);
+    process.exit(1); // Exit with error code
   }
 }
 
-main();
+// Run main function only if executed directly (not imported)
+runIfMain(import.meta.url, main);

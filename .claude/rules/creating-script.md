@@ -1,146 +1,139 @@
 # Creating New Script
 
-When attempting to create new scripts, always try to use Node.js first, as this is a pnpm workspace.
+Always use Node.js first - this is a pnpm workspace.
 
 ## Language Preference
 
 **Default: Node.js**
 
-- This workspace is configured with pnpm and has npm packages available
+- Configured with pnpm, npm packages available
 - Leverage existing dependencies (@mozilla/readability, iconv-lite, jsdom)
-- Use modern JavaScript/TypeScript for better maintainability
+- Modern JavaScript/TypeScript
 
-**Exceptions:**
-
-- Python: For data science, machine learning, or when specific Python libraries are required
-- Bash: For simple shell automation or system-level tasks
-- Other languages: Only when specifically required by the task
+**Exceptions:** Python (data science/ML), Bash (shell automation), other languages only when specifically required
 
 ## Error Checking and Validation
 
-**All scripts must include proper error handling:**
+**All scripts must include:**
 
-```javascript
-// Good: Handle errors properly
-try {
-  const data = await fetchData();
-  processData(data);
-} catch (error) {
-  console.error('Error processing data:', error.message);
-  process.exit(1);
-}
-
-// Good: Validate inputs
-function processFile(filePath) {
-  if (!filePath) {
-    throw new Error('File path is required');
-  }
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`File not found: ${filePath}`);
-  }
-  // Process file...
-}
-```
-
-**Use ESLint for code quality:**
-
-- Run `pnpm lint` before committing scripts
-- Fix all linting errors and warnings
-- Follow workspace ESLint configuration
+- Proper error handling (try-catch for async, validate inputs)
+- ESLint compliance (`pnpm lint` before committing)
+- Input validation before processing
 
 ## Testing Requirements
 
-**All non-trivial scripts must have test files:**
+**All non-trivial scripts must have tests.**
 
-**Test file naming convention:**
+### Structure
 
-- Script: `extract_article.js`
-- Test: `extract_article.test.js` (same directory or `__tests__/` subdirectory)
-
-**Use Jest for testing:**
-
-```javascript
-// Example: extract_article.test.js
-const { extractArticle } = require('./extract_article');
-
-describe('extractArticle', () => {
-  test('should extract title and content', () => {
-    const html = '<html><body><h1>Title</h1><p>Content</p></body></html>';
-    const result = extractArticle(html);
-    expect(result.title).toBe('Title');
-    expect(result.content).toContain('Content');
-  });
-
-  test('should handle empty input', () => {
-    expect(() => extractArticle('')).toThrow();
-  });
-});
+```
+your-script-dir/
+├── script.js
+└── __tests__/
+    └── script.test.js
 ```
 
-**Test coverage guidelines:**
+### Coverage Requirements
 
-- Test main functionality and edge cases
-- Test error handling
-- Test input validation
-- Run tests with `pnpm test` before committing
+**100% coverage REQUIRED for:**
 
-**When tests are required:**
+- All scripts in `.claude/hooks/`, `.claude/skills/`, `utils/`
+- Business logic, data processing, API interaction scripts
 
-- Scripts with business logic
-- Data processing scripts
-- API interaction scripts
-- Utility functions used across multiple files
+**Tests optional for:**
 
-**When tests are optional:**
+- One-off automation, shell wrappers, throwaway scripts in `output/tasks/`
 
-- Simple one-off automation scripts
-- Scripts that are primarily shell command wrappers
-- Throwaway/experimental scripts in `output/tasks/`
+**Check coverage:**
+
+```bash
+pnpm test:coverage
+# Must show 100% for: Statements, Branches, Functions, Lines
+```
+
+### Detailed Guidance
+
+Use `javascript-testing` skill for:
+
+- Test writing principles and Vitest usage
+- Mocking strategies and 100% coverage techniques
+- Refactoring for testability
 
 ## Script Structure
 
-**Recommended structure for production scripts:**
+**Production scripts (ESM):**
 
 ```javascript
 #!/usr/bin/env node
+import fs from 'fs';
+import { runIfMain } from '#utils/module-runner.js';
 
-/**
- * Script description
- * Usage: node script_name.js [arguments]
- */
+// Export for testing
+export function processData(data) {
+  return data;
+}
 
-// Imports
-const fs = require('fs');
-
-// Main function
-async function main() {
+function main() {
   try {
-    // Script logic here
-    console.log('Success');
+    const result = processData('data');
+    console.log('Success:', result);
   } catch (error) {
     console.error('Error:', error.message);
     process.exit(1);
   }
 }
 
-// Run main function
-if (require.main === module) {
-  main();
-}
-
-// Export functions for testing
-module.exports = { main };
+runIfMain(import.meta.url, main);
 ```
+
+**Key points:**
+
+- ESM imports (not CommonJS)
+- Use `runIfMain()` to prevent execution when imported
+- Export functions for testability
+- Only `process.exit(1)` for errors
+
+## Code Review
+
+Use `code-review` skill for comprehensive review.
+
+### Quick Security Check
+
+- [ ] **Command Injection**: No user input in shell commands
+- [ ] **Path Traversal**: Validate all file paths
+- [ ] **Hardcoded Secrets**: No API keys/passwords in code
+- [ ] **Error Handling**: All async ops have try-catch
+- [ ] **Input Validation**: Validate before processing
 
 ## Quality Checklist
 
-Before committing a new script:
+### Phase 1: Development
 
-- [ ] Uses Node.js (unless exception applies)
-- [ ] Includes proper error handling
-- [ ] Validates all inputs
-- [ ] Has test file (if non-trivial)
-- [ ] Passes `pnpm lint` (no errors)
-- [ ] Passes `pnpm test` (all tests pass)
-- [ ] Includes usage comments/documentation
-- [ ] Exports functions for testability
+- [ ] Node.js (unless exception)
+- [ ] Proper error handling
+- [ ] Input validation
+- [ ] Tests in `__tests__/` (if non-trivial)
+- [ ] Exports for testability
+- [ ] Uses `runIfMain()`
+
+### Phase 2: Testing
+
+- [ ] `pnpm lint` passes
+- [ ] `pnpm test` passes
+- [ ] **100% coverage** (`pnpm test:coverage`)
+- [ ] All branches tested
+- [ ] Edge cases covered
+
+### Phase 3: Review
+
+- [ ] Run code review (use `code-review` skill)
+- [ ] Fix security vulnerabilities
+- [ ] Fix critical bugs
+- [ ] Follows best practices
+
+### Phase 4: Final
+
+- [ ] Re-run `pnpm lint`
+- [ ] Re-run `pnpm test:coverage`
+- [ ] Manual test with real inputs
+- [ ] Ready to commit

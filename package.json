@@ -1,18 +1,36 @@
 {
   "name": "claude-code-workspace-example",
   "version": "1.0.0",
-  "description": "An example to demostrate Claude Code feature",
+  "description": "An example project to demostrate Claude Code feature",
   "main": "index.js",
+  "type": "module",
+  "imports": {
+    "#utils/*": "./utils/*"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md,yaml,yml}\"",
+    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md,yaml,yml}\""
   },
   "keywords": [],
   "author": "shino369",
   "license": "ISC",
   "packageManager": "pnpm@10.28.0",
-  "dependencies": {
-    "@mozilla/readability": "catalog:prod",
-    "iconv-lite": "catalog:prod",
-    "jsdom": "catalog:prod"
+  "devDependencies": {
+    "@mozilla/readability": "catalog:dev",
+    "@vitest/coverage-v8": "catalog:dev",
+    "@vitest/ui": "catalog:dev",
+    "eslint": "catalog:dev",
+    "eslint-config-prettier": "catalog:dev",
+    "globals": "catalog:dev",
+    "iconv-lite": "catalog:dev",
+    "jsdom": "catalog:dev",
+    "prettier": "catalog:dev",
+    "vitest": "catalog:dev"
   }
 }

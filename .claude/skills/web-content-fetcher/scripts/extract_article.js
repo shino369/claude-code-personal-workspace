@@ -12,24 +12,15 @@
  *   npm install @mozilla/readability jsdom
  */
 
-const fs = require('fs');
-
-let Readability, JSDOM;
-
-try {
-  ({ Readability } = require('@mozilla/readability'));
-  ({ JSDOM } = require('jsdom'));
-} catch (error) {
-  console.error('Error: Required libraries not installed.');
-  console.error(`Details: ${error.message}`);
-  console.error('Install with: npm install @mozilla/readability jsdom');
-  process.exit(1);
-}
+import fs from 'fs';
+import { Readability } from '@mozilla/readability';
+import { JSDOM } from 'jsdom';
+import { runIfMain } from '#utils/module-runner.js';
 
 /**
  * Convert HTML to markdown-like text format
  */
-function htmlToMarkdown(html) {
+export function htmlToMarkdown(html) {
   const dom = new JSDOM(html);
   const doc = dom.window.document;
   const result = [];
@@ -75,7 +66,7 @@ function htmlToMarkdown(html) {
       case 'br':
         result.push('\n');
         break;
-      case 'a':
+      case 'a': {
         const href = node.getAttribute('href');
         const text = node.textContent.trim();
         if (href && text) {
@@ -84,6 +75,7 @@ function htmlToMarkdown(html) {
           result.push(text);
         }
         break;
+      }
       case 'strong':
       case 'b':
         result.push(`**${node.textContent.trim()}**`);
@@ -127,7 +119,7 @@ function htmlToMarkdown(html) {
 /**
  * Extract article from HTML file
  */
-function extractArticle(htmlFilePath) {
+export function extractArticle(htmlFilePath) {
   // Read HTML file
   if (!fs.existsSync(htmlFilePath)) {
     throw new Error(`File not found: ${htmlFilePath}`);
@@ -151,7 +143,7 @@ function extractArticle(htmlFilePath) {
 }
 
 // Main execution
-function main() {
+export function main() {
   if (process.argv.length !== 3) {
     console.error('Usage: node extract_article.js <html_file>');
     process.exit(1);
@@ -162,10 +154,12 @@ function main() {
   try {
     const articleContent = extractArticle(htmlFile);
     console.log(articleContent);
+    // No need for process.exit(0) - Node exits naturally on success
   } catch (error) {
     console.error(`Error extracting article: ${error.message}`);
-    process.exit(1);
+    process.exit(1); // Exit with error code
   }
 }
 
-main();
+// Run main function only if executed directly (not imported)
+runIfMain(import.meta.url, main);

@@ -3,14 +3,17 @@
  * Auto-formatting hook for Claude Code.
  * Runs prettier on formattable files after Edit or Write operations.
  */
-const { execSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+import { execSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import { runIfMain } from '#utils/module-runner.js';
 
 // Extensions that prettier can format
 const FORMATTABLE_EXTENSIONS = [
   '.js',
   '.jsx',
+  '.mjs',
+  '.cjs',
   '.ts',
   '.tsx',
   '.json',
@@ -36,14 +39,10 @@ function isFormattable(filePath) {
 }
 
 function fileExists(filePath) {
-  try {
-    return fs.existsSync(filePath);
-  } catch {
-    return false;
-  }
+  return fs.existsSync(filePath);
 }
 
-function runPrettier(filePath) {
+export function runPrettier(filePath) {
   try {
     // Check if prettier is available (use pnpm as per workspace config)
     execSync('pnpm prettier --version', { stdio: 'ignore' });
@@ -62,6 +61,40 @@ function runPrettier(filePath) {
   }
 }
 
+export function processHookInput(input) {
+  const toolName = input.tool_name;
+  const filePath = input.tool_input?.file_path;
+
+  // Only process Edit and Write operations
+  if (!['Edit', 'Write'].includes(toolName)) {
+    return false;
+  }
+
+  // Check if file path exists
+  if (!filePath) {
+    return false;
+  }
+
+  // Check if file is formattable
+  if (!isFormattable(filePath)) {
+    return false;
+  }
+
+  // Check if file actually exists
+  if (!fileExists(filePath)) {
+    return false;
+  }
+
+  // Run prettier
+  if (runPrettier(filePath)) {
+    console.log(`✓ Formatted ${path.basename(filePath)} with prettier`);
+    return true;
+  }
+
+  return false;
+}
+
+/* istanbul ignore next - stdin handling is tested via integration */
 function main() {
   try {
     // Read hook input from stdin
@@ -75,34 +108,7 @@ function main() {
     process.stdin.on('end', () => {
       try {
         const input = JSON.parse(inputData);
-        const toolName = input.tool_name;
-        const filePath = input.tool_input?.file_path;
-
-        // Only process Edit and Write operations
-        if (!['Edit', 'Write'].includes(toolName)) {
-          process.exit(0);
-        }
-
-        // Check if file path exists
-        if (!filePath) {
-          process.exit(0);
-        }
-
-        // Check if file is formattable
-        if (!isFormattable(filePath)) {
-          process.exit(0);
-        }
-
-        // Check if file actually exists
-        if (!fileExists(filePath)) {
-          process.exit(0);
-        }
-
-        // Run prettier
-        if (runPrettier(filePath)) {
-          console.log(`✓ Formatted ${path.basename(filePath)} with prettier`);
-        }
-
+        processHookInput(input);
         process.exit(0);
       } catch (err) {
         console.error(`Auto-format error: ${err.message}`);
@@ -115,4 +121,5 @@ function main() {
   }
 }
 
-main();
+// Run main function only if executed directly (not imported)
+runIfMain(import.meta.url, main);
