@@ -24,7 +24,7 @@
 import { chromium } from 'playwright';
 import { writeFileSync } from 'fs';
 import { parseArgs } from 'node:util';
-import { resolve } from 'path';
+import { resolve, isAbsolute, sep } from 'path';
 import { runIfMain } from '#utils/module-runner.js';
 
 /**
@@ -76,12 +76,26 @@ export function validateUrl(url) {
  * @throws {Error} If path is unsafe
  */
 export function validateOutputPath(filePath) {
-  // Resolve to absolute path
-  const resolvedPath = resolve(filePath);
   const currentDir = process.cwd();
 
-  // Ensure the path is within current directory or its subdirectories
-  // This prevents writing to arbitrary locations
+  // Check if the input path is absolute and outside current directory
+  // This catches both Unix absolute paths (/etc/passwd) and Windows paths (C:\...)
+  if (isAbsolute(filePath)) {
+    const resolvedPath = resolve(filePath);
+    // Normalize both paths to ensure proper comparison across platforms
+    const normalizedResolved = resolvedPath.split(sep).join('/').toLowerCase();
+    const normalizedCwd = currentDir.split(sep).join('/').toLowerCase();
+
+    if (!normalizedResolved.startsWith(normalizedCwd + '/')) {
+      throw new Error(
+        `Output path must be within current directory. Attempted: ${resolvedPath}`
+      );
+    }
+    return resolvedPath;
+  }
+
+  // For relative paths, resolve and check
+  const resolvedPath = resolve(filePath);
   if (!resolvedPath.startsWith(currentDir)) {
     throw new Error(
       `Output path must be within current directory. Attempted: ${resolvedPath}`
