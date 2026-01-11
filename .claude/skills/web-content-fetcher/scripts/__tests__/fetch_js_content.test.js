@@ -131,6 +131,60 @@ describe('fetch_js_content.js', () => {
         'Output path must be within current directory'
       );
     });
+
+    it('should accept Windows absolute paths within current directory on Windows', () => {
+      // This test simulates Windows behavior by testing a path that would be valid on Windows
+      const isWindows = process.platform === 'win32';
+      if (isWindows) {
+        const cwd = process.cwd();
+        const windowsPath = cwd + '\\subdir\\file.txt';
+        const result = validateOutputPath(windowsPath);
+        expect(result).toContain('subdir');
+        expect(result).toContain('file.txt');
+      } else {
+        // On non-Windows, this should be rejected as suspicious
+        expect(() => validateOutputPath('C:\\Users\\test\\file.txt')).toThrow(
+          'Output path must be within current directory'
+        );
+      }
+    });
+
+    it('should accept Unix absolute paths within current directory', () => {
+      const cwd = process.cwd();
+      const isWindows = process.platform === 'win32';
+
+      if (!isWindows) {
+        // On Unix, test an absolute path within cwd
+        const unixPath = cwd + '/subdir/file.txt';
+        const result = validateOutputPath(unixPath);
+        expect(result).toBe(unixPath);
+      } else {
+        // On Windows, Unix-style absolute paths like /etc/passwd should be rejected
+        expect(() => validateOutputPath('/etc/passwd')).toThrow(
+          'Output path must be within current directory'
+        );
+      }
+    });
+
+    it('should accept absolute paths within current directory', () => {
+      // This test covers the return path for absolute paths within cwd
+      const cwd = process.cwd();
+      const isWindows = process.platform === 'win32';
+
+      // Create an absolute path within current directory
+      if (isWindows) {
+        // Use Windows-style path
+        const absolutePath = cwd + '\\nested\\dir\\file.txt';
+        const result = validateOutputPath(absolutePath);
+        expect(result.toLowerCase()).toContain('nested');
+        expect(result.toLowerCase()).toContain('file.txt');
+      } else {
+        // Use Unix-style path
+        const absolutePath = cwd + '/nested/dir/file.txt';
+        const result = validateOutputPath(absolutePath);
+        expect(result).toBe(absolutePath);
+      }
+    });
   });
 
   describe('validateTimeout', () => {
