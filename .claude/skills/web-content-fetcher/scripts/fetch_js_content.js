@@ -82,8 +82,18 @@ export function validateOutputPath(filePath) {
   // This is important for cross-platform security validation
   const windowsAbsolutePathPattern = /^[A-Za-z]:[/\\]/;
   if (windowsAbsolutePathPattern.test(filePath)) {
-    // On Windows, this will be properly resolved; on Unix, it's suspicious
     const resolvedPath = resolve(filePath);
+
+    // If after resolution, the path no longer matches the Windows pattern,
+    // it means we're on a non-Windows system where it was treated as a relative path.
+    // This is suspicious behavior and should be rejected.
+    if (!windowsAbsolutePathPattern.test(resolvedPath)) {
+      throw new Error(
+        `Output path must be within current directory. Attempted: ${filePath}`
+      );
+    }
+
+    // We're on Windows, validate that the absolute path is within current directory
     const normalizedResolved = resolvedPath.split(sep).join('/').toLowerCase();
     const normalizedCwd = currentDir.split(sep).join('/').toLowerCase();
 
