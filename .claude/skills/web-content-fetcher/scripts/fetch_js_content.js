@@ -78,8 +78,24 @@ export function validateUrl(url) {
 export function validateOutputPath(filePath) {
   const currentDir = process.cwd();
 
-  // Check if the input path is absolute and outside current directory
-  // This catches both Unix absolute paths (/etc/passwd) and Windows paths (C:\...)
+  // Detect Windows-style absolute paths (C:\... or C:/...) even on non-Windows systems
+  // This is important for cross-platform security validation
+  const windowsAbsolutePathPattern = /^[A-Za-z]:[/\\]/;
+  if (windowsAbsolutePathPattern.test(filePath)) {
+    // On Windows, this will be properly resolved; on Unix, it's suspicious
+    const resolvedPath = resolve(filePath);
+    const normalizedResolved = resolvedPath.split(sep).join('/').toLowerCase();
+    const normalizedCwd = currentDir.split(sep).join('/').toLowerCase();
+
+    if (!normalizedResolved.startsWith(normalizedCwd + '/')) {
+      throw new Error(
+        `Output path must be within current directory. Attempted: ${resolvedPath}`
+      );
+    }
+    return resolvedPath;
+  }
+
+  // Check if the input path is absolute (Unix-style: /etc/passwd)
   if (isAbsolute(filePath)) {
     const resolvedPath = resolve(filePath);
     // Normalize both paths to ensure proper comparison across platforms
