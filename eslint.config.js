@@ -17,6 +17,8 @@ export default [
       '**/output/**',
       '**/logs/**',
       '**/*.min.js',
+      'pnpm-lock.yaml',
+      'package-lock.json',
     ],
   },
   {

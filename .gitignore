@@ -30,7 +30,6 @@ node_modules/
 
 # pnpm specific
 .pnpm-debug.log*
-pnpm-lock.yaml
 
 # Yarn (if accidentally used)
 yarn.lock
