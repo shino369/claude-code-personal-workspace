@@ -37,6 +37,7 @@ export function runIfMain(importMetaUrl, mainFunction) {
     }
   } catch {
     // Invalid file URL, don't run
+    /* c8 ignore next 1 -- Explicit return in catch is semantically unnecessary but kept for clarity */
     return;
   }
 }

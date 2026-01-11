@@ -94,6 +94,7 @@ export function validateOutputPath(filePath) {
       );
     }
 
+    /* c8 ignore start -- Platform-specific: Windows path validation only executed on Windows systems */
     // We're on Windows, validate that the absolute path is within current directory
     const normalizedResolved = resolvedPath.split(sep).join('/').toLowerCase();
     const normalizedCwd = currentDir.split(sep).join('/').toLowerCase();
@@ -104,6 +105,7 @@ export function validateOutputPath(filePath) {
       );
     }
     return resolvedPath;
+    /* c8 ignore stop */
   }
 
   // Check if the input path is absolute (Unix-style: /etc/passwd)
