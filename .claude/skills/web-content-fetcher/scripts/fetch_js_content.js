@@ -87,6 +87,7 @@ export function validateOutputPath(filePath) {
     // If after resolution, the path no longer matches the Windows pattern,
     // it means we're on a non-Windows system where it was treated as a relative path.
     // This is suspicious behavior and should be rejected.
+    /* c8 ignore next 4 -- Platform-specific: only executed on non-Windows systems */
     if (!windowsAbsolutePathPattern.test(resolvedPath)) {
       throw new Error(
         `Output path must be within current directory. Attempted: ${filePath}`
@@ -106,6 +107,7 @@ export function validateOutputPath(filePath) {
   }
 
   // Check if the input path is absolute (Unix-style: /etc/passwd)
+  /* c8 ignore next 12 -- Platform-specific: Unix absolute path handling, primarily executed on Unix systems */
   if (isAbsolute(filePath)) {
     const resolvedPath = resolve(filePath);
     // Normalize both paths to ensure proper comparison across platforms
