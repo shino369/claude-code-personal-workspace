@@ -25,17 +25,7 @@ pnpm add -D package-name --save-catalog-name=dev
 
 ## Catalog Feature
 
-Centralizes version management in `pnpm-workspace.yaml`:
-
-```yaml
-catalogs:
-  prod:
-    '@mozilla/readability': ^0.6.0
-    jsdom: ^27.4.0
-  dev:
-    eslint: ^9.17.0
-    vitest: ^2.1.8
-```
+Centralizes version management in `pnpm-workspace.yaml`.
 
 **Benefits:**
 
@@ -43,16 +33,6 @@ catalogs:
 - Single source of truth
 - 7-day minimum release age for stability
 - Update once, affects all packages
-
-**Result in `package.json`:**
-
-```json
-{
-  "dependencies": {
-    "package-name": "catalog:prod"
-  }
-}
-```
 
 ## Common Commands
 
