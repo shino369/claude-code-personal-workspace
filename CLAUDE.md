@@ -74,9 +74,10 @@ under "Skill runtime prerequisites".
 Do not use `pnpm add -g`: its global bin directory is not on `PATH`, and global installs bypass the
 workspace lockfile and supply-chain settings.
 
-Third-party skills are not committed. Install them with `pnpm skills:install` (use
-`--skip <name>` for optional skills); they land in the git-ignored `.claude/skills/`. After
-installing or updating them, run `pnpm skills:check` to verify them against `skills-lock.json`.
+Third-party skills are not committed. Install them with `pnpm skills:install` (use `--skip <name>`
+to omit optional skills, or `--only <name>` to select specific ones); third-party installs land in
+`.claude/skills/` and remain untracked. After installing or updating them, run
+`pnpm skills:check` to verify every lock entry is installed with a matching frontmatter name.
 
 If a runtime is missing, tell the user what to install rather than silently switching tools.
 

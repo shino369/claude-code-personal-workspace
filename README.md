@@ -166,9 +166,9 @@ Personal or optional skills (for example `i-have-adhd`) are not in the recommend
 them individually with
 `pnpm dlx skills add ayghri/i-have-adhd --skill i-have-adhd --copy --agent claude-code`.
 
-> All third-party skills remain under their upstream licenses, which ship with each installed
-> skill. `skill-creator` includes its license at `.claude/skills/skill-creator/LICENSE.txt` when
-> installed.
+> All third-party skills remain under their upstream licenses. Installed copies do not include
+> license files except `skill-creator`, which ships `LICENSE.txt` at
+> `.claude/skills/skill-creator/LICENSE.txt`; check the source repositories above for the others.
 
 ### Managing skills
 
@@ -181,13 +181,15 @@ ecosystem):
 ```bash
 pnpm skills:install                      # install everything in skills-lock.json
 pnpm skills:install --skip <name>        # skip optional skills
+pnpm skills:install --only <name>        # install only the named skills (comma-separated)
 pnpm skills:update                       # update installed skills
-pnpm skills:check                        # verify installed skills match the lock
+pnpm skills:check                        # verify lock entries are installed
 ```
 
 Installation uses `--copy --agent claude-code`, so skills land in `.claude/skills/` as real files
-(not symlinks) and are git-ignored. `skills-lock.json` pins sources and hashes; commit it when it
-changes. `skills:check` verifies every lock entry is installed with a matching frontmatter name.
+(not symlinks); third-party installs remain untracked. `skills-lock.json` pins sources and hashes;
+commit it when it changes. `skills:check` verifies every lock entry is installed with a matching
+frontmatter name.
 The lock's hash is a source snapshot hash, not reproducible from the installed copy, so content
 changes are reviewed via `git diff`. On Windows, `skills:update` may exit 127 after a successful
 update due to an upstream crash — verify the files changed before treating it as a failure.
