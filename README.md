@@ -88,7 +88,7 @@ pnpm format:check
 │   └── skills/              # Project-owned skills + local third-party aliases
 ├── docs/testing/            # Deep testing guides
 ├── e2e/                     # Playwright e2e tests
-├── output/tasks/            # Generated task outputs (git-ignored)
+├── tasks/                   # Generated task outputs (git-ignored)
 ├── utils/                   # Shared Node utilities
 ├── CLAUDE.md                # Main workspace memory
 ├── skills-lock.json         # skills.sh lockfile
@@ -99,19 +99,19 @@ Third-party skill **contents** are committed under `.agents/skills/`. The matchi
 `.claude/skills/<name>` entries are local discovery aliases (symlinks or junctions) recreated by
 the skills CLI; they are git-ignored because their targets are machine-specific.
 
-### Outputs
+### Tasks
 
-Generated work goes in `output/tasks/<YYYYMMDD_task_name>/`:
+Generated work goes in `tasks/<task-name-yymmdd>/`:
 
 ```text
-output/tasks/20260101_some_task/
-├── reviews/REVIEW_some_task.md
-├── studies/STUDIES_some_task.md
-├── scripts/some_script.js
+tasks/some-task-260101/
+├── reviews/REVIEW_some-task.md
+├── studies/STUDIES_some-task.md
+├── scripts/some-script.js
 └── ...
 ```
 
-The full convention is in `.claude/rules/output-organization.md`. `output/` and `logs/` are
+The full convention is in `.claude/rules/task-organization.md`. `tasks/` and `logs/` are
 git-ignored.
 
 ## Skills
@@ -200,7 +200,7 @@ current releases).
 | ---------------------- | ---------- | ----------------------------------------------- |
 | `git-conventions`      | Always     | Conventional commits, branch naming, PR titles. |
 | `node-js-dependencies` | Always     | pnpm and catalog dependency rules.              |
-| `output-organization`  | Always     | `output/tasks/` layout and naming.              |
+| `task-organization`    | Always     | `tasks/` layout and naming.                     |
 | `testing`              | Test files | Vitest, 100% coverage, mocking.                 |
 | `working-with-script`  | Always     | Node-first scripts, error handling, tests.      |
 
@@ -241,7 +241,8 @@ pnpm test:coverage   # 100% thresholds
 
 Test rules: `.claude/rules/testing.md`. Deep guides: `docs/testing/`.
 
-End-to-end tests use **Playwright** in `e2e/`:
+End-to-end tests use **Playwright** in `e2e/` (the scaffold passes with an empty suite until you add
+`*.e2e.*` tests):
 
 ```bash
 pnpm exec playwright install chromium

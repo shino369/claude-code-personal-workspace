@@ -57,18 +57,17 @@ Watch for these signs:
 
 Write plans and progress to files that persist across sessions:
 
-- **SCRATCHPAD.md** - Temporary notes, findings, progress
-- **plan.md** - Architecture decisions, implementation plans
-- **output/tasks/<YYYYMMDD_task_name>/NOTES.md** - Task-specific notes
+- **tasks/<task-name-yymmdd>/plan.md** - Implementation plan and design decisions
+- **tasks/<task-name-yymmdd>/NOTES.md** - Progress, findings, and handoff notes
 
 **Workflow**:
 
 ```
-1. Work on task, write findings to SCRATCHPAD.md
-2. When context approaches 30%, write summary to file
+1. Work on task, write findings to tasks/<task-name-yymmdd>/NOTES.md
+2. When context approaches 30%, write a summary to the same file
 3. Run /compact to summarize conversation
 4. Run /clear to wipe context completely
-5. Read SCRATCHPAD.md to resume with fresh context
+5. Read NOTES.md and plan.md to resume with fresh context
 ```
 
 **This gives you**: A fresh context window + preserved knowledge from previous work.
@@ -119,9 +118,9 @@ If any of these are true, `/clear` and start fresh:
 **You won't lose progress** - You still have:
 
 - Your CLAUDE.md (project context)
-- External memory files (SCRATCHPAD.md, plan.md)
+- Task files (`tasks/<task-name-yymmdd>/plan.md`, `NOTES.md`)
 - Git history (code changes)
-- Audit logs (/logs/<YYYYMMDD>/logging.json)
+- Audit logs (logs/<YYYYMMDD>/logging.json)
 
 **Fresh context > struggling through degraded context** - 9 times out of 10.
 
@@ -134,9 +133,9 @@ If you notice degradation symptoms:
 **Option 1: Simplify and Reset**
 
 ```
-1. Write current progress to SCRATCHPAD.md
+1. Write current progress to tasks/<task-name-yymmdd>/NOTES.md
 2. /clear the conversation
-3. Read SCRATCHPAD.md
+3. Read NOTES.md and plan.md
 4. Continue with simplified approach
 ```
 
@@ -173,24 +172,23 @@ Claude is excellent at pattern-matching examples.
 4. Or delegate to subagent with fresh context
 ```
 
-## Plan Mode for Complex Tasks
+## Plan in a File for Complex Tasks
 
-**Before starting complex work**, enter plan mode (`Shift+Tab` twice):
+**Before starting complex work**, write the approach to `tasks/<task-name-yymmdd>/plan.md`:
 
-**Why**: Planning with fresh context produces dramatically better results than iterating through confusion.
+**Why**: A written plan survives `/clear` and keeps implementation focused even when the conversation starts fresh.
 
 **Process**:
 
 ```
-1. Press Shift+Tab twice to enter plan mode
-2. Use Explore agent to understand codebase
-3. Design architecture, considering tradeoffs
-4. Write plan to plan.md
-5. Get user approval
-6. Exit plan mode with fresh context for implementation
+1. Use the Explore agent to understand the codebase
+2. Design the architecture, considering tradeoffs
+3. Write the plan to the task's plan.md
+4. Get user approval when the approach needs one
+5. Implement with fresh context, referencing the plan
 ```
 
-**This separates**: Research/planning context from implementation context. Prevents bleeding.
+**This separates**: Research/planning notes from implementation context. Prevents bleeding.
 
 ## Model Selection
 
@@ -205,11 +203,11 @@ The hook is fail-open: if the transcript is unavailable or unparsable, it stays 
 ## Best Practices Summary
 
 1. **Scope per feature** - One conversation per task
-2. **Use external memory** - Write to SCRATCHPAD.md and plan.md
+2. **Use external memory** - Write to the task's plan.md and NOTES.md
 3. **Delegate to subagents** - Offload complex subtasks to fresh contexts
 4. **Copy-paste reset** - Preserve essentials, clear the rest
 5. **Clear without hesitation** - Fresh context > degraded context
-6. **Plan before implementing** - Use plan mode for complex work
+6. **Plan in a file** - Write complex plans to the task's `plan.md`
 7. **Trust the monitor** - Act on the injected percentage, not message-count guesses
 
 ## The Meta-Skill

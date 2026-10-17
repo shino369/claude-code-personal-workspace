@@ -172,7 +172,7 @@ describe('context_monitor', () => {
       const message = buildMessage(THRESHOLDS.warn);
       expect(message).toContain('[Context Monitor][WARNING]');
       expect(message).toContain('40.0%');
-      expect(message).toContain('output/tasks/');
+      expect(message).toContain('tasks/');
     });
 
     test('is urgent at the urgent threshold', () => {

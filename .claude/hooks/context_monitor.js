@@ -122,10 +122,10 @@ export function buildMessage(usagePct, contextWindow = DEFAULT_CONTEXT_WINDOW) {
   }
 
   if (usagePct < THRESHOLDS.urgent) {
-    return `[Context Monitor][WARNING] Usage at ${pctStr}% of ${windowLabel} context window. Save progress to output/tasks/<YYYYMMDD_task_name>/NOTES.md now. Prepare to urge the user to run /compact and start fresh if quality degrades. Delegate subtasks to subagents when possible.`;
+    return `[Context Monitor][WARNING] Usage at ${pctStr}% of ${windowLabel} context window. Save progress to tasks/<task-name-yymmdd>/NOTES.md now. Prepare to urge the user to run /compact and start fresh if quality degrades. Delegate subtasks to subagents when possible.`;
   }
 
-  return `[Context Monitor][URGENT] Usage at ${pctStr}% of ${windowLabel} context window — context likely degraded. IMMEDIATE ACTION: write current progress to output/tasks/<YYYYMMDD_task_name>/NOTES.md, urge the user to run /compact, then /clear to restore quality. Do NOT continue in this session for complex tasks.`;
+  return `[Context Monitor][URGENT] Usage at ${pctStr}% of ${windowLabel} context window — context likely degraded. IMMEDIATE ACTION: write current progress to tasks/<task-name-yymmdd>/NOTES.md, urge the user to run /compact, then /clear to restore quality. Do NOT continue in this session for complex tasks.`;
 }
 
 /**

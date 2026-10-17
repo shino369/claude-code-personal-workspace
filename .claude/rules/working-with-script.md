@@ -42,7 +42,7 @@ your-script-dir/
 
 **Tests optional for:**
 
-- One-off automation, shell wrappers, throwaway scripts in `output/tasks/`
+- One-off automation, shell wrappers, throwaway scripts in `tasks/`
 
 **Check coverage:**
 

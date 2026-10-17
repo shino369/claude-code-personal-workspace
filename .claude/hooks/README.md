@@ -11,7 +11,7 @@ This directory contains hook scripts for Claude Code that automatically execute 
 
 **What it does:**
 
-- Logs all tool usage to `/logs/<YYYYMMDD>/logging.json`
+- Logs all tool usage to `logs/<YYYYMMDD>/logging.json`
 - Creates a new log file for each day
 - Records timestamps, tool names, inputs, outputs, and session information
 - Truncates large content (>500 chars) to keep log files manageable
@@ -147,7 +147,7 @@ claude --debug
 ## Security Notes
 
 - Hooks run with your user permissions
-- The audit logger creates files in the `/logs` directory (already in .gitignore)
+- The audit logger creates files in the `logs/` directory (already in .gitignore)
 - Hook scripts exit with code 0 on errors to avoid blocking operations
 - Large content is truncated in audit logs to prevent excessive file sizes
 

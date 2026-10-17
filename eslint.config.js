@@ -14,7 +14,7 @@ export default [
       '**/coverage/**',
       '**/dist/**',
       '**/build/**',
-      '**/output/**',
+      '**/tasks/**',
       '**/logs/**',
       '**/.agents/**',
       '**/.github/skills/**',

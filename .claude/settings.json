@@ -99,7 +99,7 @@
     "DISABLE_AUTO_COMPACT": "1"
   },
   "companyAnnouncements": [
-    "Welcome! This workspace organizes outputs in output/tasks/YYYYMMDD_task_name/"
+    "Welcome! This workspace organizes task outputs in tasks/<task-name-yymmdd>/"
   ],
   "hooks": {
     "UserPromptSubmit": [

@@ -319,7 +319,7 @@ This workspace requires **100% coverage** for:
 
 **Tests optional for**:
 
-- One-off automation in `output/tasks/`
+- One-off automation in `tasks/`
 - Shell wrappers
 - Throwaway scripts
 

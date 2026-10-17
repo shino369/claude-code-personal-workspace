@@ -16,7 +16,7 @@ This is a personal workspace for Claude Code to assist with various daily tasks 
 
 1. **Scope conversations per feature** - One conversation per task/feature prevents context bleeding. Don't build auth and refactor database in the same session.
 
-2. **Use external memory** - Write plans and progress to `SCRATCHPAD.md` or `plan.md` at the root. These persist across sessions, allowing fresh context with preserved knowledge.
+2. **Use external memory** - Write plans and progress into the task directory: `tasks/<task-name-yymmdd>/plan.md` and `NOTES.md`. These persist across sessions, allowing fresh context with preserved knowledge.
 
 3. **The copy-paste reset** - When context gets bloated:
    - Copy important info from terminal
@@ -26,19 +26,18 @@ This is a personal workspace for Claude Code to assist with various daily tasks 
 
 4. **Know when to clear** - If explaining the same thing 3+ times, `/clear` and reframe. Fresh context > fighting through degraded context.
 
-5. **Use plan mode proactively** - Press `Shift+Tab` twice before complex tasks. Planning with fresh context produces dramatically better results than iterating through confusion.
+5. **Write plans to a file** - For complex tasks, outline the approach in `tasks/<task-name-yymmdd>/plan.md`. It survives context resets and keeps the implementation focused.
 
 **External Memory Files:**
 
-- `SCRATCHPAD.md` - Temporary notes, findings, progress tracking
-- `plan.md` - Architecture decisions, implementation plans
-- `output/tasks/<YYYYMMDD_task_name>/NOTES.md` - Task-specific notes
+- `tasks/<task-name-yymmdd>/plan.md` - Implementation plan and design decisions
+- `tasks/<task-name-yymmdd>/NOTES.md` - Progress, findings, and handoff notes
 
 **Model Selection: important! use inherit model from the main session**
 
-## Output Organization
+## Task Organization
 
-Conventions for creating outputs (task directories under `output/tasks/`, content subdirectories, file naming) live in `.claude/rules/output-organization.md`.
+Conventions for creating outputs (task directories under `tasks/`, content subdirectories, file naming) live in `.claude/rules/task-organization.md`.
 
 ## Quality Checks
 
@@ -63,14 +62,14 @@ Use `WebFetch` for simple pages and the `agent-browser` / `browser-use` skills f
 
 ## Additional Documentation
 
-**External Memory Templates:**
+**Task Memory:**
 
-- `SCRATCHPAD.md` - Temporary session notes and progress tracking
-- `plan.md` - Architecture decisions and implementation plans
+- `tasks/<task-name-yymmdd>/plan.md` - Implementation plan and design decisions
+- `tasks/<task-name-yymmdd>/NOTES.md` - Progress, findings, and handoff notes
 
 **Quick Reference:**
 
 - Context degradation starts at 20-40%, not 100% - manage proactively
-- Use plan mode (`Shift+Tab` twice) before complex implementations
-- External memory (SCRATCHPAD.md, plan.md) persists across sessions
+- Record complex plans in the task's `plan.md` so they survive context resets
+- Task files under `tasks/` persist across sessions
 - `/clear` without hesitation - fresh context beats degraded context
