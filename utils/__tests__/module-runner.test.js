@@ -2,6 +2,7 @@
  * Tests for module-runner.js
  */
 import { runIfMain } from '../module-runner.js';
+import path from 'path';
 import { fileURLToPath } from 'url';
 
 describe('module-runner', () => {
@@ -70,6 +71,43 @@ describe('module-runner', () => {
         expect(called).toBe(true);
       } finally {
         // Restore original argv
+        process.argv[1] = originalArgv;
+      }
+    });
+
+    test('should run when process.argv[1] is a relative path', () => {
+      let called = false;
+      const mockFn = () => {
+        called = true;
+      };
+
+      const originalArgv = process.argv[1];
+      process.argv[1] = path.relative(
+        process.cwd(),
+        fileURLToPath(import.meta.url)
+      );
+
+      try {
+        runIfMain(import.meta.url, mockFn);
+        expect(called).toBe(true);
+      } finally {
+        process.argv[1] = originalArgv;
+      }
+    });
+
+    test('should not throw when process.argv[1] is missing', () => {
+      let called = false;
+      const mockFn = () => {
+        called = true;
+      };
+
+      const originalArgv = process.argv[1];
+      process.argv[1] = /** @type {any} */ (undefined);
+
+      try {
+        expect(() => runIfMain(import.meta.url, mockFn)).not.toThrow();
+        expect(called).toBe(false);
+      } finally {
         process.argv[1] = originalArgv;
       }
     });

@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a personal workspace for Claude Code to assist with various daily tasks including programming, documentation, research, consultation, translation, and generative-AI development.
 
-**Package Manager**: This workspace uses `pnpm` as the package manager. Always use `pnpm` commands instead of `npm`.
+**Package Manager**: This workspace uses **pnpm 12.14.0**, pinned in `package.json` via `packageManager` (Corepack). Always use `pnpm` commands instead of `npm`; run `corepack enable` or prefix commands with `corepack pnpm` if `pnpm` is not on your PATH.
 
 ## Context Management
 
-**Why Context Management Matters**: Claude Code has a 200K token context window, but quality degrades at 20-40% usage. Managing context prevents degraded outputs and keeps conversations focused.
+**Why Context Management Matters**: Quality degrades at 20-40% usage, long before a window is full. The actual window depends on the model (1M tokens by default; set `CLAUDE_CONTEXT_WINDOW` to override). A `UserPromptSubmit` hook (`.claude/hooks/context_monitor.js`) measures real usage from the transcript and injects `[Context Monitor]` warnings at 20/40/60%, so act on those warnings rather than estimating from message counts.
 
 **Best Practices:**
 
@@ -38,13 +38,28 @@ This is a personal workspace for Claude Code to assist with various daily tasks 
 
 ## Output Organization
 
-Conventions for creating outputs (task directories under `output/tasks/`, content subdirectories, file naming) live in the `workspace-outputs` skill.
+Conventions for creating outputs (task directories under `output/tasks/`, content subdirectories, file naming) live in `.claude/rules/output-organization.md`.
+
+## Quality Checks
+
+Run these before finishing a change:
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test:coverage
+pnpm format:check
+```
 
 ## Available Systems
 
-### Trilingual Translation System
+### Translation
 
-Use `/translate` for professional English ↔ Japanese ↔ Traditional Chinese translation. See `docs/translation/README.md` for complete documentation.
+Ask for a translation, or invoke the `trilingual-translator` agent directly. The `translation-expertise` skill supplies the methodology; `engineering-terminology` and `document-writing` add domain and style guidance.
+
+### Web Content
+
+Use `WebFetch` for simple pages and the `agent-browser` / `browser-use` skills for interactive or JS-heavy pages. Playwright is installed for **e2e tests only** (`e2e/*.e2e.*`, `pnpm test:e2e`); don't use it for normal browsing or text extraction.
 
 ## Additional Documentation
 

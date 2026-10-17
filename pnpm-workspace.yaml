@@ -1,25 +1,51 @@
+packages:
+  - .
+
 catalogs:
   dev:
-    '@mozilla/readability': ^0.6.0
-    '@types/jest': ^30.0.0
-    '@vitest/coverage-v8': ^4.0.16
-    '@vitest/ui': ^4.0.16
-    cross-env: ^10.1.0
+    '@playwright/test': ^1.64.0
+    '@types/node': ^24.19.0
+    '@vitest/coverage-v8': ^4.1.11
+    '@vitest/ui': ^4.1.11
     eslint: ^9.39.2
     eslint-config-prettier: ^10.1.8
     globals: ^17.0.0
-    iconv-lite: ^0.7.1
-    jest: ^30.2.0
-    jsdom: ^27.4.0
-    playwright: ^1.57.0
+    playwright: ^1.64.0
     prettier: ^3.7.4
-    vitest: ^4.0.16
+    typescript: ^5.9.3
+    vite: ^7.3.5
+    vitest: ^4.1.11
 
 minimumReleaseAge: 10080
 
-package:
-  - .
+overrides:
+  # Keep each override bounded to the major line that contains the fix. An
+  # unbounded target (e.g. '>=6.14.0') can silently resolve to the next major
+  # and break consumers — ajv 8 breaks @eslint/eslintrc, for example.
+  '@humanfs/node@<0.16.8': '>=0.16.8 <0.17.0'
+  '@vitest/mocker@>=2.1.0 <4.1.11': '>=4.1.11 <5'
+  ajv@<6.14.0: '>=6.14.0 <7'
+  brace-expansion@<1.1.21: '>=1.1.21 <2'
+  fflate@>=0.8.0 <0.8.3: '>=0.8.3 <0.9'
+  flatted@<=3.4.1: '>=3.4.2 <4'
+  js-yaml@>=4.0.0 <4.3.2: '>=4.3.2 <5'
+  minimatch@<3.1.4: '>=3.1.4 <4'
+  nanoid@<3.3.18: '>=3.3.18 <4'
+  picomatch@>=4.0.0 <4.0.4: '>=4.0.4 <5'
+  postcss@<8.5.23: '>=8.5.23 <9'
+  rollup@>=4.0.0 <4.59.0: '>=4.59.0 <5'
+  source-map-js@>=1.0.0 <1.2.2: '>=1.2.2 <2'
+  vite@>=7.0.0 <7.3.5: '>=7.3.5 <8'
+  vitest@>=2.1.0 <4.1.11: '>=4.1.11 <5'
+  ws@>=8.0.0 <8.21.0: '>=8.21.0 <9'
 
-packageManagerStrict: true
+allowBuilds:
+  esbuild: true
+
+engineStrict: true
+
+ignoreScripts: true
 
 strictPeerDependencies: true
+
+trustPolicy: no-downgrade

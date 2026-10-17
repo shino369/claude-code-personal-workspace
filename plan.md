@@ -2,7 +2,7 @@
 
 Architecture decisions and implementation plans for the current project/feature.
 
-**Purpose**: Document architectural thinking and implementation strategy before execution. Use Opus 4.5 for planning, then switch to Sonnet 4.5 for implementation.
+**Purpose**: Document architectural thinking and implementation strategy before execution. Plan in plan mode, then implement with the model configured for the session (this workspace inherits the main session's model).
 
 ---
 
@@ -62,9 +62,9 @@ Architecture decisions and implementation plans for the current project/feature.
 
 **Workflow**:
 
-1. Enter plan mode (`Shift+Tab` twice) with Opus 4.5
+1. Enter plan mode (`Shift+Tab` twice)
 2. Explore codebase and document findings
 3. Design architecture and write implementation plan here
 4. Get user approval
-5. Switch to Sonnet 4.5 for execution
+5. Implement with the session's configured model
 6. Reference this plan during implementation

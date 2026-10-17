@@ -81,7 +81,7 @@ If coverage was run:
 
 Provide concise, actionable summary in this format:
 
-```markdown
+````markdown
 ## Test Results
 
 **Status**: ✅ All Passing | ❌ [X] Failing
@@ -103,9 +103,11 @@ Provide concise, actionable summary in this format:
 **Cause**: [Brief explanation]
 
 **Code**:
+
 ```[language]
 [relevant code snippet]
 ```
+````
 
 **Suggested Fix**: [How to fix]
 
@@ -124,7 +126,8 @@ Provide concise, actionable summary in this format:
 ## Recommendations
 
 [Actionable next steps]
-```
+
+````
 
 ## Output Format Examples
 
@@ -141,11 +144,11 @@ Provide concise, actionable summary in this format:
 All tests passed successfully with full coverage.
 
 **No action required**.
-```
+````
 
 ### Example 2: Failing Tests
 
-```markdown
+````markdown
 ## Test Results ❌
 
 **Status**: 3 Failing
@@ -165,10 +168,12 @@ All tests passed successfully with full coverage.
 **Cause**: jwt.verify is not mocked in test
 
 **Code**:
+
 ```javascript
 const result = jwt.verify(token, secret);
 // jwt is undefined - missing import
 ```
+````
 
 **Suggested Fix**: Import jwt properly: `import jwt from 'jsonwebtoken'`
 
@@ -200,7 +205,8 @@ const result = jwt.verify(token, secret);
 2. Correct error status code in user service
 3. Add tests for uncovered lines in auth.js (error handling paths)
 4. Add tests for uncovered lines in user.js (edge cases)
-```
+
+````
 
 ### Example 3: Coverage Below Threshold
 
@@ -238,7 +244,7 @@ const result = jwt.verify(token, secret);
 4. Add tests for webhook error cases (lines 89-95)
 
 **Action Required**: Achieve 100% coverage before merging.
-```
+````
 
 ## Special Cases
 
@@ -252,12 +258,14 @@ If tests don't complete within timeout:
 Tests did not complete within [X]s timeout.
 
 **Possible causes**:
+
 - Infinite loop in test or code
 - Unresolved promises
 - Missing async/await
 - External service call without mock
 
 **Recommended actions**:
+
 1. Check for async operations without proper completion
 2. Verify all external calls are mocked
 3. Run tests locally with `pnpm test:watch` to debug
@@ -273,13 +281,15 @@ If no tests exist:
 No test files detected in project.
 
 **Expected locations**:
+
 - `**/__tests__/**/*.test.js`
 - `**/*.test.js`
 - `**/*.spec.js`
 
 **Recommendations**:
+
 1. Create tests for new code in `__tests__/` directories
-2. Refer to `javascript-testing` skill for test writing guidance
+2. Refer to `.claude/rules/testing.md` for test writing guidance
 3. Aim for 100% coverage on all non-trivial code
 ```
 
@@ -315,7 +325,7 @@ This workspace requires **100% coverage** for:
 
 ## Integration with Other Skills
 
-- **javascript-testing**: Provides test writing guidance (you focus on execution)
+- **testing rule** (`.claude/rules/testing.md`): Provides test writing guidance (you focus on execution)
 - **code-review**: Security and quality review (you focus on test results)
 - **working-with-script**: Test requirements for scripts
 

@@ -5,7 +5,9 @@ description: Proactive context window management to maintain high-quality output
 
 # Context Management for Optimal Performance
 
-Claude Code has a 200K token context window, but **quality degrades at 20-40% usage**. This skill provides strategies for maintaining high-quality outputs throughout long coding sessions.
+Context quality degrades at 20-40% usage, so manage it before the window fills. The actual window depends on the model (1M tokens by default in this workspace); set `CLAUDE_CONTEXT_WINDOW` if you run a different window size.
+
+A `UserPromptSubmit` hook (`.claude/hooks/context_monitor.js`) measures real usage from the transcript and injects `[Context Monitor]` warnings at 20%, 40%, and 60%. Use this skill when one of those warnings appears.
 
 ## Why Context Management Matters
 
@@ -69,11 +71,11 @@ Write plans and progress to files that persist across sessions:
 5. Read SCRATCHPAD.md to resume with fresh context
 ```
 
-**This gives you**: Fresh 200K window + preserved knowledge from previous work.
+**This gives you**: A fresh context window + preserved knowledge from previous work.
 
 ### 3. Delegate to Subagents
 
-Each subagent gets **its own 200K context window**. Use them for:
+Each subagent gets **its own context window**. Use them for:
 
 - **Complex research** - Explore agent investigates codebase, returns summary
 - **Implementation subtasks** - Custom implementer agent handles scope, returns result
@@ -99,7 +101,7 @@ When context is bloated but you need to preserve specific information:
 2. Run /compact to get conversation summary
 3. Run /clear to wipe context completely
 4. Paste back only what matters for next steps
-5. Continue with fresh 200K window
+5. Continue with a fresh context window
 ```
 
 **When to use**: Mid-task when quality degrades but you're not finished.
@@ -190,49 +192,15 @@ Claude is excellent at pattern-matching examples.
 
 **This separates**: Research/planning context from implementation context. Prevents bleeding.
 
-## Model Selection Strategy
+## Model Selection
 
-**Opus 4.5**: Complex reasoning, planning, architectural decisions
-
-- Use for: Plan mode, architecture design, debugging complex issues
-- Slower, more expensive, deeper thinking
-
-**Sonnet 4.5**: Execution tasks with clear paths
-
-- Use for: Implementation, refactoring, boilerplate, following established patterns
-- Faster, cheaper, excellent execution
-
-**Workflow**:
-
-```
-1. Start with Opus for planning (Shift+Tab to plan mode)
-2. Write plan to plan.md
-3. Switch to Sonnet for implementation (Shift+Tab to change model)
-4. Reference plan.md during execution
-5. Switch back to Opus if you hit architectural decisions
-```
-
-CLAUDE.md ensures both models operate under same constraints.
+Use the model configured for the session. This workspace inherits the main session's model for subagents (`model: inherit`); don't switch models mid-task just to manage context. If you need a different model, start a new session with it.
 
 ## Monitoring Context Usage
 
-**No built-in meter exists**, so monitor indirectly:
+The `context_monitor` hook reads the newest assistant usage entry from the session transcript and injects a warning at 20/40/60% of the configured window. Trust the injected percentage over guesswork from message counts.
 
-**Signs you're at ~20-30% usage**:
-
-- 30-50 messages in conversation
-- Read 10+ files
-- Generated significant code (1000+ lines)
-- Multiple back-and-forth iterations
-
-**Signs you're at ~40-50% usage**:
-
-- 60+ messages in conversation
-- Read 20+ files
-- Quality starting to slip (Claude missing details)
-- Needing to repeat information
-
-**Action**: When you hit 30-40% estimated usage, proactively write to external memory and prepare for reset.
+The hook is fail-open: if the transcript is unavailable or unparsable, it stays silent. `CLAUDE_CONTEXT_WINDOW` overrides the default 1M window.
 
 ## Best Practices Summary
 
@@ -242,8 +210,7 @@ CLAUDE.md ensures both models operate under same constraints.
 4. **Copy-paste reset** - Preserve essentials, clear the rest
 5. **Clear without hesitation** - Fresh context > degraded context
 6. **Plan before implementing** - Use plan mode for complex work
-7. **Choose right model** - Opus for planning, Sonnet for execution
-8. **Monitor indirectly** - Watch message count and quality signals
+7. **Trust the monitor** - Act on the injected percentage, not message-count guesses
 
 ## The Meta-Skill
 

@@ -1,166 +1,275 @@
 # Claude Code Personal Workspace
 
-Personal Claude Code Workspace for assisting different daily tasks. From programming to documentation, research, consultation, translation to generative-AI development.
+[![Test CI](https://github.com/shino369/claude-code-personal-workspace/actions/workflows/test.yml/badge.svg)](https://github.com/shino369/claude-code-personal-workspace/actions/workflows/test.yml)
+[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](./LICENSE)
+
+A personal Claude Code workspace for programming, documentation, research, translation, and
+generative-AI work. It packages reusable rules, subagents, skills, hooks, and a repeatable quality
+gate.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Requirements](#requirements)
+- [Getting Started](#getting-started)
+- [Repository Layout](#repository-layout)
+- [Skills](#skills)
+  - [Project-owned skills](#project-owned-skills)
+  - [Third-party skills](#third-party-skills)
+  - [Managing skills](#managing-skills)
+- [Agents](#agents)
+- [Rules](#rules)
+- [Hooks](#hooks)
+- [Translation](#translation)
+- [Testing](#testing)
+- [Configuration](#configuration)
+  - [Package Management](#package-management)
+  - [Permissions](#permissions)
+  - [MCP Servers](#mcp-servers)
+- [Contributing](#contributing)
+- [Credits](#credits)
+- [Third-Party Notices](./THIRD_PARTY_NOTICES.md)
+- [License](#license)
 
 ## Overview
 
-This workspace is configured with different files to support personal tasks, with well-structured `.claude/*` setup to help claude-code operation:
+This workspace keeps the Claude Code setup in one repository:
 
-- `./CLAUDE.md` to serve as main memory
-- `./.claude/rules/*` for extended rules
-- `./.claude/settings.json` for workspace config
-- `./.claude/agents/*` for task-specialized subagents
-- `./.claude/skills/*` for progressively disclosured knowledge
-- `./.claude/hooks/*` for claude code hooks
+- `CLAUDE.md` — main workspace memory and working agreements
+- `.claude/rules/` — always-on and path-scoped rules
+- `.claude/agents/` — task-specialised subagents
+- `.claude/skills/` — project-owned skills, plus local aliases for third-party skills
+- `.claude/hooks/` — context monitor, audit logger, auto-formatter
+- `.claude/settings.json` — shared permissions and hook configuration
+- `.agents/skills/` — tracked third-party skill contents, installed with Vercel's skills.sh
+- `skills-lock.json` — pinned sources and hashes for third-party skills
 
-For Claude Code generated file output, it should be located in the `output/tasks/<YYYYMMDD_task_name>/*`. It should follow the general structure below:
+The workspace is deliberately lightweight: no slash commands, no monorepo, and no build step.
+Translation, code review, dependency maintenance, and context management are handled by skills and
+subagents — ask Claude directly.
 
-```
-output/
-└── tasks/
-    ├── 26260101_some_task
-    |   ├── reviews/
-    |   |   ├── REVIEW_some_task.md
-    |   |   └── ...
-    |   ├── studies/
-    |   |   ├── STUDIES_some_task.md
-    |   |   └── ...
-    |   ├── scripts/
-    |   |   ├── some_script.js
-    |   |   ├── some_script.py
-    |   |   └── ...
-    |   ├── ... // others
-    |
-    ├── 26260102_some_another_task
-```
+## Requirements
 
-Directory name under `YYYYMMDD_task_name` varies and will be based on the task nature.
+- Node.js **22 or later** (`.nvmrc` pins 24)
+- pnpm **12.14.0**, pinned in `package.json` via Corepack. Run `corepack enable`, or prefix
+  commands with `corepack pnpm`
+- Chromium, only if you run the Playwright e2e suite
 
-## Available Systems
-
-### Trilingual Translation System
-
-Professional translation system supporting English ↔ Japanese ↔ Traditional Chinese with a multi-stage collaborative workflow.
-
-**Quick Start:**
+## Getting Started
 
 ```bash
-/translate --lang en "ぬるぽ ガッ"
+corepack enable
+pnpm install
+
+# Optional: restore the third-party skills recorded in skills-lock.json
+npx skills experimental_install
+
+pnpm test
 ```
 
-**Features:**
+Quality gate:
 
-- Three-stage translation workflow (Initial → Proofread → Refine)
-- File and URL translation support
-- 1,075+ technical terms across 6 engineering domains
-- Automatic encoding detection (UTF-8, EUC-JP, etc.)
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test:coverage   # 100% statements/branches/functions/lines
+pnpm format:check
+```
 
-See [Claude Code Trilingual Translation System](./docs/translation/README.md) for complete documentation.
+## Repository Layout
 
-### Claude Code Development System
+```text
+.
+├── .agents/skills/          # Third-party skill contents (tracked)
+├── .claude/
+│   ├── agents/              # Subagents
+│   ├── hooks/               # Context monitor, audit logger, formatter
+│   ├── rules/               # Always-on and path-scoped rules
+│   └── skills/              # Project-owned skills + local third-party aliases
+├── docs/testing/            # Deep testing guides
+├── e2e/                     # Playwright e2e tests
+├── output/tasks/            # Generated task outputs (git-ignored)
+├── utils/                   # Shared Node utilities
+├── CLAUDE.md                # Main workspace memory
+├── skills-lock.json         # skills.sh lockfile
+└── ...
+```
 
-Expert knowledge for creating and extending Claude Code components including agents, skills, commands, and hooks.
+Third-party skill **contents** are committed under `.agents/skills/`. The matching
+`.claude/skills/<name>` entries are local discovery aliases (symlinks or junctions) recreated by
+the skills CLI; they are git-ignored because their targets are machine-specific.
 
-**Skill:** `claude-code-development`
+### Outputs
 
-**Covers:**
+Generated work goes in `output/tasks/<YYYYMMDD_task_name>/`:
 
-- Creating custom subagents
-- Building progressively disclosed skills
-- Implementing slash commands
-- Setting up hooks for automation
-- Best practices and patterns
+```text
+output/tasks/20260101_some_task/
+├── reviews/REVIEW_some_task.md
+├── studies/STUDIES_some_task.md
+├── scripts/some_script.js
+└── ...
+```
 
-**Use when:** Creating or modifying Claude Code workspace components
+The full convention is in `.claude/rules/output-organization.md`. `output/` and `logs/` are
+git-ignored.
 
-### Hooks System
+## Skills
 
-Automated hooks that execute during Claude Code operations:
+### Project-owned skills
 
-**1. Audit Logger** (`audit_logger.js`)
+| Skill                     | What it does                                                                     |
+| ------------------------- | -------------------------------------------------------------------------------- |
+| `translation-expertise`   | English ↔ Japanese ↔ Traditional Chinese translation methodology and references. |
+| `engineering-terminology` | Trilingual technical glossaries across six engineering domains.                  |
+| `document-writing`        | Document conventions and rhetorical patterns for English, Japanese, and Chinese. |
+| `context-manager`         | Context-degradation prevention and recovery.                                     |
+| `dependency-update`       | Dependabot-style pnpm updates with `analyze_deps.mjs`.                           |
+| `security-update`         | CVE and audit patching with release-age checks.                                  |
 
-- Records all tool usage to `/logs/<YYYYMMDD>/logging.json`
-- Provides complete working history for audit purposes
-- Runs on every tool use
+### Third-party skills
 
-**2. Auto Formatter** (`auto_format.js`)
+These are installed from their upstream repositories with Vercel's
+[`skills` CLI](https://github.com/vercel-labs/skills) (the [skills.sh](https://skills.sh)
+ecosystem). All credit belongs to the original authors. Sources and hashes are pinned in
+`skills-lock.json`; full license texts and copyright notices are in
+[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
 
-- Automatically formats files using prettier
-- Runs after Edit and Write operations
-- Supports .js, .ts, .json, .md, .yaml and more
+#### Browser & Web
 
-See [.claude/hooks/README.md](./.claude/hooks/README.md) for configuration details.
+| Skill            | What it does                                                                   | Source                                                                    | Credit      |
+| ---------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------- | ----------- |
+| `agent-browser`  | Browser automation CLI: navigation, forms, screenshots, scraping, app testing. | [vercel-labs/agent-browser](https://github.com/vercel-labs/agent-browser) | Vercel Labs |
+| `browser-use`    | Direct browser control over CDP: automation, scraping, screenshots.            | [browser-use/browser-use](https://github.com/browser-use/browser-use)     | Browser Use |
+| `playwright-cli` | Playwright browser automation and e2e test workflows.                          | [microsoft/playwright-cli](https://github.com/microsoft/playwright-cli)   | Microsoft   |
 
-### Available Skills
+> For normal browsing and text extraction, prefer `agent-browser` or `browser-use`. The npm
+> Playwright package is reserved for e2e tests; `playwright-cli` is for Playwright-specific
+> workflows.
 
-**translation-expertise** (2,836 lines)
+#### Engineering Workflow
 
-- Translation methodology and workflow
-- Language-specific characteristics (EN/JA/CN)
-- Formality levels and punctuation conventions
+| Skill             | What it does                                                                | Source                                                    | Credit      |
+| ----------------- | --------------------------------------------------------------------------- | --------------------------------------------------------- | ----------- |
+| `code-review`     | Two-axis review (repo standards + originating spec) in parallel sub-agents. | [mattpocock/skills](https://github.com/mattpocock/skills) | Matt Pocock |
+| `diagnosing-bugs` | Structured diagnosis loop for hard bugs and performance regressions.        | [mattpocock/skills](https://github.com/mattpocock/skills) | Matt Pocock |
+| `tdd`             | Test-driven development with red-green-refactor.                            | [mattpocock/skills](https://github.com/mattpocock/skills) | Matt Pocock |
 
-**engineering-terminology** (1,810 lines)
+#### Meta & Accessibility
 
-- 1,075+ technical terms across 6 domains
-- Software, Web, DevOps, Data, AI/ML, Hardware
-- Trilingual terminology tables (EN/JA/CN)
+| Skill           | What it does                                                            | Source                                                      | Credit    |
+| --------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------- | --------- |
+| `skill-creator` | Create, edit, benchmark, and optimise agent skills.                     | [anthropics/skills](https://github.com/anthropics/skills)   | Anthropic |
+| `i-have-adhd`   | ADHD-friendly output: next action first, numbered steps, visible state. | [ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd) | ayghri    |
 
-**document-writing** (400+ lines)
+> All third-party skills remain under their upstream licenses. See
+> [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for the full license texts and copyright
+> notices. `skill-creator` also bundles its license at
+> `.agents/skills/skill-creator/LICENSE.txt`.
 
-- Document types and writing conventions
-- Language-specific rhetorical structures
-- Tone and formatting guidelines
+### Managing skills
 
-**web-content-fetcher** (492 lines)
+Project-owned skills live in `.claude/skills/` and are committed to this repository.
 
-- Web content extraction and parsing
-- 3-tier fetching strategy
-- Encoding handling (UTF-8, EUC-JP)
+Third-party skills are installed with Vercel's `skills` CLI from the
+[skills.sh](https://skills.sh) ecosystem:
 
-**claude-code-development** (comprehensive)
+```bash
+npx skills add <owner/repo>      # install a skill
+npx skills list                  # list installed skills
+npx skills check                 # check for updates
+npx skills update                # update installed skills
+npx skills experimental_install  # restore everything from skills-lock.json
+```
 
-- Agents, skills, commands, hooks guides
-- Patterns and examples
-- Official best practices
+The project lockfile `skills-lock.json` is committed, so a fresh clone can restore the same skills
+with `npx skills experimental_install` (`npx skills install` with no arguments is an alias in
+current releases).
 
-**code-review** (331 lines)
+## Agents
 
-- Software engineering best practices
-- Security review (OWASP Top 10)
-- Code quality and performance analysis
-- Architecture and design principles
-- Testing requirements and feedback guidelines
+| Agent                   | Purpose                                                               |
+| ----------------------- | --------------------------------------------------------------------- |
+| `security-reviewer`     | Security-focused review: auth, injection, XSS, secrets, dependencies. |
+| `test-runner`           | Runs tests and reports failures and coverage.                         |
+| `trilingual-translator` | EN/JA/ZH translation in initial, proofread, and refine roles.         |
 
-**javascript-testing** (1,087 lines, 3 files)
+## Rules
 
-- JavaScript/Node.js testing with Vitest
-- 100% code coverage strategies
-- Mocking patterns (process, fs, modules, timers)
-- Test organization and best practices
-- Progressive disclosure (mocking-guide, coverage-strategies)
+| Rule                   | Scope      | Purpose                                         |
+| ---------------------- | ---------- | ----------------------------------------------- |
+| `git-conventions`      | Always     | Conventional commits, branch naming, PR titles. |
+| `node-js-dependencies` | Always     | pnpm and catalog dependency rules.              |
+| `output-organization`  | Always     | `output/tasks/` layout and naming.              |
+| `testing`              | Test files | Vitest, 100% coverage, mocking.                 |
+| `working-with-script`  | Always     | Node-first scripts, error handling, tests.      |
+
+Path-scoped rules load only for matching files; all rules live in `.claude/rules/`.
+
+## Hooks
+
+| Hook                 | Event                         | Purpose                                            |
+| -------------------- | ----------------------------- | -------------------------------------------------- |
+| `context_monitor.js` | `UserPromptSubmit`            | Warns at 20/40/60% of the context window.          |
+| `audit_logger.js`    | `PostToolUse` (`*`)           | Logs tool usage to `logs/<YYYYMMDD>/logging.json`. |
+| `auto_format.js`     | `PostToolUse` (`Edit\|Write`) | Runs Prettier on edited files.                     |
+
+The context monitor defaults to a 1M window; set `CLAUDE_CONTEXT_WINDOW` to override it.
+
+## Translation
+
+Ask Claude to translate, or invoke the `trilingual-translator` agent. `translation-expertise`
+supplies the methodology; `engineering-terminology` and `document-writing` add domain and style
+guidance.
+
+- English ↔ Japanese ↔ Traditional Chinese
+- Optional initial → proofread → refine workflow
+- File and URL sources: `WebFetch` for simple pages; `agent-browser` / `browser-use` for JS-heavy
+  pages
+- 1,075+ technical terms across six engineering domains
+
+Do not use Playwright for text extraction; it is reserved for e2e tests.
+
+## Testing
+
+Unit and integration tests use **Vitest**:
+
+```bash
+pnpm test
+pnpm test:coverage   # 100% thresholds
+```
+
+Test rules: `.claude/rules/testing.md`. Deep guides: `docs/testing/`.
+
+End-to-end tests use **Playwright** in `e2e/`:
+
+```bash
+pnpm exec playwright install chromium
+pnpm test:e2e
+```
+
+Playwright is e2e-only. For normal browsing or text extraction, use `WebFetch` or
+`agent-browser` / `browser-use`.
 
 ## Configuration
 
 ### Package Management
 
-This workspace uses **pnpm** with catalog feature for dependency management.
-
-**Adding dependencies:**
+pnpm **12.14.0** is pinned via `packageManager` and enforced by `engines.pnpm` / `engineStrict`.
+All current dependencies use the `dev` catalog.
 
 ```bash
-# For production dependencies
-pnpm add some-package --save-catalog-name=prod
-
-# For dev dependencies
 pnpm add -D some-package --save-catalog-name=dev
 ```
 
-**Catalog configuration** in `pnpm-workspace.yaml`:
+`pnpm-workspace.yaml` hardening:
 
-- `prod`: Production dependencies (@mozilla/readability, iconv-lite, jsdom)
-- `minimumReleaseAge: 10080`: Wait 7 days before using new package versions
-- `packageManagerStrict: true`: Enforce pnpm usage
-- `strictPeerDependencies: true`: Strict peer dependency checking
+- `minimumReleaseAge: 10080` — wait 7 days before using a new package version
+- `strictPeerDependencies: true`
+- `engineStrict: true`
+- `ignoreScripts: true` with `allowBuilds: { esbuild: true }`
+- `trustPolicy: no-downgrade`
+- `overrides` — bounded security pins for transitive dependencies
 
 ### Permissions
 
@@ -168,17 +277,44 @@ Workspace permissions are configured in `.claude/settings.json`:
 
 **Allowed operations:**
 
-- pnpm commands, git operations, python, node
+- pnpm commands, git status/diff/log/add/commit, python, node
 - ls, dir, cd, pwd, cat, type, curl, mkdir
 
 **Requires confirmation:**
 
-- rm operations (file deletion)
+- git push, rebase, merge, cherry-pick
+- kill -9, pkill, killall
 
 **Denied operations:**
 
+- rm, sudo, chmod, chown, dd, mount, systemctl, mkfs, fdisk, parted
 - npm commands (use pnpm instead)
 - PowerShell, cmd, Windows admin commands
-- System modification commands
+- destructive git operations (force push, hard reset, clean -fd, branch -D, tag -d)
+- pnpm publish
 
-Additional local permissions can be added in `.claude/settings.local.json`.
+Local overrides belong in `.claude/settings.local.json` (git-ignored).
+
+### MCP Servers
+
+Local MCP configuration lives in `.mcp.json`, which is git-ignored. Copy `.mcp.json.example` and
+adjust the paths for your machine.
+
+## Contributing
+
+This is a personal workspace, but forks and suggestions are welcome. Before opening a PR, run
+`pnpm lint`, `pnpm typecheck`, `pnpm test:coverage`, and `pnpm format:check`.
+
+Third-party skills are managed with skills.sh; project-owned skills live in `.claude/skills/`.
+
+## Credits
+
+- **Third-party skills**: the [skills.sh](https://skills.sh) ecosystem, installed with
+  [vercel-labs/skills](https://github.com/vercel-labs/skills). Individual authors are credited in
+  the tables above.
+- **Built for**: [Claude Code](https://claude.com/claude-code).
+
+## License
+
+The original contents of this repository are [ISC](./LICENSE). Third-party skills remain under
+their own licenses; see [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).

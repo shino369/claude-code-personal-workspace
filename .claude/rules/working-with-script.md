@@ -7,7 +7,7 @@ Always use Node.js first - this is a pnpm workspace.
 **Default: Node.js**
 
 - Configured with pnpm, npm packages available
-- Leverage existing dependencies (@mozilla/readability, iconv-lite, jsdom)
+- Leverage existing dependencies and shared utilities
 - Modern JavaScript/TypeScript
 
 **Exceptions:** Python (data science/ML), Bash (shell automation), other languages only when specifically required
@@ -53,7 +53,7 @@ pnpm test:coverage
 
 ### Detailed Guidance
 
-Use `javascript-testing` skill for:
+See `.claude/rules/testing.md` for the test-file rules and `docs/testing/` for:
 
 - Test writing principles and Vitest usage
 - Mocking strategies and 100% coverage techniques

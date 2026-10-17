@@ -9,6 +9,39 @@ description: Expert translation methodology and best practices for English-Japan
 
 This skill provides comprehensive translation expertise for English, Japanese, and Traditional Chinese. It covers translation methodologies, cultural considerations, and best practices for producing high-quality translations.
 
+## Technical Documentation in This Workspace
+
+Most translation here is engineering content. These rules take precedence over the general guidance below.
+
+**Never translate**:
+
+- Code blocks, inline code, identifiers, file paths, commands, CLI flags, URLs, frontmatter keys
+- Markup and macros (HTML, JSX, Confluence storage format) — translate only the text nodes
+- Severity prefixes and verdicts in review reports (⚠️ Critical, 💡 Suggestion, ❓ Question, 💅 Nit, 🎉 Praise, APPROVE / REQUEST CHANGES / BLOCK)
+
+**Preserve structure 1:1**: same heading levels and order, lists, tables, links and anchors, so an `-en`/`-ja` (or `-zh`) pair diffs section by section.
+
+**Japanese house style**:
+
+- です/ます form for guidelines, specs and reports — not である調
+- Keep framework and product names in English: React, Next.js, TanStack Query, Zustand, Zod, pnpm, PR
+- Use the established katakana/Japanese for general concepts: コンポーネント, フック, 状態管理, デプロイ, レビュー
+- Headings use `日本語 (English)` form, e.g. `コア原則 (Core Principles)`
+- Full-width punctuation in Japanese prose; half-width inside code and identifiers
+
+**Traditional Chinese house style**:
+
+- Use 繁體中文 and Taiwan terminology by default (軟體, 網路, 資訊)
+- Keep framework and product names in English
+- Full-width punctuation in prose; half-width inside code and identifiers
+- Use 成語 sparingly and only when it reads naturally
+
+**Document pairs** (`*-en.md` / `*-ja.md` / `*-zh.md`): when one side changes, update the matching sections of the other in the same change, translating from the side that changed. Don't retranslate untouched sections.
+
+**Output**: write the translation in place or to the requested file; list uncertain term choices briefly at the end, not inline.
+
+**Web sources**: use `WebFetch` for simple pages; use the `agent-browser` / `browser-use` skills for interactive or JS-heavy pages. Don't use Playwright for text extraction; it is reserved for e2e tests.
+
 ## Translation Philosophy
 
 ### Core Principles

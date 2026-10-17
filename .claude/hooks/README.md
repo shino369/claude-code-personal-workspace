@@ -69,6 +69,21 @@ pnpm add -D prettier
 }
 ```
 
+### 3. Context Monitor (`context_monitor.js`)
+
+**Event:** UserPromptSubmit
+**Purpose:** Warns when the session is using too much context, based on actual token usage.
+
+**What it does:**
+
+- Reads the newest assistant `usage` entry from the session transcript
+- Injects `[Context Monitor]` at 20%, `[WARNING]` at 40%, and `[URGENT]` at 60%
+- Also sets `systemMessage` for warning/urgent levels so the warning is visible in the UI
+- Fails open (stays silent) if the transcript is missing or unparsable
+
+**Configuration:** The window defaults to 1M tokens. Set `CLAUDE_CONTEXT_WINDOW` to the model's
+actual window if it differs.
+
 ## Hook Configuration
 
 Hooks are configured in `.claude/settings.json`:
@@ -76,13 +91,24 @@ Hooks are configured in `.claude/settings.json`:
 ```json
 {
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/context_monitor.js",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\\.claude\\hooks\\audit_logger.js\"",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/audit_logger.js",
             "timeout": 10
           }
         ]
@@ -92,7 +118,7 @@ Hooks are configured in `.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\\.claude\\hooks\\auto_format.js\"",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/auto_format.js",
             "timeout": 30
           }
         ]

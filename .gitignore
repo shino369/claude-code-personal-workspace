@@ -196,9 +196,25 @@ pip-log.txt
 # ============================================
 # Project Specific Excludes
 # ============================================
-# Add any project-specific patterns below
-skills-lock.json
-/claude-workspace-plugin/skills
-/.agents
-/.claude/skills
+# Local MCP configuration (copy .mcp.json.example to .mcp.json)
+/.mcp.json
+
+# Global skill-manager state; the project lockfile is skills-lock.json
+/.agents/.skill-lock.json
+
+# Local aliases for GitHub agent discovery
 /.github/skills
+
+# Local resources
+/resources
+
+# Project-owned skills are tracked in .claude/skills/. Third-party skill
+# contents are tracked in .agents/skills/; the .claude/skills entries for them
+# are machine-specific discovery aliases recreated by skills.sh.
+/.claude/skills/*
+!/.claude/skills/context-manager/
+!/.claude/skills/dependency-update/
+!/.claude/skills/document-writing/
+!/.claude/skills/engineering-terminology/
+!/.claude/skills/security-update/
+!/.claude/skills/translation-expertise/

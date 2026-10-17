@@ -13,6 +13,7 @@
  * ```
  */
 
+import path from 'path';
 import { fileURLToPath } from 'url';
 
 /**
@@ -28,10 +29,11 @@ export function runIfMain(importMetaUrl, mainFunction) {
   }
 
   try {
-    const modulePath = fileURLToPath(importMetaUrl);
-    const scriptPath = process.argv[1];
+    const modulePath = path.resolve(fileURLToPath(importMetaUrl));
+    const scriptPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
 
-    // Check if this file is being executed directly
+    // Check if this file is being executed directly. Resolving both sides makes
+    // this work whether the script was invoked with a relative or absolute path.
     if (modulePath === scriptPath || modulePath === scriptPath + '.js') {
       mainFunction();
     }

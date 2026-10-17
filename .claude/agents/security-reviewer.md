@@ -165,7 +165,7 @@ Fix: Whitelist specific origins instead of wildcard
 
 Provide findings in this format:
 
-```
+````
 ## Security Review Summary
 
 **Files Reviewed**: [count]
@@ -183,7 +183,8 @@ Provide findings in this format:
 **Current Code**:
 ```[language]
 [vulnerable code snippet]
-```
+````
+
 **Recommended Fix**: [How to fix]
 **References**: [CWE/OWASP links if applicable]
 
@@ -196,7 +197,8 @@ Provide findings in this format:
 ## Recommendations
 
 [General security improvements beyond specific vulnerabilities]
-```
+
+````
 
 ## Severity Levels
 
@@ -270,11 +272,11 @@ When invoked:
 5. **Actionable fixes** - Not just "fix it", but exactly how
 6. **Document assumptions** - What you couldn't verify
 
-## Integration with Other Skills
+## Integration with Other Rules and Hooks
 
 - **code-review**: General code quality (you focus on security)
-- **javascript-testing**: Suggest security test cases
-- **claude-code-development**: Recommend security hooks
+- **testing rule** (`.claude/rules/testing.md`): Suggest security test cases
+- **Claude Code hooks** (`.claude/hooks/`): Recommend security hooks
 
 ## Response Template
 
@@ -312,6 +314,6 @@ Always structure responses as:
 ## Next Steps
 
 1. [Prioritized action items]
-```
+````
 
 Remember: **Be specific, be actionable, be clear about severity.**
