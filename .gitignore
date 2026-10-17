@@ -202,8 +202,8 @@ pip-log.txt
 # Local MCP configuration (copy .mcp.json.example to .mcp.json)
 /.mcp.json
 
-# Global skill-manager state; the project lockfile is skills-lock.json
-/.agents/.skill-lock.json
+# Local skills CLI cache; installed skills are tracked in .claude/skills/
+/.agents/
 
 # Local aliases for GitHub agent discovery
 /.github/skills
@@ -211,14 +211,4 @@ pip-log.txt
 # Local resources
 /resources
 
-# Project-owned skills are tracked in .claude/skills/. Third-party skill
-# contents are tracked in .agents/skills/; the .claude/skills entries for them
-# are machine-specific discovery aliases recreated by skills.sh.
-/.claude/skills/*
-!/.claude/skills/context-manager/
-!/.claude/skills/dependency-update/
-!/.claude/skills/document-writing/
-!/.claude/skills/engineering-terminology/
-!/.claude/skills/security-update/
-!/.claude/skills/translation-expertise/
-!/.claude/skills/web-browsing/
+# Skills (project-owned and third-party) are tracked in .claude/skills/.

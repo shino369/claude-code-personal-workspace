@@ -40,10 +40,10 @@ This workspace keeps the Claude Code setup in one repository:
 - `CLAUDE.md` — main workspace memory and working agreements
 - `.claude/rules/` — always-on and path-scoped rules
 - `.claude/agents/` — task-specialised subagents
-- `.claude/skills/` — project-owned skills, plus local aliases for third-party skills
+- `.claude/skills/` — project-owned and third-party skills (all tracked)
 - `.claude/hooks/` — context monitor, audit logger, auto-formatter
 - `.claude/settings.json` — shared permissions and hook configuration
-- `.agents/skills/` — tracked third-party skill contents, installed with Vercel's skills.sh
+- `.agents/` — local skills CLI cache (git-ignored)
 - `skills-lock.json` — pinned sources and hashes for third-party skills
 
 The workspace is deliberately lightweight: no slash commands, no monorepo, and no build step.
@@ -64,9 +64,6 @@ subagents — ask Claude directly.
 corepack enable
 pnpm install
 
-# Optional: restore the third-party skills recorded in skills-lock.json
-pnpm dlx skills experimental_install
-
 pnpm test
 ```
 
@@ -83,12 +80,12 @@ pnpm format:check
 
 ```text
 .
-├── .agents/skills/          # Third-party skill contents (tracked)
+├── .agents/                 # Local skills CLI cache (git-ignored)
 ├── .claude/
 │   ├── agents/              # Subagents
 │   ├── hooks/               # Context monitor, audit logger, formatter
 │   ├── rules/               # Always-on and path-scoped rules
-│   └── skills/              # Project-owned skills + local third-party aliases
+│   └── skills/              # Project-owned and third-party skills (tracked)
 ├── docs/testing/            # Deep testing guides
 ├── e2e/                     # Playwright e2e tests
 ├── tasks/                   # Generated task outputs (git-ignored)
@@ -98,9 +95,9 @@ pnpm format:check
 └── ...
 ```
 
-Third-party skill **contents** are committed under `.agents/skills/`. The matching
-`.claude/skills/<name>` entries are local discovery aliases (symlinks or junctions) recreated by
-the skills CLI; they are git-ignored because their targets are machine-specific.
+Third-party skills are committed directly under `.claude/skills/` as real files, so Claude Code
+discovers them on a fresh clone without a restore step. `.agents/` is only a local skills CLI cache
+and is git-ignored.
 
 ### Tasks
 
@@ -133,7 +130,7 @@ git-ignored.
 
 ### Third-party skills
 
-These are installed from their upstream repositories with Vercel's
+These are vendored from their upstream repositories with Vercel's
 [`skills` CLI](https://github.com/vercel-labs/skills) (the [skills.sh](https://skills.sh)
 ecosystem). All credit belongs to the original authors. Sources and hashes are pinned in
 `skills-lock.json`; full license texts and copyright notices are in
@@ -169,26 +166,26 @@ ecosystem). All credit belongs to the original authors. Sources and hashes are p
 > All third-party skills remain under their upstream licenses. See
 > [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for the full license texts and copyright
 > notices. `skill-creator` also bundles its license at
-> `.agents/skills/skill-creator/LICENSE.txt`.
+> `.claude/skills/skill-creator/LICENSE.txt`.
 
 ### Managing skills
 
 Project-owned skills live in `.claude/skills/` and are committed to this repository.
 
-Third-party skills are installed with Vercel's `skills` CLI from the
+Third-party skills are vendored into `.claude/skills/` with Vercel's `skills` CLI from the
 [skills.sh](https://skills.sh) ecosystem:
 
 ```bash
-pnpm dlx skills add <owner/repo>      # install a skill
-pnpm dlx skills list                  # list installed skills
-pnpm dlx skills check                 # check for updates
-pnpm dlx skills update                # update installed skills
-pnpm dlx skills experimental_install  # restore everything from skills-lock.json
+pnpm dlx skills add <owner/repo> --skill <name> --copy --agent claude-code
+pnpm dlx skills list
+pnpm dlx skills update
 ```
 
-The project lockfile `skills-lock.json` is committed, so a fresh clone can restore the same skills
-with `pnpm dlx skills experimental_install` (`pnpm dlx skills install` with no arguments is an
-alias in current releases).
+`--copy --agent claude-code` writes real files into `.claude/skills/` (not symlinks), so the skills
+work on a fresh clone even when `core.symlinks=false`. `skills-lock.json` pins sources and hashes;
+commit it together with the skill files. On Windows, `skills update` may exit 127 after a
+successful update due to an upstream crash — verify the files changed before treating it as a
+failure.
 
 ### Skill runtime prerequisites
 
