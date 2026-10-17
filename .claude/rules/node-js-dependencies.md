@@ -6,36 +6,22 @@ This workspace uses **pnpm** with the **catalog** feature for centralized depend
 
 **Always use `pnpm`, never `npm`:**
 
-- Workspace configured with `packageManagerStrict: true`
+- Workspace pins pnpm 12.14.0 via `package.json` (`packageManager`); `engineStrict: true` enforces `engines.pnpm`
 - npm commands blocked in `.claude/settings.json`
 
 ## Adding Dependencies
 
-**Production:**
-
-```bash
-pnpm add package-name --save-catalog-name=prod
-```
-
-**Development:**
+**Development (the only catalog in this workspace):**
 
 ```bash
 pnpm add -D package-name --save-catalog-name=dev
 ```
 
+If a `prod` catalog is added later, use `--save-catalog-name=prod` for runtime packages.
+
 ## Catalog Feature
 
-Centralizes version management in `pnpm-workspace.yaml`:
-
-```yaml
-catalogs:
-  prod:
-    '@mozilla/readability': ^0.6.0
-    jsdom: ^27.4.0
-  dev:
-    eslint: ^9.17.0
-    vitest: ^2.1.8
-```
+Centralizes version management in `pnpm-workspace.yaml`.
 
 **Benefits:**
 
@@ -44,21 +30,10 @@ catalogs:
 - 7-day minimum release age for stability
 - Update once, affects all packages
 
-**Result in `package.json`:**
-
-```json
-{
-  "dependencies": {
-    "package-name": "catalog:prod"
-  }
-}
-```
-
 ## Common Commands
 
 ```bash
 pnpm install                              # Install all
-pnpm add package-name --save-catalog-name=prod   # Add prod
 pnpm add -D package-name --save-catalog-name=dev # Add dev
 pnpm remove package-name                  # Remove (edit catalog manually)
 pnpm update                               # Update all
@@ -68,8 +43,7 @@ pnpm test / pnpm lint                     # Run scripts
 
 ## Catalog Categories
 
-**`prod`**: Runtime dependencies (@mozilla/readability, iconv-lite, jsdom)
-**`dev`**: Build tools, testing, linters (vitest, eslint, prettier)
+**`dev`**: All current dependencies — tooling (vitest, eslint, prettier, typescript, vite)
 
 ## Important
 

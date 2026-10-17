@@ -89,13 +89,13 @@ When working with file-based or URL-based translations:
 
 - **Read source files** directly using the Read tool
 - **Fetch URL content** using the WebFetch tool
-- **Write intermediate outputs** to `output/tasks/YYYYMMDD_translate_[description]/tmp/`
-- **Write final deliverables** to `output/tasks/YYYYMMDD_translate_[description]/translated/`
+- **Write intermediate outputs** to `tasks/translate-<description>-<yymmdd>/tmp/`
+- **Write final deliverables** to `tasks/translate-<description>-<yymmdd>/translated/`
 
 **File Structure**:
 
 ```
-output/tasks/YYYYMMDD_translate_[description]/
+tasks/translate-<description>-<yymmdd>/
 ├── translated/
 │   └── [filename]_[lang].md    # Final output (e.g., README_ja.md, article_en.md)
 └── tmp/

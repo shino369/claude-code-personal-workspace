@@ -6,165 +6,91 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a personal workspace for Claude Code to assist with various daily tasks including programming, documentation, research, consultation, translation, and generative-AI development.
 
-**Package Manager**: This workspace uses `pnpm` as the package manager. Always use `pnpm` commands instead of `npm`.
+**Package Manager**: This workspace uses **pnpm 12.14.0**, pinned in `package.json` via `packageManager` (Corepack). Always use `pnpm` commands instead of `npm`; run `corepack enable` or prefix commands with `corepack pnpm` if `pnpm` is not on your PATH.
 
-## Workspace Architecture
+## Context Management
 
-The workspace is designed with a structured approach to organizing outputs and configurations:
+**Why Context Management Matters**: Quality degrades at 20-40% usage, long before a window is full. The actual window depends on the model (1M tokens by default; set `CLAUDE_CONTEXT_WINDOW` to override). A `UserPromptSubmit` hook (`.claude/hooks/context_monitor.js`) measures real usage from the transcript and injects `[Context Monitor]` warnings at 20/40/60%, so act on those warnings rather than estimating from message counts.
 
-### Configuration Structure
+**Best Practices:**
 
-The repository has the following implemented structure:
+1. **Scope conversations per feature** - One conversation per task/feature prevents context bleeding. Don't build auth and refactor database in the same session.
 
-- `./CLAUDE.md` - Main memory/guidance file (this file)
-- `./.claude/rules/*` - Extended rules for Claude Code behavior (2 rules)
-- `./.claude/settings.json` - Workspace configuration (permissions, hooks, attribution)
-- `./.claude/agents/*` - Task-specialized subagents (trilingual-translator)
-- `./.claude/skills/*` - Progressively disclosed knowledge (7 skills)
-- `./.claude/hooks/*` - Claude Code hooks (audit_logger, auto_format)
-- `./.claude/commands/*` - Slash commands (/translate)
+2. **Use external memory** - Write plans and progress into the task directory: `tasks/<task-name-yymmdd>/plan.md` and `NOTES.md`. These persist across sessions, allowing fresh context with preserved knowledge.
 
-**Implemented Components:**
+3. **The copy-paste reset** - When context gets bloated:
+   - Copy important info from terminal
+   - Run `/compact` to summarize
+   - Run `/clear` to wipe context
+   - Paste back only what matters
 
-**Agents:**
+4. **Know when to clear** - If explaining the same thing 3+ times, `/clear` and reframe. Fresh context > fighting through degraded context.
 
-- `trilingual-translator.md` - Multi-stage translation agent with 3 roles
+5. **Write plans to a file** - For complex tasks, outline the approach in `tasks/<task-name-yymmdd>/plan.md`. It survives context resets and keeps the implementation focused.
 
-**Skills:**
+**External Memory Files:**
 
-- `translation-expertise` - Translation methodology (2,836 lines, 6 files)
-- `engineering-terminology` - Technical terms (1,810 lines, 7 files, 1,075+ terms)
-- `document-writing` - Writing conventions (400+ lines)
-- `web-content-fetcher` - Web content extraction (492 lines)
-- `claude-code-development` - Claude Code components guide (comprehensive)
-- `code-review` - Software engineering best practices for code review (331 lines)
-- `javascript-testing` - JavaScript/Node.js testing with Vitest (1,087 lines, 3 files)
+- `tasks/<task-name-yymmdd>/plan.md` - Implementation plan and design decisions
+- `tasks/<task-name-yymmdd>/NOTES.md` - Progress, findings, and handoff notes
 
-**Commands:**
+**Model Selection: important! use inherit model from the main session**
 
-- `/translate` - Trilingual translation with file/URL support
+## Task Organization
 
-**Hooks:**
+Conventions for creating outputs (task directories under `tasks/`, content subdirectories, file naming) live in `.claude/rules/task-organization.md`.
 
-- `audit_logger.js` - Logs all tool usage to /logs/
-- `auto_format.js` - Auto-formats files using prettier
+## Quality Checks
 
-**Settings:**
+Run these before finishing a change:
 
-- Permission system (allow/ask/deny patterns)
-- Hook configuration (PostToolUse events)
-- Attribution for commits and PRs
-
-### Output Organization
-
-All Claude Code generated files should be placed in `output/tasks/<YYYYMMDD_task_name>/`:
-
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test:coverage
+pnpm format:check
 ```
-output/
-└── tasks/
-    ├── 26260101_some_task
-    |   ├── reviews/
-    |   |   ├── REVIEW_some_task.md
-    |   |   └── ...
-    |   ├── studies/
-    |   |   ├── STUDIES_some_task.md
-    |   |   └── ...
-    |   ├── scripts/
-    |   |   ├── some_script.js
-    |   |   ├── some_script.py
-    |   |   └── ...
-    |   ├── ... // others
-    |
-    ├── 26260102_some_another_task
-```
-
-**Key conventions:**
-
-- Task directory format: `YYYYMMDD_task_name`
-- Subdirectories vary based on task nature (reviews/, studies/, scripts/, etc.)
-- Choose appropriate subdirectory names that reflect the content type
 
 ## Available Systems
 
-### Trilingual Translation System
+### Translation
 
-Use `/translate` command for professional English ↔ Japanese ↔ Traditional Chinese translation.
+Ask for a translation, or invoke the `trilingual-translator` agent directly. The `translation-expertise` skill supplies the methodology; `engineering-terminology` and `document-writing` add domain and style guidance.
 
-**Features:**
+### Web Content
 
-- Three-stage workflow (Initial → Proofread → Refine)
-- File and URL translation support
-- 1,075+ technical terms across 6 engineering domains
-- Automatic encoding detection
+Use `WebFetch` for simple pages. For browser work, use the `web-browsing` skill and `.claude/rules/browser-tools.md`: `pnpm exec agent-browser ...` is the default for ad-hoc interaction, `browser-use` is for the user's real Chrome or autonomous/cloud work, and Playwright is **e2e-only** (`e2e/*.e2e.*`, `pnpm test:e2e`).
 
-**Quick Start:**
+### Skill Runtimes
 
-```bash
-/translate --lang en "ぬるぽ ガッ"
-/translate --lang ja @README.md
-/translate --lang cn --url https://example.com/article
-```
+Verify a third-party skill's runtime before invoking it. Full install notes are in `README.md`
+under "Skill runtime prerequisites".
 
-See `docs/translation/README.md` for complete documentation.
+- `agent-browser` — devDependency; always invoke as `pnpm exec agent-browser ...` (no global shim is installed)
+- `browser-use` — `browser-use` CLI from the `browser-use` package (`uv tool install --python 3.12 browser-use`); it depends on `browser-harness` for troubleshooting
+- `playwright-cli` — local Playwright (`pnpm exec playwright cli ...`)
+- `skill-creator` — Python scripts via `uv run --with pyyaml --python 3.12 python ...`
+- `gh` — GitHub CLI for Dependabot PR review and PR attachments; not installed here (https://cli.github.com/)
 
-### Claude Code Development
+Do not use `pnpm add -g`: its global bin directory is not on `PATH`, and global installs bypass the
+workspace lockfile and supply-chain settings.
 
-Use the `claude-code-development` skill when creating or modifying Claude Code components:
+Third-party skills are not committed. Install them with `pnpm skills:install` (use `--skip <name>`
+to omit optional skills, or `--only <name>` to select specific ones); third-party installs land in
+`.claude/skills/` and remain untracked. After installing or updating them, run
+`pnpm skills:check` to verify every lock entry is installed with a matching frontmatter name.
 
-- Agents (subagents)
-- Skills (progressively disclosed knowledge)
-- Commands (slash commands)
-- Hooks (automation)
+If a runtime is missing, tell the user what to install rather than silently switching tools.
 
-This skill provides expert guidance and best practices for extending this workspace.
+## Additional Documentation
 
-### Hooks System
+**Task Memory:**
 
-**Audit Logger** (`audit_logger.js`)
+- `tasks/<task-name-yymmdd>/plan.md` - Implementation plan and design decisions
+- `tasks/<task-name-yymmdd>/NOTES.md` - Progress, findings, and handoff notes
 
-- Automatically logs all tool usage
-- Output: `/logs/<YYYYMMDD>/logging.json`
-- Useful for reviewing work history
+**Quick Reference:**
 
-**Auto Formatter** (`auto_format.js`)
-
-- Automatically formats files using prettier
-- Triggers after Edit and Write operations
-- Supports .js, .ts, .json, .md, .yaml, etc.
-
-## Package Management
-
-This workspace uses **pnpm** with the catalog feature.
-
-**Adding dependencies:**
-
-```bash
-# Production dependencies
-pnpm add package-name --save-catalog-name=prod
-
-# Development dependencies
-pnpm add -D package-name --save-catalog-name=dev
-```
-
-**Catalog benefits:**
-
-- Centralized version management in `pnpm-workspace.yaml`
-- 7-day minimum release age for stability
-- Strict package manager enforcement (no npm)
-- Consistent dependencies across workspace
-
-## Working in This Repository
-
-When creating new outputs:
-
-1. **Create task directory**: Use format `output/tasks/YYYYMMDD_descriptive_name/`
-2. **Organize by content type**: Create subdirectories like `reviews/`, `studies/`, `scripts/`, `docs/`, etc. based on what you're generating
-3. **Use descriptive names**: File names should clearly indicate their purpose (e.g., `REVIEW_authentication_flow.md`, `analyze_data.py`)
-4. **Use node.js for scripts**: This is a pnpm workspace, prefer node.js over other languages when creating scripts
-5. **Leverage available skills**: Use translation, engineering-terminology, document-writing skills when relevant
-
-## File Naming Conventions
-
-- Review files: `REVIEW_*.md`
-- Study/research files: `STUDIES_*.md`
-- Scripts: Use appropriate extensions (`.py`, `.js`, `.sh`, etc.) with descriptive names
+- Context degradation starts at 20-40%, not 100% - manage proactively
+- Record complex plans in the task's `plan.md` so they survive context resets
+- Task files under `tasks/` persist across sessions
+- `/clear` without hesitation - fresh context beats degraded context

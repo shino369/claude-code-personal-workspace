@@ -10,6 +10,9 @@ on:
       - main
       - develop
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test on Node.js ${{ matrix.node-version }}
@@ -17,7 +20,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [20.x, 22.x]
+        node-version: [22.x, 24.x]
 
     steps:
       - name: Checkout repository
@@ -26,7 +29,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10.28.0
+          version: 12.14.0
 
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
@@ -49,20 +52,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Get Playwright version
-        id: playwright-version
-        run: echo "version=$(pnpm list playwright --depth=0 --json | jq -r '.[0].devDependencies.playwright.version')" >> $GITHUB_OUTPUT
-
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
-
-      - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Typecheck
+        run: pnpm typecheck
 
       - name: Run linter
         run: pnpm lint

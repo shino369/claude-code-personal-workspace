@@ -4,6 +4,20 @@
  */
 import { defineConfig } from 'vitest/config';
 
+// Third-party skills are vendored as-is; do not run or measure them.
+const thirdPartySkills = [
+  '**/.agents/**',
+  '**/.github/skills/**',
+  '**/.claude/skills/agent-browser/**',
+  '**/.claude/skills/browser-use/**',
+  '**/.claude/skills/code-review/**',
+  '**/.claude/skills/diagnosing-bugs/**',
+  '**/.claude/skills/i-have-adhd/**',
+  '**/.claude/skills/playwright-cli/**',
+  '**/.claude/skills/skill-creator/**',
+  '**/.claude/skills/tdd/**',
+];
+
 export default defineConfig({
   test: {
     // Test environment
@@ -25,8 +39,9 @@ export default defineConfig({
       '**/coverage/**',
       '**/dist/**',
       '**/build/**',
-      '**/output/**',
+      '**/tasks/**',
       '**/logs/**',
+      ...thirdPartySkills,
     ],
 
     // Coverage configuration
@@ -42,16 +57,15 @@ export default defineConfig({
         '**/*.config.js',
         '**/*.config.mjs',
         '**/*.config.ts',
-        '**/output/**',
+        '**/tasks/**',
         '**/logs/**',
         '**/__tests__/**',
         '**/*.test.js',
         '**/*.spec.js',
         '**/*.integration.test.js',
+        ...thirdPartySkills,
       ],
-      // Only report coverage for files actually imported by tests
       reportOnFailure: true,
-      all: false, // Don't include all source files, only tested ones
       // Thresholds for 100% coverage
       thresholds: {
         statements: 100,

@@ -1,25 +1,32 @@
+packages:
+  - .
+
 catalogs:
   dev:
-    '@mozilla/readability': ^0.6.0
-    '@types/jest': ^30.0.0
-    '@vitest/coverage-v8': ^4.0.16
-    '@vitest/ui': ^4.0.16
-    cross-env: ^10.1.0
-    eslint: ^9.39.2
+    '@playwright/test': ^1.64.0
+    '@types/node': ^24.19.2
+    '@vitest/coverage-v8': ^4.1.11
+    '@vitest/ui': ^4.1.11
+    agent-browser: ^0.39.0
+    eslint: ^9.39.5
     eslint-config-prettier: ^10.1.8
-    globals: ^17.0.0
-    iconv-lite: ^0.7.1
-    jest: ^30.2.0
-    jsdom: ^27.4.0
-    playwright: ^1.57.0
-    prettier: ^3.7.4
-    vitest: ^4.0.16
+    globals: ^17.13.0
+    playwright: ^1.64.0
+    prettier: ^3.9.10
+    typescript: ^5.9.3
+    vite: ^7.3.7
+    vitest: ^4.1.11
 
 minimumReleaseAge: 10080
 
-package:
-  - .
+allowBuilds:
+  # agent-browser's postinstall downloads the browser; the README uses the
+  # explicit `pnpm exec agent-browser install` step instead.
+  agent-browser: false
+  esbuild: true
 
-packageManagerStrict: true
+engineStrict: true
 
 strictPeerDependencies: true
+
+trustPolicy: no-downgrade

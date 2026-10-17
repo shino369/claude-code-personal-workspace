@@ -1,8 +1,8 @@
 {
   "name": "claude-code-personal-workspace",
   "version": "1.0.0",
-  "description": "An example project to demostrate Claude Code feature",
-  "main": "index.js",
+  "private": true,
+  "description": "Personal Claude Code workspace with reusable rules, agents, skills, hooks, and quality gates",
   "type": "module",
   "imports": {
     "#utils/*": "./utils/*"
@@ -12,26 +12,37 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
+    "test:e2e": "playwright test --pass-with-no-tests",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md,yaml,yml}\"",
-    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md,yaml,yml}\""
+    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md,yaml,yml}\"",
+    "skills:check": "node utils/skills-check.js",
+    "skills:install": "node utils/skills-install.js",
+    "skills:update": "pnpm dlx skills update -y"
   },
   "keywords": [],
   "author": "shino369",
   "license": "ISC",
-  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=12.14.0"
+  },
+  "packageManager": "pnpm@12.14.0+sha512.c18ba6d87993d3d164cb5e8948f32b2c06ee854487e06cd8d86781342fb3e5bb4634367034711e86802baa9c37bea906ce1929ad08d70884c97d801df13389a6",
   "devDependencies": {
-    "@mozilla/readability": "catalog:dev",
+    "@playwright/test": "catalog:dev",
+    "@types/node": "catalog:dev",
     "@vitest/coverage-v8": "catalog:dev",
     "@vitest/ui": "catalog:dev",
+    "agent-browser": "catalog:dev",
     "eslint": "catalog:dev",
     "eslint-config-prettier": "catalog:dev",
     "globals": "catalog:dev",
-    "iconv-lite": "catalog:dev",
-    "jsdom": "catalog:dev",
     "playwright": "catalog:dev",
     "prettier": "catalog:dev",
+    "typescript": "catalog:dev",
+    "vite": "catalog:dev",
     "vitest": "catalog:dev"
   }
 }
