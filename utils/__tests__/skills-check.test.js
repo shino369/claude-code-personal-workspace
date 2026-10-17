@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { vi } from 'vitest';
 import { formatResult, main, summarize } from '../skills-check.js';
 
 /** @type {string[]} */

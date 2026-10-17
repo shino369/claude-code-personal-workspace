@@ -1,7 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { afterEach, describe, expect, test } from 'vitest';
 import { checkSkills, readSkillsLock } from '../skills-lock.js';
 
 /** @type {string[]} */

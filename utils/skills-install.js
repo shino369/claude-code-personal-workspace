@@ -135,7 +135,12 @@ export async function main({
   return installSkills({ rootDir, lockPath, skip, only, spawn, log });
 }
 
-/* c8 ignore next 3 - CLI entry point */
+/* c8 ignore next 8 - CLI entry point */
 runIfMain(import.meta.url, async () => {
-  process.exit(await main());
+  try {
+    process.exit(await main());
+  } catch (error) {
+    console.error('Error:', error instanceof Error ? error.message : error);
+    process.exit(1);
+  }
 });
