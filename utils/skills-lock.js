@@ -14,7 +14,7 @@ import path from 'path';
 
 /**
  * @param {string} lockPath
- * @returns {Promise<{ version?: number, skills: Record<string, { computedHash?: string }> }>}
+ * @returns {Promise<{ version?: number, skills: Record<string, { source?: string, computedHash?: string }> }>}
  */
 export async function readSkillsLock(lockPath) {
   const lock = JSON.parse(await readFile(lockPath, 'utf8'));

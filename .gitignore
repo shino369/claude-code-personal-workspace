@@ -202,7 +202,7 @@ pip-log.txt
 # Local MCP configuration (copy .mcp.json.example to .mcp.json)
 /.mcp.json
 
-# Local skills CLI cache; installed skills are tracked in .claude/skills/
+# Local skills CLI cache
 /.agents/
 
 # Local aliases for GitHub agent discovery
@@ -211,4 +211,13 @@ pip-log.txt
 # Local resources
 /resources
 
-# Skills (project-owned and third-party) are tracked in .claude/skills/.
+# Project-owned skills are tracked in .claude/skills/; third-party skills are
+# installed locally and remain untracked.
+/.claude/skills/*
+!/.claude/skills/context-manager/
+!/.claude/skills/dependency-update/
+!/.claude/skills/document-writing/
+!/.claude/skills/engineering-terminology/
+!/.claude/skills/security-update/
+!/.claude/skills/translation-expertise/
+!/.claude/skills/web-browsing/

@@ -1,11 +1,9 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { afterEach, describe, expect, test } from 'vitest';
 import { checkSkills, readSkillsLock } from '../skills-lock.js';
 
-const ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 /** @type {string[]} */
 let tempDirs = [];
 
@@ -167,15 +165,5 @@ describe('checkSkills', () => {
     });
 
     await expect(checkSkills({ rootDir: root, lockPath })).rejects.toThrow();
-  });
-
-  test('every lock entry is installed', async () => {
-    const results = await checkSkills({
-      rootDir: ROOT,
-      lockPath: path.join(ROOT, 'skills-lock.json'),
-    });
-
-    expect(results.length).toBeGreaterThan(0);
-    expect(results.filter((result) => !result.ok)).toEqual([]);
   });
 });

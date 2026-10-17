@@ -25,12 +25,6 @@
       "skillPath": "skills/engineering/diagnosing-bugs/SKILL.md",
       "computedHash": "aec3686657177071076dc1586c22cdf95137c230bc74cbb5d069903d73804817"
     },
-    "i-have-adhd": {
-      "source": "ayghri/i-have-adhd",
-      "sourceType": "github",
-      "skillPath": "skills/i-have-adhd/SKILL.md",
-      "computedHash": "71e78492cf9d8c1d392f1e8fc97afd0c85c2e306bb388773c4a757758833acb6"
-    },
     "playwright-cli": {
       "source": "microsoft/playwright-cli",
       "sourceType": "github",

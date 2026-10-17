@@ -19,6 +19,7 @@
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md,yaml,yml}\"",
     "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md,yaml,yml}\"",
     "skills:check": "node utils/skills-check.js",
+    "skills:install": "node utils/skills-install.js",
     "skills:update": "pnpm dlx skills update -y"
   },
   "keywords": [],

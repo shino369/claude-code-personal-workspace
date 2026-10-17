@@ -30,7 +30,6 @@ gate.
   - [MCP Servers](#mcp-servers)
 - [Contributing](#contributing)
 - [Credits](#credits)
-- [Third-Party Notices](./THIRD_PARTY_NOTICES.md)
 - [License](#license)
 
 ## Overview
@@ -40,7 +39,7 @@ This workspace keeps the Claude Code setup in one repository:
 - `CLAUDE.md` — main workspace memory and working agreements
 - `.claude/rules/` — always-on and path-scoped rules
 - `.claude/agents/` — task-specialised subagents
-- `.claude/skills/` — project-owned and third-party skills (all tracked)
+- `.claude/skills/` — project-owned skills (tracked); third-party skills install locally and are ignored
 - `.claude/hooks/` — context monitor, audit logger, auto-formatter
 - `.claude/settings.json` — shared permissions and hook configuration
 - `.agents/` — local skills CLI cache (git-ignored)
@@ -64,6 +63,9 @@ subagents — ask Claude directly.
 corepack enable
 pnpm install
 
+# Optional: install the recommended third-party skills
+pnpm skills:install
+
 pnpm test
 ```
 
@@ -85,7 +87,7 @@ pnpm format:check
 │   ├── agents/              # Subagents
 │   ├── hooks/               # Context monitor, audit logger, formatter
 │   ├── rules/               # Always-on and path-scoped rules
-│   └── skills/              # Project-owned and third-party skills (tracked)
+│   └── skills/              # Project-owned skills (tracked); third-party installs ignored
 ├── docs/testing/            # Deep testing guides
 ├── e2e/                     # Playwright e2e tests
 ├── tasks/                   # Generated task outputs (git-ignored)
@@ -95,9 +97,9 @@ pnpm format:check
 └── ...
 ```
 
-Third-party skills are committed directly under `.claude/skills/` as real files, so Claude Code
-discovers them on a fresh clone without a restore step. `.agents/` is only a local skills CLI cache
-and is git-ignored.
+Third-party skills are not committed. `pnpm skills:install` copies the recommended set from
+`skills-lock.json` into `.claude/skills/` (git-ignored), so each user chooses what to install.
+`.agents/` is only a local skills CLI cache and is git-ignored.
 
 ### Tasks
 
@@ -130,11 +132,9 @@ git-ignored.
 
 ### Third-party skills
 
-These are vendored from their upstream repositories with Vercel's
-[`skills` CLI](https://github.com/vercel-labs/skills) (the [skills.sh](https://skills.sh)
-ecosystem). All credit belongs to the original authors. Sources and hashes are pinned in
-`skills-lock.json`; full license texts and copyright notices are in
-[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
+These are not committed. Install the recommended set with `pnpm skills:install`; each skill is
+copied locally into the git-ignored `.claude/skills/`. All credit belongs to the original authors.
+Sources and hashes are pinned in `skills-lock.json`; each upstream repository ships its own license.
 
 #### Browser & Web
 
@@ -158,37 +158,43 @@ ecosystem). All credit belongs to the original authors. Sources and hashes are p
 
 #### Meta & Accessibility
 
-| Skill           | What it does                                                            | Source                                                      | Credit    |
-| --------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------- | --------- |
-| `skill-creator` | Create, edit, benchmark, and optimise agent skills.                     | [anthropics/skills](https://github.com/anthropics/skills)   | Anthropic |
-| `i-have-adhd`   | ADHD-friendly output: next action first, numbered steps, visible state. | [ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd) | ayghri    |
+| Skill           | What it does                                        | Source                                                    | Credit    |
+| --------------- | --------------------------------------------------- | --------------------------------------------------------- | --------- |
+| `skill-creator` | Create, edit, benchmark, and optimise agent skills. | [anthropics/skills](https://github.com/anthropics/skills) | Anthropic |
 
-> All third-party skills remain under their upstream licenses. See
-> [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for the full license texts and copyright
-> notices. `skill-creator` also bundles its license at
-> `.claude/skills/skill-creator/LICENSE.txt`.
+Personal or optional skills (for example `i-have-adhd`) are not in the recommended lock. Install
+them individually with
+`pnpm dlx skills add ayghri/i-have-adhd --skill i-have-adhd --copy --agent claude-code`.
+
+> All third-party skills remain under their upstream licenses, which ship with each installed
+> skill. `skill-creator` includes its license at `.claude/skills/skill-creator/LICENSE.txt` when
+> installed.
 
 ### Managing skills
 
 Project-owned skills live in `.claude/skills/` and are committed to this repository.
 
-Third-party skills are vendored into `.claude/skills/` with Vercel's `skills` CLI from the
-[skills.sh](https://skills.sh) ecosystem:
+Third-party skills are **not committed**. Install the recommended set from `skills-lock.json` with
+Vercel's [`skills` CLI](https://github.com/vercel-labs/skills) (the [skills.sh](https://skills.sh)
+ecosystem):
 
 ```bash
-pnpm dlx skills add <owner/repo> --skill <name> --copy --agent claude-code
-pnpm dlx skills list
-pnpm skills:update   # update the vendored skills
-pnpm skills:check    # verify .claude/skills against skills-lock.json
+pnpm skills:install                      # install everything in skills-lock.json
+pnpm skills:install --skip <name>        # skip optional skills
+pnpm skills:update                       # update installed skills
+pnpm skills:check                        # verify installed skills match the lock
 ```
 
-`--copy --agent claude-code` writes real files into `.claude/skills/` (not symlinks), so the skills
-work on a fresh clone even when `core.symlinks=false`. `skills-lock.json` pins sources and hashes;
-commit it together with the skill files. `pnpm skills:check` verifies every lock entry is installed
-with a matching frontmatter name. The lock's hash is a source snapshot hash, not reproducible from
-the installed copy, so content changes are reviewed via `git diff`; `pnpm test` runs the same check.
-On Windows, `skills:update` may exit 127 after a successful update due to an upstream crash — verify
-the files changed before treating it as a failure.
+Installation uses `--copy --agent claude-code`, so skills land in `.claude/skills/` as real files
+(not symlinks) and are git-ignored. `skills-lock.json` pins sources and hashes; commit it when it
+changes. `skills:check` verifies every lock entry is installed with a matching frontmatter name.
+The lock's hash is a source snapshot hash, not reproducible from the installed copy, so content
+changes are reviewed via `git diff`. On Windows, `skills:update` may exit 127 after a successful
+update due to an upstream crash — verify the files changed before treating it as a failure.
+
+To add a skill manually, use
+`pnpm dlx skills add <owner/repo> --skill <name> --copy --agent claude-code`; it is installed
+locally and remains untracked.
 
 ### Skill runtime prerequisites
 
@@ -353,5 +359,5 @@ Third-party skills are managed with skills.sh; project-owned skills live in `.cl
 
 ## License
 
-The original contents of this repository are [ISC](./LICENSE). Third-party skills remain under
-their own licenses; see [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
+The original contents of this repository are [ISC](./LICENSE). Third-party skills are not
+distributed here; when installed, they remain under their upstream licenses.
