@@ -129,7 +129,7 @@ export function resolveVersion(packageData, version, log = console.log) {
  * @param {string} version
  * @returns {string}
  */
-export function parsePublishedDate(packageData, packageName, version) {
+export function extractPublishedDate(packageData, packageName, version) {
   const timeMap = packageData.time ?? {};
   const published = timeMap[version];
 
@@ -156,7 +156,7 @@ export async function checkReleaseAge(
 ) {
   const { registry, data } = await fetchPackageData(packageName);
   const version = resolveVersion(data, requestedVersion, log);
-  const published = parsePublishedDate(data, packageName, version);
+  const published = extractPublishedDate(data, packageName, version);
   const publishedDate = new Date(published);
 
   if (Number.isNaN(publishedDate.getTime())) {

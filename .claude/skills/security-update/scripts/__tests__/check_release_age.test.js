@@ -16,7 +16,7 @@ import {
   buildPackageUrl,
   fetchPackageData,
   resolveVersion,
-  parsePublishedDate,
+  extractPublishedDate,
   checkReleaseAge,
   main,
 } from '../check_release_age.mjs';
@@ -172,10 +172,10 @@ describe('check_release_age', () => {
     });
   });
 
-  describe('parsePublishedDate', () => {
+  describe('extractPublishedDate', () => {
     test('returns the timestamp', () => {
       expect(
-        parsePublishedDate(
+        extractPublishedDate(
           packageData({ '1.2.3': '2026-01-01' }),
           'pkg',
           '1.2.3'
@@ -185,14 +185,14 @@ describe('check_release_age', () => {
 
     test('throws with the latest available versions when missing', () => {
       expect(() =>
-        parsePublishedDate(packageData({ '1.0.0': 'x' }), 'pkg', '2.0.0')
+        extractPublishedDate(packageData({ '1.0.0': 'x' }), 'pkg', '2.0.0')
       ).toThrow(
         'Version 2.0.0 not found in registry time map for pkg. Available versions (latest 10): 1.0.0'
       );
     });
 
     test('tolerates a missing time map', () => {
-      expect(() => parsePublishedDate({}, 'pkg', '1.0.0')).toThrow(
+      expect(() => extractPublishedDate({}, 'pkg', '1.0.0')).toThrow(
         'Available versions (latest 10): '
       );
     });
