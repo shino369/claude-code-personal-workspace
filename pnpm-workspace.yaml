@@ -7,6 +7,7 @@ catalogs:
     '@types/node': ^24.19.0
     '@vitest/coverage-v8': ^4.1.11
     '@vitest/ui': ^4.1.11
+    agent-browser: ^0.39.0
     eslint: ^9.39.2
     eslint-config-prettier: ^10.1.8
     globals: ^17.0.0

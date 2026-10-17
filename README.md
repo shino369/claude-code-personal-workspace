@@ -53,7 +53,8 @@ subagents — ask Claude directly.
 - Node.js **22 or later** (`.nvmrc` pins 24)
 - pnpm **12.14.0**, pinned in `package.json` via Corepack. Run `corepack enable`, or prefix
   commands with `corepack pnpm`
-- Chromium, only if you run the Playwright e2e suite
+- Chrome/Chromium, for Playwright e2e tests and browser-driving skills
+- `uv`, for the `browser-use` runtime and `skill-creator` Python scripts
 
 ## Getting Started
 
@@ -62,7 +63,7 @@ corepack enable
 pnpm install
 
 # Optional: restore the third-party skills recorded in skills-lock.json
-npx skills experimental_install
+pnpm dlx skills experimental_install
 
 pnpm test
 ```
@@ -126,6 +127,7 @@ git-ignored.
 | `context-manager`         | Context-degradation prevention and recovery.                                     |
 | `dependency-update`       | Dependabot-style pnpm updates with `analyze_deps.mjs`.                           |
 | `security-update`         | CVE and audit patching with release-age checks.                                  |
+| `web-browsing`            | Tool selection and workflows for web interaction, real-browser sessions, e2e.    |
 
 ### Third-party skills
 
@@ -143,9 +145,9 @@ ecosystem). All credit belongs to the original authors. Sources and hashes are p
 | `browser-use`    | Direct browser control over CDP: automation, scraping, screenshots.            | [browser-use/browser-use](https://github.com/browser-use/browser-use)     | Browser Use |
 | `playwright-cli` | Playwright browser automation and e2e test workflows.                          | [microsoft/playwright-cli](https://github.com/microsoft/playwright-cli)   | Microsoft   |
 
-> For normal browsing and text extraction, prefer `agent-browser` or `browser-use`. The npm
-> Playwright package is reserved for e2e tests; `playwright-cli` is for Playwright-specific
-> workflows.
+> Browser-tool selection is defined in `.claude/rules/browser-tools.md`: `agent-browser` is the
+> default for ad-hoc interaction, `browser-use` covers autonomous/Python/cloud work, and Playwright
+> is reserved for e2e tests.
 
 #### Engineering Workflow
 
@@ -175,16 +177,47 @@ Third-party skills are installed with Vercel's `skills` CLI from the
 [skills.sh](https://skills.sh) ecosystem:
 
 ```bash
-npx skills add <owner/repo>      # install a skill
-npx skills list                  # list installed skills
-npx skills check                 # check for updates
-npx skills update                # update installed skills
-npx skills experimental_install  # restore everything from skills-lock.json
+pnpm dlx skills add <owner/repo>      # install a skill
+pnpm dlx skills list                  # list installed skills
+pnpm dlx skills check                 # check for updates
+pnpm dlx skills update                # update installed skills
+pnpm dlx skills experimental_install  # restore everything from skills-lock.json
 ```
 
 The project lockfile `skills-lock.json` is committed, so a fresh clone can restore the same skills
-with `npx skills experimental_install` (`npx skills install` with no arguments is an alias in
-current releases).
+with `pnpm dlx skills experimental_install` (`pnpm dlx skills install` with no arguments is an
+alias in current releases).
+
+### Skill runtime prerequisites
+
+Most skills are instructions only. These require a local runtime:
+
+| Skill               | Runtime              | Check / install                                                                                                                     |
+| ------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `agent-browser`     | `agent-browser` CLI  | `pnpm exec agent-browser --version`; run `pnpm exec agent-browser install` once, then `pnpm exec agent-browser ...` (devDependency) |
+| `browser-use`       | `browser-use` CLI    | `browser-use --version`; install with `uv tool install --python 3.12 browser-use`                                                   |
+| `playwright-cli`    | local Playwright     | `pnpm exec playwright --version`; run `pnpm exec playwright cli ...`                                                                |
+| `skill-creator`     | Python 3.12 + PyYAML | `uv run --with pyyaml --python 3.12 python ...` from the skill directory                                                            |
+| `dependency-update` | `gh` CLI             | `gh --version`; install from <https://cli.github.com/> (also used for PR attachments)                                               |
+| Playwright e2e      | Chromium             | `pnpm exec playwright install chromium`                                                                                             |
+
+`npm` commands are blocked in this workspace. Use `pnpm dlx` for one-off CLIs, `pnpm add -D` +
+`pnpm exec` for project-local binaries, and `uv tool` / `uvx` for Python CLIs. Avoid `pnpm add -g`:
+the global bin directory is not on `PATH`, and global installs bypass the workspace lockfile and
+supply-chain settings.
+
+The `browser-use` skill comes from
+[browser-use/browser-use](https://github.com/browser-use/browser-use) and requires its `browser-use`
+CLI. The package pulls in `browser-harness` as a pinned dependency, so install `browser-use` rather
+than `browser-harness` alone.
+
+The vendored `agent-browser` skill invokes `agent-browser`; in this workspace call it as
+`pnpm exec agent-browser ...` because no global shim is installed.
+
+Browser skills that attach to local Chrome need its CDP endpoint. Either enable
+`chrome://inspect/#remote-debugging`, or launch an isolated Chrome with
+`--remote-debugging-port=9222 --user-data-dir=<profile>` and set
+`BU_CDP_URL=http://127.0.0.1:9222` for `browser-use`.
 
 ## Agents
 
@@ -196,13 +229,14 @@ current releases).
 
 ## Rules
 
-| Rule                   | Scope      | Purpose                                         |
-| ---------------------- | ---------- | ----------------------------------------------- |
-| `git-conventions`      | Always     | Conventional commits, branch naming, PR titles. |
-| `node-js-dependencies` | Always     | pnpm and catalog dependency rules.              |
-| `task-organization`    | Always     | `tasks/` layout and naming.                     |
-| `testing`              | Test files | Vitest, 100% coverage, mocking.                 |
-| `working-with-script`  | Always     | Node-first scripts, error handling, tests.      |
+| Rule                   | Scope      | Purpose                                                 |
+| ---------------------- | ---------- | ------------------------------------------------------- |
+| `browser-tools`        | Always     | WebFetch vs agent-browser vs browser-use vs Playwright. |
+| `git-conventions`      | Always     | Conventional commits, branch naming, PR titles.         |
+| `node-js-dependencies` | Always     | pnpm and catalog dependency rules.                      |
+| `task-organization`    | Always     | `tasks/` layout and naming.                             |
+| `testing`              | Test files | Vitest, 100% coverage, mocking.                         |
+| `working-with-script`  | Always     | Node-first scripts, error handling, tests.              |
 
 Path-scoped rules load only for matching files; all rules live in `.claude/rules/`.
 

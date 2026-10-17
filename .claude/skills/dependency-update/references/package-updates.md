@@ -56,7 +56,7 @@ least one `MAJOR`/`STALE_MAJOR` decision is pending.
    `→ ^target`. Skip any row flagged below-cooldown (see next section) unless the package is exempt —
    pick the newest version that has aged past the cooldown instead.
 3. **Confirm target age** if in doubt — the analyzer already reports each target's age; to check an
-   arbitrary version directly: `pnpm view <pkg> time.<version>` (or `npm view <pkg> time`).
+   arbitrary version directly: `pnpm view <pkg> time.<version>`.
 4. **Regenerate the lockfile**:
    ```bash
    CI=true pnpm install --no-frozen-lockfile

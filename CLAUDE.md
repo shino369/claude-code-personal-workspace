@@ -58,7 +58,23 @@ Ask for a translation, or invoke the `trilingual-translator` agent directly. The
 
 ### Web Content
 
-Use `WebFetch` for simple pages and the `agent-browser` / `browser-use` skills for interactive or JS-heavy pages. Playwright is installed for **e2e tests only** (`e2e/*.e2e.*`, `pnpm test:e2e`); don't use it for normal browsing or text extraction.
+Use `WebFetch` for simple pages. For browser work, use the `web-browsing` skill and `.claude/rules/browser-tools.md`: `pnpm exec agent-browser ...` is the default for ad-hoc interaction, `browser-use` is for the user's real Chrome or autonomous/cloud work, and Playwright is **e2e-only** (`e2e/*.e2e.*`, `pnpm test:e2e`).
+
+### Skill Runtimes
+
+Verify a third-party skill's runtime before invoking it. Full install notes are in `README.md`
+under "Skill runtime prerequisites".
+
+- `agent-browser` — devDependency; always invoke as `pnpm exec agent-browser ...` (no global shim is installed)
+- `browser-use` — `browser-use` CLI from the `browser-use` package (`uv tool install --python 3.12 browser-use`); it depends on `browser-harness` for troubleshooting
+- `playwright-cli` — local Playwright (`pnpm exec playwright cli ...`)
+- `skill-creator` — Python scripts via `uv run --with pyyaml --python 3.12 python ...`
+- `gh` — GitHub CLI for Dependabot PR review and PR attachments; not installed here (https://cli.github.com/)
+
+Do not use `pnpm add -g`: its global bin directory is not on `PATH`, and global installs bypass the
+workspace lockfile and supply-chain settings.
+
+If a runtime is missing, tell the user what to install rather than silently switching tools.
 
 ## Additional Documentation
 

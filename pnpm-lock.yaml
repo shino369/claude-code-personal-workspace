@@ -176,6 +176,9 @@ catalogs:
     '@vitest/ui':
       specifier: ^4.1.11
       version: 4.1.11
+    agent-browser:
+      specifier: ^0.39.0
+      version: 0.39.0
     eslint:
       specifier: ^9.39.2
       version: 9.39.2
@@ -235,6 +238,9 @@ importers:
       '@vitest/ui':
         specifier: catalog:dev
         version: 4.1.11(vitest@4.1.11)
+      agent-browser:
+        specifier: catalog:dev
+        version: 0.39.0
       eslint:
         specifier: catalog:dev
         version: 9.39.2(supports-color@7.2.0)
@@ -790,6 +796,11 @@ packages:
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
+
+  agent-browser@0.39.0:
+    resolution: {integrity: sha512-VtImIqCpHC/xJFw91IAcLlBJzebCBjynOwIKnx4kuCeI2JicpPBMKykdjQ1wmnj2dL2voNKRv8iK+Joe6aHFtw==}
+    engines: {node: '>=24.0.0', pnpm: '>=11.0.0'}
+    hasBin: true
 
   ajv@6.15.0:
     resolution: {integrity: sha512-fgFx7Hfoq60ytK2c7DhnF8jIvzYgOMxfugjLOSMHjLIPgenqa7S7oaagATUq99mV6IYvN2tRmC0wnTYX6iPbMw==}
@@ -1913,6 +1924,8 @@ snapshots:
 
   agent-base@7.1.4:
     optional: true
+
+  agent-browser@0.39.0: {}
 
   ajv@6.15.0:
     dependencies:
