@@ -51,7 +51,7 @@ subagents — ask Claude directly.
 
 ## Requirements
 
-- Node.js **22 or later** (`.nvmrc` pins 24)
+- Node.js **24 or later** (`.nvmrc` pins 24; `agent-browser` requires 24+)
 - pnpm **12.14.0**, pinned in `package.json` via Corepack. Run `corepack enable`, or prefix
   commands with `corepack pnpm`
 - Chrome/Chromium, for Playwright e2e tests and browser-driving skills
