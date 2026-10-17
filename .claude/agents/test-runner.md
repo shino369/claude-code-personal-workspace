@@ -119,7 +119,7 @@ Provide concise, actionable summary in this format:
 
 **Files Below 100%**:
 
-- [file path]: [X]% (Uncovered lines: [X-Y])
+- `[file path]`: [X]% (Uncovered lines: X-Y)
 
 ---
 
