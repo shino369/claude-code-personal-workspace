@@ -178,14 +178,17 @@ Third-party skills are vendored into `.claude/skills/` with Vercel's `skills` CL
 ```bash
 pnpm dlx skills add <owner/repo> --skill <name> --copy --agent claude-code
 pnpm dlx skills list
-pnpm dlx skills update
+pnpm skills:update   # update the vendored skills
+pnpm skills:check    # verify .claude/skills against skills-lock.json
 ```
 
 `--copy --agent claude-code` writes real files into `.claude/skills/` (not symlinks), so the skills
 work on a fresh clone even when `core.symlinks=false`. `skills-lock.json` pins sources and hashes;
-commit it together with the skill files. On Windows, `skills update` may exit 127 after a
-successful update due to an upstream crash — verify the files changed before treating it as a
-failure.
+commit it together with the skill files. `pnpm skills:check` verifies every lock entry is installed
+with a matching frontmatter name. The lock's hash is a source snapshot hash, not reproducible from
+the installed copy, so content changes are reviewed via `git diff`; `pnpm test` runs the same check.
+On Windows, `skills:update` may exit 127 after a successful update due to an upstream crash — verify
+the files changed before treating it as a failure.
 
 ### Skill runtime prerequisites
 
