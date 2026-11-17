@@ -50,7 +50,7 @@ export const END = 'END FINDINGS';
  *   runTask: (argv: string[]) => string,
  *   scopeFingerprint: (rootDir: string, taskDir: string, state: TaskState) => string | null,
  * }} ReviewDeps
- * @typedef {'complete' | 'verify' | 'fix' | 'blocked' | 'steps-open' | 'no-scope' | 'reviewer' | 'triage' | 'record' | 'timeout'} ReviewStop
+ * @typedef {'complete' | 'verify' | 'fix' | 'blocked' | 'steps-open' | 'no-scope' | 'open' | 'reviewer' | 'triage' | 'record' | 'timeout'} ReviewStop
  * @typedef {{ ok: boolean, reason: ReviewStop, detail: string, rounds: number, logDir: string }} ReviewResult
  */
 
@@ -430,9 +430,16 @@ export function runReviewLoop({
       }
     }
 
-    const opened = JSON.parse(
-      deps.runTask(['review', '--task', name, '--json'])
-    );
+    /** @type {{ round: number, brief: string, findings: string, reopened: boolean }} */
+    let opened;
+    try {
+      opened = JSON.parse(deps.runTask(['review', '--task', name, '--json']));
+    } catch (error) {
+      return finish(
+        'open',
+        `pnpm task review could not open a round: ${/** @type {Error} */ (error).message}`
+      );
+    }
     const round = /** @type {number} */ (opened.round);
     const findingsPath = path.join(rootDir, opened.findings);
     deps.log(

@@ -150,6 +150,22 @@ describe('validateState', () => {
     ).toEqual(['quality.phase must be one of build, review, fix, complete']);
   });
 
+  test('should accept a start commit and reject a non-string one', () => {
+    expect(validateState({ ...makeState(), startCommit: 'abc123' })).toEqual(
+      []
+    );
+    expect(validateState({ ...makeState(), startCommit: null })).toEqual([]);
+    expect(validateState({ ...makeState(), startCommit: 7 })).toEqual([
+      'startCommit must be a commit id or null',
+    ]);
+    expect(
+      createState({ name: 'x', goal: 'G', startCommit: 'abc' }).startCommit
+    ).toBe('abc');
+    expect(createState({ name: 'x', goal: 'G' })).not.toHaveProperty(
+      'startCommit'
+    );
+  });
+
   test('should reject an unknown kind or e2e mode', () => {
     expect(validateState({ ...makeState(), kind: 'app', e2e: 'yes' })).toEqual([
       'kind must be one of code, general',

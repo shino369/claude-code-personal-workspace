@@ -107,7 +107,8 @@ Work
   review [--base <ref>] [--force]
                                 Code tasks: open the next review round (max 2) and write the
                                 brief + findings file for clean-context reviewers. Scope: the
-                                task's code, else git changes since --base (default main)
+                                task's code, else git changes since --base (default: the
+                                commit the task started from, else main)
   review record [file]          Read the triaged findings table; CONFIRMED must-fix/high
                                 findings become fix: steps
   template review|study [--name <kebab>]
@@ -492,6 +493,7 @@ export const COMMANDS = {
       branch: deps.git(deps.rootDir).branch,
       agent,
       now,
+      startCommit: deps.runGit(['rev-parse', 'HEAD'], deps.rootDir),
       ...mode,
     });
     const dir = scaffoldTask({
@@ -942,6 +944,7 @@ export const COMMANDS = {
       quality,
       taskDir: task.dir,
       base: options.base,
+      startCommit: task.state.startCommit,
     });
     const scope = reviewScope({
       rootDir: deps.rootDir,
@@ -949,6 +952,12 @@ export const COMMANDS = {
       base,
       runGit: deps.runGit,
     });
+    if (scope.files.length === 0 && quality.phase !== 'review') {
+      throw new Error(
+        // A null base means task code, which is never empty: this is a git scope.
+        `Nothing to review for ${name}: no files changed since ${scope.base} (merge base ${String(scope.mergeBase).slice(0, 7)}). If the work is already committed there, review against the commit before it.\nFix: pnpm task review --base <the commit before the task's first commit>`
+      );
+    }
     const print = fingerprint(deps.rootDir, scope.files);
     const now = deps.now();
     const agent = detectAgent(options, deps.env);

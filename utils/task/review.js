@@ -5,8 +5,8 @@
  * findings into `fix:` steps.
  *
  * Scope: the task's own code (files `pnpm task check` looks at) when it has
- * any; otherwise the git changes since a base ref (default `main`), for
- * tasks that change the workspace itself.
+ * any; otherwise the git changes since a base ref (default: the commit the
+ * task started from, else `main`), for tasks that change the workspace itself.
  */
 import crypto from 'crypto';
 import { spawnSync } from 'child_process';
@@ -69,16 +69,18 @@ export const reviewFiles = (name, round) => ({
  * The base a round reviews against: an open round keeps its own; otherwise
  * `--base`, else the git base an earlier round used (so the Stop hook and the
  * next round compare the same files), else none for a task with code (its
- * folder is the scope), else `main` (the task changes the workspace).
+ * folder is the scope), else the commit the task started from (so work
+ * committed straight onto main is still in scope), else `main`.
  *
- * @param {{ quality: import('./quality.js').Quality, taskDir: string, base?: string }} options
+ * @param {{ quality: import('./quality.js').Quality, taskDir: string, base?: string, startCommit?: string | null }} options
  * @returns {string | null}
  */
-export function reviewBase({ quality, taskDir, base }) {
+export function reviewBase({ quality, taskDir, base, startCommit }) {
   if (quality.phase === 'review') return quality.base ?? null;
   if (base !== undefined) return base;
   if (quality.base) return quality.base;
-  return hasTaskCode(taskDir) ? null : DEFAULT_BASE;
+  if (hasTaskCode(taskDir)) return null;
+  return startCommit ?? DEFAULT_BASE;
 }
 
 /**

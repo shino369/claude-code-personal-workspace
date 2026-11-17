@@ -569,6 +569,23 @@ describe('runReviewLoop', () => {
     ).toMatchObject({ ok: false, reason: 'no-scope' });
   });
 
+  test('should stop with a note when the round cannot be opened', () => {
+    seedTask();
+    const { runAgent } = fakeAgents({});
+    const result = review(
+      makeDeps(runAgent, {
+        runTask: () => {
+          throw new Error('Nothing to review for demo: no files changed');
+        },
+      })
+    );
+    expect(result).toMatchObject({ ok: false, reason: 'open' });
+    expect(result.detail).toBe(
+      'pnpm task review could not open a round: Nothing to review for demo: no files changed'
+    );
+    expect(notes()).toContain('stopped (open)');
+  });
+
   test('should keep the round open when the reviewer fails', () => {
     seedTask();
     const failing = fakeAgents({ codes: { reviewer: 1 } });

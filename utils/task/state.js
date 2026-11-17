@@ -42,6 +42,7 @@ export const DATE_SUFFIX_RE = /-\d{6}$/;
  *   kind?: 'code' | 'general',
  *   e2e?: 'required' | 'no',
  *   quality?: import('./quality.js').Quality,
+ *   startCommit?: string | null,
  * }} TaskState
  */
 
@@ -125,6 +126,10 @@ export function validateState(state) {
     !E2E_MODES.includes(/** @type {string} */ (s.e2e))
   ) {
     errors.push(`e2e must be one of ${E2E_MODES.join(', ')}`);
+  }
+
+  if (s.startCommit !== undefined && !isNullableString(s.startCommit)) {
+    errors.push('startCommit must be a commit id or null');
   }
 
   if (s.lastVerify !== null) {
@@ -247,7 +252,7 @@ export function makeSteps(items) {
 /**
  * Create a fresh state object. `code` tasks start with the inner loop on.
  *
- * @param {{ name: string, goal: string, steps?: Step[], verify?: string[], verifyFast?: string[], branch?: string | null, agent?: string | null, now?: Date, kind?: 'code' | 'general', e2e?: 'required' | 'no' }} options
+ * @param {{ name: string, goal: string, steps?: Step[], verify?: string[], verifyFast?: string[], branch?: string | null, agent?: string | null, now?: Date, kind?: 'code' | 'general', e2e?: 'required' | 'no', startCommit?: string | null }} options
  * @returns {TaskState}
  */
 export function createState({
@@ -261,6 +266,7 @@ export function createState({
   now = new Date(),
   kind = 'general',
   e2e = 'no',
+  startCommit = null,
 }) {
   const at = now.toISOString();
   return {
@@ -278,6 +284,8 @@ export function createState({
     kind,
     e2e,
     ...(kind === 'code' ? { quality: freshQuality() } : {}),
+    // HEAD when the task began: the default review base for workspace changes
+    ...(startCommit ? { startCommit } : {}),
     createdAt: at,
     updatedAt: at,
     lastAgent: agent,

@@ -754,6 +754,51 @@ describe('review', () => {
     expect(state().quality?.base).toBe('main');
   });
 
+  test('should review a workspace task against the commit it started from', () => {
+    const runGit = vi.fn(
+      /** @type {import('../review.js').RunGit} */ (args) =>
+        args[0] === 'rev-parse'
+          ? 'start123'
+          : args[0] === 'merge-base'
+            ? 'start123'
+            : args[0] === 'diff'
+              ? 'utils/x.js'
+              : ''
+    );
+    run(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'v'], {
+      runGit,
+    });
+    expect(state().startCommit).toBe('start123');
+    run(['step', 's1', 'done']);
+    run(['verify']);
+    const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
+    expect(parsed.scope).toMatchObject({
+      base: 'start123',
+      files: ['utils/x.js'],
+    });
+    expect(runGit).toHaveBeenCalledWith(
+      ['merge-base', 'HEAD', 'start123'],
+      root
+    );
+  });
+
+  test('should refuse to open a round with nothing in scope', () => {
+    newTask(['--verify', 'pnpm test']);
+    finishSteps();
+    run(['verify']);
+    const runGit = (/** @type {string[]} */ args) =>
+      args[0] === 'merge-base' ? 'abcdef123' : '';
+    expect(() => run(['review'], { runGit })).toThrow(
+      /Nothing to review for demo-261117: no files changed since main \(merge base abcdef1\)\..*\nFix: pnpm task review --base/s
+    );
+    expect(state().quality?.reviewRounds).toBe(0);
+    fs.mkdirSync(path.join(tasksRoot(root), NAME, 'app'), { recursive: true });
+    fs.writeFileSync(path.join(tasksRoot(root), NAME, 'app', 'notes.txt'), '');
+    expect(() => run(['review', '--base', 'main'], { runGit })).toThrow(
+      /no files changed since main/
+    );
+  });
+
   test('should take --base and --force', () => {
     newTask(['--verify', 'pnpm test']);
     finishSteps();
