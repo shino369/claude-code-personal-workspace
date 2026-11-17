@@ -1,7 +1,8 @@
 # AGENTS.md
 
 Instructions for every coding agent in this workspace (Claude Code, Codex, DeepSeek harnesses,
-and others). Read this whole file before acting. Claude-Code-only extras live in `CLAUDE.md`.
+and others). Read this whole file before acting. Claude-Code-only extras live in `CLAUDE.md`; how
+the harness fits together, with examples: `docs/harness.md`.
 
 This is a personal workspace for programming, documentation, research, translation, and
 generative-AI work. It has no app to build: the deliverables are scripts, skills, docs, and task

@@ -89,6 +89,7 @@ pnpm check
 │   ├── skills/              # Links into .agents/skills (generated, ignored)
 │   └── workflows/           # Saved Claude Code workflows (review, implement-plan, research)
 ├── .githooks/               # pre-commit + commit-msg (all harnesses)
+├── docs/harness.md          # How the harness works (tasks, loops, review), with examples
 ├── docs/testing/            # Deep testing guides
 ├── e2e/                     # Playwright e2e tests
 ├── tasks/                   # Generated task outputs (git-ignored)
@@ -129,7 +130,8 @@ tasks/some-task-260101/
 
 `tasks/.active` names the active task. In Claude Code, the `SessionStart` hook injects the brief
 after startup, `/clear`, and `/compact`; other harnesses run `pnpm task status` (AGENTS.md §2).
-The full procedure is in `AGENTS.md` §4; `pnpm task help` lists every command. `tasks/` and
+The full procedure is in `AGENTS.md` §4; `pnpm task help` lists every command. How the pieces fit
+together, with a worked example: `docs/harness.md`. `tasks/` and
 `logs/` are git-ignored — tasks are personal to each machine.
 
 ## Skills
