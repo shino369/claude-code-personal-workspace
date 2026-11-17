@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Verify that skills-lock.json entries are installed under .claude/skills.
+ * Verify that skills-lock.json entries are installed under .agents/skills.
  */
 import path from 'path';
 import { fileURLToPath } from 'url';

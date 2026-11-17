@@ -2,6 +2,7 @@
  * Tests for context_monitor.js
  */
 import fs from 'fs';
+import { vi } from 'vitest';
 import os from 'os';
 import path from 'path';
 import {
@@ -11,9 +12,12 @@ import {
   formatWindow,
   getUsageFromTranscript,
   buildMessage,
+  getActiveTask,
   processHookInput,
+  saveInstruction,
 } from '../context_monitor.js';
 
+/** @param {unknown[]} entries */
 function writeTranscript(entries) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'context-monitor-'));
   const file = path.join(dir, 'transcript.jsonl');
@@ -26,14 +30,19 @@ function writeTranscript(entries) {
 }
 
 describe('context_monitor', () => {
+  /** @type {string[]} */
   const tempDirs = [];
 
   afterEach(() => {
     while (tempDirs.length) {
-      fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+      fs.rmSync(/** @type {string} */ (tempDirs.pop()), {
+        recursive: true,
+        force: true,
+      });
     }
   });
 
+  /** @param {unknown[]} entries */
   function transcript(entries) {
     const result = writeTranscript(entries);
     tempDirs.push(result.dir);
@@ -185,6 +194,51 @@ describe('context_monitor', () => {
     test('uses the configured window label', () => {
       expect(buildMessage(0.5, 200_000)).toContain('200K');
     });
+
+    test('should name the active task in the warning', () => {
+      const message = buildMessage(THRESHOLDS.warn, undefined, 'demo-261117');
+
+      expect(message).toContain('tasks/demo-261117/NOTES.md');
+      expect(message).toContain('pnpm task note');
+    });
+  });
+
+  describe('saveInstruction', () => {
+    test('should point at pnpm task note for the active task', () => {
+      expect(saveInstruction('demo-261117')).toContain('pnpm task note --done');
+    });
+
+    test('should tell the agent to switch or create a task when none is active', () => {
+      const text = saveInstruction(null);
+
+      expect(text).toContain('pnpm task switch <name>');
+      expect(text).toContain('tasks/<task-name-yymmdd>/NOTES.md');
+    });
+  });
+
+  describe('getActiveTask', () => {
+    test('should return the task named in tasks/.active', () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ctx-active-'));
+      tempDirs.push(root);
+      fs.mkdirSync(path.join(root, 'tasks', 'demo-261117'), {
+        recursive: true,
+      });
+      fs.writeFileSync(path.join(root, 'tasks', 'demo-261117', 'NOTES.md'), '');
+      fs.writeFileSync(path.join(root, 'tasks', '.active'), 'demo-261117\n');
+
+      expect(getActiveTask(root)).toBe('demo-261117');
+    });
+
+    test('should return null when tasks/ is unreadable', () => {
+      const spy = vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+        throw Object.assign(new Error('denied'), { code: 'EACCES' });
+      });
+      try {
+        expect(getActiveTask('/nowhere')).toBeNull();
+      } finally {
+        spy.mockRestore();
+      }
+    });
   });
 
   describe('processHookInput', () => {
@@ -214,11 +268,11 @@ describe('context_monitor', () => {
 
       const output = processHookInput({ transcript_path: file }, {});
 
-      expect(output.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
-      expect(output.hookSpecificOutput.additionalContext).toContain(
+      expect(output?.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
+      expect(output?.hookSpecificOutput.additionalContext).toContain(
         '[Context Monitor]'
       );
-      expect(output.systemMessage).toBeUndefined();
+      expect(output?.systemMessage).toBeUndefined();
     });
 
     test('also sets systemMessage at the warning level', () => {
@@ -231,7 +285,27 @@ describe('context_monitor', () => {
 
       const output = processHookInput({ transcript_path: file }, {});
 
-      expect(output.systemMessage).toContain('[Context Monitor][WARNING]');
+      expect(output?.systemMessage).toContain('[Context Monitor][WARNING]');
+    });
+
+    test('should look up the active task only at the warning level', () => {
+      const activeTask = vi.fn(() => 'demo-261117');
+      const note = transcript([
+        { type: 'assistant', message: { usage: { input_tokens: 250_000 } } },
+      ]);
+      const warn = transcript([
+        { type: 'assistant', message: { usage: { input_tokens: 500_000 } } },
+      ]);
+
+      processHookInput({ transcript_path: note }, {}, { activeTask });
+      expect(activeTask).not.toHaveBeenCalled();
+
+      const output = processHookInput(
+        { transcript_path: warn },
+        {},
+        { activeTask }
+      );
+      expect(output?.systemMessage).toContain('tasks/demo-261117/NOTES.md');
     });
 
     test('respects CLAUDE_CONTEXT_WINDOW', () => {
@@ -247,7 +321,7 @@ describe('context_monitor', () => {
         { CLAUDE_CONTEXT_WINDOW: '1000' }
       );
 
-      expect(output.systemMessage).toContain('[Context Monitor][WARNING]');
+      expect(output?.systemMessage).toContain('[Context Monitor][WARNING]');
     });
   });
 });

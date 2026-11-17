@@ -1,0 +1,94 @@
+/**
+ * Tests for pre_compact.js
+ */
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { processHookInput } from '../pre_compact.js';
+
+/** @type {string} */
+let root;
+const now = new Date(2026, 10, 17, 9, 30);
+
+/** @param {string | null} diffStat */
+const fakeGit = (diffStat) => () => ({
+  branch: 'feat/x',
+  changed: 2,
+  diffStat,
+});
+
+/** @param {string} name */
+function makeActiveTask(name) {
+  const dir = path.join(root, 'tasks', name);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'NOTES.md'), '# NOTES\n');
+  fs.writeFileSync(path.join(root, 'tasks', '.active'), `${name}\n`);
+  return path.join(dir, 'NOTES.md');
+}
+
+beforeEach(() => {
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'pre-compact-'));
+});
+
+afterEach(() => {
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+describe('pre_compact processHookInput', () => {
+  test('should do nothing when no task is active', () => {
+    expect(
+      processHookInput({ trigger: 'manual' }, { rootDir: root })
+    ).toBeNull();
+  });
+
+  test('should append a checkpoint with git state and diff size', () => {
+    const notes = makeActiveTask('demo-261117');
+
+    const result = processHookInput(
+      { trigger: 'manual' },
+      { rootDir: root, now, git: fakeGit('3 files changed, 10 insertions(+)') }
+    );
+    const text = fs.readFileSync(notes, 'utf-8');
+
+    expect(result).toBe('demo-261117');
+    expect(text).toContain(
+      '## 2026-11-17 09:30 — claude (auto: pre-compact, manual)'
+    );
+    expect(text).toContain(
+      'State: branch feat/x; uncommitted yes (2 files); verify not run; diff 3 files changed, 10 insertions(+)'
+    );
+  });
+
+  test('should omit the diff and name an unknown trigger when input is missing', () => {
+    const notes = makeActiveTask('demo-261117');
+
+    processHookInput(undefined, { rootDir: root, now, git: fakeGit(null) });
+    const text = fs.readFileSync(notes, 'utf-8');
+
+    expect(text).toContain('(auto: pre-compact, unknown)');
+    expect(text).not.toContain('; diff');
+  });
+
+  test('should fail open when the task cannot be read', () => {
+    makeActiveTask('demo-261117');
+    fs.writeFileSync(
+      path.join(root, 'tasks', 'demo-261117', 'state.json'),
+      '{bad'
+    );
+
+    expect(
+      processHookInput(
+        { trigger: 'auto' },
+        { rootDir: root, now, git: fakeGit(null) }
+      )
+    ).toBeNull();
+  });
+
+  test('should use real git and the current time by default', () => {
+    makeActiveTask('demo-261117');
+
+    expect(processHookInput({ trigger: 'auto' }, { rootDir: root })).toBe(
+      'demo-261117'
+    );
+  });
+});

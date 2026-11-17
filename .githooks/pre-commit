@@ -1,0 +1,3 @@
+#!/bin/sh
+# Shared pre-commit hook (enable with: git config core.hooksPath .githooks).
+exec node "$(git rev-parse --show-toplevel)/utils/git-hooks.js" pre-commit

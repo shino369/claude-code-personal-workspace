@@ -3,19 +3,19 @@ packages:
 
 catalogs:
   dev:
-    '@playwright/test': ^1.64.0
+    '@playwright/test': ^1.65.0
     '@types/node': ^24.19.2
-    '@vitest/coverage-v8': ^4.1.11
-    '@vitest/ui': ^4.1.11
-    agent-browser: ^0.39.0
+    '@vitest/coverage-v8': ^5.1.0
+    '@vitest/ui': ^5.1.0
+    agent-browser: ^0.42.0
     eslint: ^9.39.5
     eslint-config-prettier: ^10.1.8
-    globals: ^17.13.0
-    playwright: ^1.64.0
+    globals: ^17.14.0
+    playwright: ^1.65.0
     prettier: ^3.9.10
-    typescript: ^5.9.3
-    vite: ^7.3.7
-    vitest: ^4.1.11
+    typescript: ^7.0.2
+    vite: ^8.3.7
+    vitest: ^5.1.0
 
 minimumReleaseAge: 10080
 
@@ -30,3 +30,7 @@ engineStrict: true
 strictPeerDependencies: true
 
 trustPolicy: no-downgrade
+
+permissions:
+  agent-browser:
+    skills: true

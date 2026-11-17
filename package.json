@@ -20,7 +20,16 @@
     "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md,yaml,yml}\"",
     "skills:check": "node utils/skills-check.js",
     "skills:install": "node utils/skills-install.js",
-    "skills:update": "pnpm dlx skills update -y"
+    "skills:update": "pnpm dlx skills update -y",
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test:coverage",
+    "skills:link": "node utils/skills-link.js",
+    "workspace:setup": "node utils/workspace-setup.js",
+    "workspace:check": "node utils/workspace-setup.js --check",
+    "task": "node utils/task/cli.js",
+    "loop": "node utils/loop/cli.js",
+    "swarm": "node utils/swarm/cli.js",
+    "agent": "node utils/agent/cli.js",
+    "tools": "node utils/tools/cli.js"
   },
   "keywords": [],
   "author": "shino369",

@@ -12,14 +12,6 @@ logs/
 pnpm-lock.yaml
 package-lock.json
 
-# Third-party skills are vendored as-is
-.agents/
+# Third-party skills in .agents/skills/ and the .claude/skills/ link mirror are
+# already excluded through .gitignore, which Prettier reads.
 .github/skills/
-.claude/skills/agent-browser/
-.claude/skills/browser-use/
-.claude/skills/code-review/
-.claude/skills/diagnosing-bugs/
-.claude/skills/i-have-adhd/
-.claude/skills/playwright-cli/
-.claude/skills/skill-creator/
-.claude/skills/tdd/

@@ -9,16 +9,15 @@
       "Bash(git log*)",
       "Bash(git add*)",
       "Bash(git commit*)",
-      "Bash(python *)",
-      "Bash(node *)",
+      "Bash(node utils/*)",
+      "Bash(node .claude/hooks/*)",
+      "Bash(node .agents/skills/*)",
       "Bash(ls *)",
       "Bash(dir *)",
       "Bash(cd *)",
       "Bash(pwd)",
       "Bash(echo *)",
-      "Bash(cat *)",
       "Bash(type *)",
-      "Bash(curl *)",
       "Bash(mkdir *)"
     ],
     "ask": [
@@ -99,15 +98,54 @@
     "DISABLE_AUTO_COMPACT": "1"
   },
   "companyAnnouncements": [
-    "Welcome! This workspace organizes task outputs in tasks/<task-name-yymmdd>/"
+    "Welcome! Tasks live in tasks/<task-name-yymmdd>/ — resume with: pnpm task status"
   ],
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session_start.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre_compact.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/task_loop.js",
+            "timeout": 300
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/context_monitor.js",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/task_loop.js --reset",
             "timeout": 5
           }
         ]

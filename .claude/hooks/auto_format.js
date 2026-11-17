@@ -33,15 +33,27 @@ const FORMATTABLE_EXTENSIONS = [
   '.svelte',
 ];
 
+/**
+ * @param {string} filePath
+ * @returns {boolean}
+ */
 function isFormattable(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   return FORMATTABLE_EXTENSIONS.includes(ext);
 }
 
+/**
+ * @param {string} filePath
+ * @returns {boolean}
+ */
 function fileExists(filePath) {
   return fs.existsSync(filePath);
 }
 
+/**
+ * @param {string} filePath
+ * @returns {boolean}
+ */
 export function runPrettier(filePath) {
   try {
     // Check if prettier is available (use pnpm as per workspace config)
@@ -66,11 +78,17 @@ export function runPrettier(filePath) {
     return true;
   } catch (err) {
     // Prettier might not be installed or file might have syntax errors
-    console.error(`Prettier formatting failed for ${filePath}: ${err.message}`);
+    // Only Errors are thrown above (spawnSync reports failures via its result).
+    const { message } = /** @type {Error} */ (err);
+    console.error(`Prettier formatting failed for ${filePath}: ${message}`);
     return false;
   }
 }
 
+/**
+ * @param {{ tool_name: string, tool_input?: { file_path?: string } }} input
+ * @returns {boolean}
+ */
 export function processHookInput(input) {
   const toolName = input.tool_name;
   const filePath = input.tool_input?.file_path;
@@ -121,12 +139,16 @@ function main() {
         processHookInput(input);
         process.exit(0);
       } catch (err) {
-        console.error(`Auto-format error: ${err.message}`);
+        console.error(
+          `Auto-format error: ${err instanceof Error ? err.message : String(err)}`
+        );
         process.exit(0); // Exit 0 to not block the operation
       }
     });
   } catch (err) {
-    console.error(`Auto-format error: ${err.message}`);
+    console.error(
+      `Auto-format error: ${err instanceof Error ? err.message : String(err)}`
+    );
     process.exit(0); // Exit 0 to not block the operation
   }
 }

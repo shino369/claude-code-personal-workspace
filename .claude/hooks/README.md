@@ -11,33 +11,42 @@ This directory contains hook scripts for Claude Code that automatically execute 
 
 **What it does:**
 
-- Logs all tool usage to `logs/<YYYYMMDD>/logging.json`
-- Creates a new log file for each day
+- Appends one JSON line per tool call to `<project>/logs/<YYYYMMDD>/logging.jsonl`. The project
+  root is `$CLAUDE_PROJECT_DIR`, else the hook input's `cwd`, else the process cwd
+- Append-only JSONL is safe when hooks run concurrently (parallel tool calls, subagents); a
+  read-modify-write JSON array would lose entries
 - Records timestamps, tool names, inputs, outputs, and session information
-- Truncates large content (>500 chars) to keep log files manageable
+- Redacts secrets in every string before logging: AWS keys, GitHub tokens, `sk-…` API keys,
+  Slack tokens, JWTs, `Bearer` tokens, PEM private keys, `*_TOKEN=` / `*_PASSWORD=` / `*API_KEY=`
+  style assignments, and string values under secret-named keys
+- Truncates large `content` / `new_source` fields (>500 chars) after redaction
+
+Redaction is pattern-based and best-effort; treat `logs/` as sensitive and keep it git-ignored.
 
 **Log Structure:**
 
 ```
 logs/
 └── 20260110/
-    └── logging.json
+    └── logging.jsonl
 ```
 
-**Log Entry Format:**
+**Log Entry Format** (one object per line):
 
 ```json
 {
   "timestamp": "2026-01-10T10:30:45.123Z",
   "session_id": "abc123...",
   "hook_event": "PostToolUse",
-  "tool_name": "Edit",
-  "tool_input": { "file_path": "...", "old_string": "..." },
-  "tool_response": { "success": true },
-  "cwd": "C:\\Users\\...",
+  "tool_name": "Bash",
+  "tool_input": { "command": "GH_TOKEN=[REDACTED] gh pr list" },
+  "tool_response": { "stdout": "..." },
+  "cwd": "/path/to/project",
   "permission_mode": "default"
 }
 ```
+
+Read a day's log with `jq . logs/<YYYYMMDD>/logging.jsonl`.
 
 ### 2. Auto Formatter (`auto_format.js`)
 
@@ -79,10 +88,64 @@ pnpm add -D prettier
 - Reads the newest assistant `usage` entry from the session transcript
 - Injects `[Context Monitor]` at 20%, `[WARNING]` at 40%, and `[URGENT]` at 60%
 - Also sets `systemMessage` for warning/urgent levels so the warning is visible in the UI
+- At warning/urgent levels, names the active task and tells the model to run `pnpm task note`
 - Fails open (stays silent) if the transcript is missing or unparsable
 
 **Configuration:** The window defaults to 1M tokens. Set `CLAUDE_CONTEXT_WINDOW` to the model's
 actual window if it differs.
+
+### 4. Session Start (`session_start.js`)
+
+**Event:** SessionStart (matcher `startup|resume|clear|compact`)
+**Purpose:** Hands every new or reset session the task it was working on.
+
+**What it does:**
+
+- With an active task (`tasks/.active`), injects the `pnpm task status` brief as
+  `additionalContext`: goal, progress, next step, last verify, git state, last NOTES entry
+- With no active task, lists up to five open tasks to pick from
+- Ends with a `Tools:` line from `tools/local.json` (`pnpm tools`): the agents, CLIs, runtimes,
+  and source checkouts this machine has, so the session knows what it can call (or a nudge to run
+  `pnpm tools scan`). With no tasks and an unreadable registry it stays silent
+- Fails open: an unreadable task becomes a one-line notice, never a blocked session
+
+### 5. Pre-Compact (`pre_compact.js`)
+
+**Event:** PreCompact
+**Purpose:** Leaves a checkpoint on disk before the conversation is summarized.
+
+**What it does:**
+
+- Appends a mechanical entry to the active task's `NOTES.md`: time, trigger (manual/auto), branch,
+  uncommitted files, last verify result, and `git diff --shortstat`
+- Does nothing when no task is active; never blocks compaction
+
+### 6. Task Loop (`task_loop.js`)
+
+**Event:** Stop (plus `UserPromptSubmit` with `--reset`)
+**Purpose:** The opt-in inner loop: keep working until the task's fast verify passes.
+
+**What it does:**
+
+- Does nothing unless the active task has the loop on (`pnpm task set --loop on [--loop-max N]`);
+  with the loop off it exits without running anything
+- Otherwise runs the task's `verifyFast` commands (else `verify`) with a 240 s timeout, and records
+  `lastVerify` in `state.json`
+- On failure, blocks the stop with the failure summary (`decision: "block"`) and counts the
+  iteration; lets the stop through at `loop.max`, or when the same failure repeats three times in a
+  row (no progress), writes a NOTES entry, and marks the loop `halted`: later stops skip verify
+- The count never resets on a Stop event. Claude Code's own guards (`stop_hook_active`, the
+  consecutive-continuation cap) do not reliably catch this loop, because a continuation that makes
+  tool calls can look like a fresh stop. It resets only on a pass, `pnpm task set --loop on`, or a
+  prompt the user types: the same script runs with `--reset` on `UserPromptSubmit` and ignores
+  `<task-notification>` prompts and missing prompts (fail closed)
+- The block message tells the agent not to retry failures that code cannot fix (git, install, or
+  environment errors), and to tell the user and turn the loop off instead
+- Skips when `TASK_INNER_LOOP=off` (the `pnpm loop` outer loop sets this for its child sessions);
+  fails open on any error
+
+The task logic lives in `utils/task/` (the `pnpm task` CLI), so other harnesses get the same brief
+by running `pnpm task status`.
 
 ## Hook Configuration
 
@@ -91,12 +154,51 @@ Hooks are configured in `.claude/settings.json`:
 ```json
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session_start.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre_compact.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/task_loop.js",
+            "timeout": 300
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/context_monitor.js",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/task_loop.js --reset",
             "timeout": 5
           }
         ]

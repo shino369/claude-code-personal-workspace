@@ -15,7 +15,7 @@ Playwright is reserved for e2e tests (`e2e/*.e2e.*`, `pnpm test:e2e`). Install b
 
 ## Coverage Requirement
 
-- **100%** statements, branches, functions, and lines for `.claude/hooks/`, `.claude/skills/`, and `utils/`
+- **100%** statements, branches, functions, and lines for `.claude/hooks/`, project-owned `.agents/skills/`, and `utils/`
 - Business logic, data processing, and API interaction scripts
 - Tests are optional for one-off automation and throwaway scripts in `tasks/`
 

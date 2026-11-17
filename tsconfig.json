@@ -15,7 +15,22 @@
     "isolatedModules": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["**/*.js", "**/*.mjs", "**/*.ts"],
+  "include": [
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.ts",
+    ".claude/**/*.js",
+    ".claude/**/*.mjs",
+    ".claude/**/*.ts",
+    ".agents/skills/context-manager/**/*",
+    ".agents/skills/dependency-update/**/*",
+    ".agents/skills/document-writing/**/*",
+    ".agents/skills/engineering-terminology/**/*",
+    ".agents/skills/security-update/**/*",
+    ".agents/skills/translation-expertise/**/*",
+    ".agents/skills/web-browsing/**/*",
+    ".agents/skills/workspace-setup/**/*"
+  ],
   "exclude": [
     "node_modules",
     "coverage",
@@ -23,15 +38,8 @@
     "build",
     "tasks",
     "logs",
-    ".agents",
-    ".github/skills",
-    ".claude/skills/agent-browser",
-    ".claude/skills/browser-use",
-    ".claude/skills/code-review",
-    ".claude/skills/diagnosing-bugs",
-    ".claude/skills/i-have-adhd",
-    ".claude/skills/playwright-cli",
-    ".claude/skills/skill-creator",
-    ".claude/skills/tdd"
+    ".claude/skills",
+    ".claude/workflows/*.js",
+    ".github/skills"
   ]
 }
