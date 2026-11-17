@@ -106,7 +106,8 @@ Work
                                 findings become fix: steps
   template review|study [--name <kebab>]
                                 Copy a REVIEW_/STUDIES_ template into the task
-  done [-m "…"] [--force]       Close the task (needs a passing verify unless --force)
+  done [-m "…"] [--force]       Close the task (needs a passing verify; code tasks also a
+                                finished review loop; --force overrides)
 
 Options
   --task <name>   Act on <name> instead of the active task
@@ -393,6 +394,49 @@ export function codeTaskLines(state) {
     );
   }
   return lines;
+}
+
+/**
+ * Why a code task cannot be closed yet (empty = it can): the quality loop
+ * (AGENTS.md §4) needs at least one review round, no open round, no open
+ * CONFIRMED must-fix/high finding, and an e2e verify command when e2e is
+ * required. General tasks have no such gate.
+ *
+ * @param {import('./state.js').TaskState} state
+ * @returns {string[]} one "problem — Fix: …" line each
+ */
+export function doneBlockers(state) {
+  if (state.kind !== 'code') return [];
+  const quality = state.quality ?? freshQuality();
+  /** @type {string[]} */
+  const blockers = [];
+  if (quality.reviewRounds === 0) {
+    blockers.push(
+      'No review round ran. Fix: pnpm task review, then the reviewer and the triage in clean contexts, then pnpm task review record'
+    );
+  } else if (quality.phase === 'review') {
+    blockers.push(
+      `Review round ${quality.reviewRounds} is open but not recorded. Fix: finish the reviewer and the triage, then pnpm task review record`
+    );
+  }
+  const done = new Set(
+    state.steps.filter((s) => s.status === 'done').map((s) => s.id)
+  );
+  const open = toFix(quality).filter((f) => !f.step || !done.has(f.step));
+  if (open.length > 0) {
+    blockers.push(
+      `${open.length} CONFIRMED must-fix/high finding(s) not fixed: ${open.map((f) => `${f.id}${f.step ? ` (step ${f.step})` : ''}`).join(', ')}. Fix: fix each test-first, then pnpm task step <id> done`
+    );
+  }
+  if (
+    state.e2e === 'required' &&
+    !state.verify.some((command) => E2E_COMMAND_RE.test(command))
+  ) {
+    blockers.push(
+      'e2e: required, but no verify command runs e2e tests. Fix: pnpm task set --verify "<unit tests>" --verify "<e2e tests>", then pnpm task verify'
+    );
+  }
+  return blockers;
 }
 
 /**
@@ -1027,6 +1071,20 @@ export const COMMANDS = {
         `The last verify did not pass (${verify ? `\`${verify.failed}\` failed` : 'not run'}).\nFix: pnpm task verify — or, if the user agrees, pnpm task done --force`
       );
     }
+    const blockers = doneBlockers(task.state);
+    if (blockers.length > 0 && !options.force) {
+      throw new Error(
+        [
+          `${name} is a code task and its quality loop is not finished:`,
+          ...blockers.map((b) => `- ${b}`),
+          'Fix: the lines above — or, if the user agrees, pnpm task done --force',
+        ].join('\n')
+      );
+    }
+    const forced =
+      blockers.length > 0
+        ? ` Forced past: ${blockers.map((b) => b.split('. Fix:')[0]).join('; ')}.`
+        : '';
     const now = deps.now();
     const agent = detectAgent(options, deps.env);
     updateState(
@@ -1039,7 +1097,7 @@ export const COMMANDS = {
       at: now,
       agent,
       label: 'done',
-      message: `Task closed.${options.message ? ` ${options.message}` : ''}`,
+      message: `Task closed.${options.message ? ` ${options.message}` : ''}${forced}`,
       state: stateLine(deps, task),
     });
     if (readActive(deps.rootDir) === name) writeActive(deps.rootDir, null);

@@ -1054,7 +1054,7 @@ describe('done', () => {
   });
 
   test('should close a passing non-active task and keep the pointer', () => {
-    newTask(['--verify', 'a']);
+    newTask(['--verify', 'a', '--kind', 'general']);
     run(['verify']);
     legacyTask();
     run(['switch', 'old']);
@@ -1066,6 +1066,107 @@ describe('done', () => {
   test('should point a hand-written task at init', () => {
     legacyTask();
     expect(() => run(['done', 'old'])).toThrow(/pnpm task init old-251101/);
+  });
+
+  describe('code tasks', () => {
+    const statePath = () => path.join(tasksRoot(root), NAME, 'state.json');
+    /** @param {(s: any) => void} edit */
+    const patch = (edit) => {
+      const s = JSON.parse(fs.readFileSync(statePath(), 'utf-8'));
+      edit(s);
+      fs.writeFileSync(statePath(), JSON.stringify(s, null, 2));
+    };
+    const finding = (/** @type {object} */ fields) => ({
+      id: 'r1-1',
+      round: 1,
+      file: 'app/a.js',
+      line: 1,
+      severity: 'high',
+      claim: 'Leaks handle',
+      scenario: 'open twice',
+      verdict: 'CONFIRMED',
+      reason: 'no close',
+      step: null,
+      ...fields,
+    });
+    const greenCode = () => {
+      newTask(['--verify', 'pnpm test']);
+      run(['verify']);
+    };
+
+    test('should refuse a code task that never had a review round', () => {
+      greenCode();
+      expect(() => run(['done'])).toThrow(
+        /code task and its quality loop is not finished:\n- No review round ran\. Fix: pnpm task review/
+      );
+      expect(state().status).not.toBe('done');
+    });
+
+    test('should refuse an open round and unfixed confirmed findings', () => {
+      greenCode();
+      run(['step', 'add', 'fix: Leaks handle']);
+      patch((s) => {
+        s.quality.phase = 'review';
+        s.quality.reviewRounds = 2;
+        s.quality.findings = [
+          finding({ step: 's3' }),
+          finding({ id: 'r1-2', severity: 'must-fix' }),
+          finding({ id: 'r1-3', severity: 'low' }),
+          finding({ id: 'r1-4', verdict: 'REFUTED' }),
+        ];
+      });
+      let message = '';
+      try {
+        run(['done']);
+      } catch (error) {
+        message = /** @type {Error} */ (error).message;
+      }
+      expect(message).toContain('Review round 2 is open but not recorded.');
+      expect(message).toContain(
+        '2 CONFIRMED must-fix/high finding(s) not fixed: r1-1 (step s3), r1-2.'
+      );
+      expect(message).not.toContain('No review round ran');
+      expect(message).toContain('pnpm task done --force');
+    });
+
+    test('should refuse e2e: required without an e2e verify command', () => {
+      greenCode();
+      run(['set', '--e2e', 'required']);
+      patch((s) => {
+        s.quality.reviewRounds = 1;
+        s.quality.phase = 'complete';
+      });
+      expect(() => run(['done'])).toThrow(/e2e: required, but no verify/);
+      run(['set', '--verify', 'pnpm test', '--verify', 'pnpm test:e2e']);
+      run(['verify'], {
+        runCommands: fakeRunner([{ ok: true }, { ok: true }]),
+      });
+      expect(run(['done']).out).toBe(`Closed ${NAME}.`);
+    });
+
+    test('should close once a round is recorded and the fixes are done', () => {
+      greenCode();
+      run(['step', 'add', 'fix: Leaks handle']);
+      patch((s) => {
+        s.quality.reviewRounds = 1;
+        s.quality.phase = 'complete';
+        s.quality.findings = [finding({ step: 's3' })];
+        s.steps[2].status = 'done';
+      });
+      expect(run(['done']).out).toBe(`Closed ${NAME}.`);
+      expect(read('NOTES.md')).not.toContain('Forced past');
+    });
+
+    test('should close with --force and log what it skipped', () => {
+      greenCode();
+      patch((s) => {
+        delete s.quality;
+      });
+      expect(run(['done', '--force']).out).toBe(`Closed ${NAME}.`);
+      expect(read('NOTES.md')).toContain(
+        'Task closed. Forced past: No review round ran.'
+      );
+    });
   });
 });
 
