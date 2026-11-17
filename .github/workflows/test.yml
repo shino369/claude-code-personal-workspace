@@ -2,9 +2,9 @@ name: Test CI
 
 on:
   push:
+    # Every branch, so a fix branch gets the Windows + Linux matrix before a PR.
     branches:
-      - main
-      - develop
+      - '**'
   pull_request:
     branches:
       - main
