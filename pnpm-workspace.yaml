@@ -4,6 +4,7 @@ packages:
 catalogs:
   dev:
     '@playwright/test': ^1.65.0
+    '@types/chrome': ^0.3.7
     '@types/node': ^24.19.2
     '@vitest/coverage-v8': ^5.1.0
     '@vitest/ui': ^5.1.0
