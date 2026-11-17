@@ -2,11 +2,14 @@ import {
   STATE_VERSION,
   addStep,
   assertValidState,
+  claimStep,
   createState,
+  idleReason,
   formatYymmdd,
   makeSteps,
   nextStep,
   progress,
+  readySteps,
   setStepStatus,
   taskDirName,
   validateState,
@@ -136,7 +139,15 @@ describe('validateState', () => {
       ...makeState(),
       steps: [
         'bad',
-        { id: '', title: 1, status: 'x', deps: 'no', owner: 1, note: 2 },
+        {
+          id: '',
+          title: 1,
+          status: 'x',
+          deps: 'no',
+          owner: 1,
+          note: 2,
+          claimedAt: 3,
+        },
         { id: 'a', title: 'A', status: 'todo', deps: ['zz'], owner: null },
         {
           id: 'a',
@@ -156,6 +167,7 @@ describe('validateState', () => {
       'steps[1].deps must be a string array',
       'steps[1].owner must be a string or null',
       'steps[1].note must be a string',
+      'steps[1].claimedAt must be a string',
       'steps[3].id "a" is duplicated',
       'step a depends on unknown step "zz"',
     ]);
@@ -334,5 +346,174 @@ describe('setStepStatus', () => {
     expect(() =>
       setStepStatus(state, { id: 's3', status: 'in_progress' })
     ).toThrow('Step s3 is waiting on s2; finish those first');
+  });
+});
+
+describe('readySteps', () => {
+  test('should list todo steps whose deps are done, in order', () => {
+    const state = makeState();
+    state.steps[1].deps = ['s1'];
+    expect(readySteps(state).map((s) => s.id)).toEqual(['s1', 's3']);
+    state.steps[0].status = 'done';
+    expect(readySteps(state).map((s) => s.id)).toEqual(['s2', 's3']);
+  });
+});
+
+describe('idleReason', () => {
+  test('should explain an empty or finished task', () => {
+    expect(idleReason(makeState({ steps: [] }))).toMatch(/has no steps/);
+    const state = makeState();
+    for (const step of state.steps) step.status = 'done';
+    expect(idleReason(state)).toMatch(/every step is done/);
+  });
+
+  test('should list running, blocked, and waiting steps', () => {
+    const state = makeState();
+    state.steps[0] = { ...state.steps[0], status: 'in_progress', owner: 'w1' };
+    state.steps[1].status = 'blocked';
+    state.steps[2].deps = ['s1'];
+    expect(idleReason(state)).toBe(
+      'in progress: s1 (w1); blocked: s2; waiting on dependencies: s3 (needs s1)'
+    );
+    state.steps[0].owner = null;
+    expect(idleReason(state)).toMatch(/^in progress: s1;/);
+  });
+
+  test('should list ready steps and only the deps still pending', () => {
+    const state = makeState();
+    state.steps[0].status = 'done';
+    state.steps[2].deps = ['s1', 's2'];
+    state.steps[1] = { ...state.steps[1], status: 'in_progress', owner: 'w' };
+    expect(idleReason(state)).toBe(
+      'in progress: s2 (w); waiting on dependencies: s3 (needs s2)'
+    );
+    state.steps[1].status = 'todo';
+    expect(idleReason(state)).toBe(
+      'ready: s2; waiting on dependencies: s3 (needs s2)'
+    );
+  });
+});
+
+describe('claimStep', () => {
+  test('should claim the first ready step with owner and time', () => {
+    const state = makeState();
+    state.steps[0].deps = ['s2'];
+    const { step, state: next } = claimStep(state, { agent: 'w1', now: NOW });
+    expect(step).toMatchObject({
+      id: 's2',
+      status: 'in_progress',
+      owner: 'w1',
+      claimedAt: NOW.toISOString(),
+    });
+    expect(next.steps[1]).toBe(step);
+    expect(state.steps[1].status).toBe('todo');
+  });
+
+  test('should never hand the same step to two agents', () => {
+    let state = makeState();
+    const owners = [];
+    for (const agent of ['a', 'b', 'c', 'd']) {
+      const result = claimStep(state, { agent, now: NOW });
+      state = result.state;
+      owners.push(result.step?.id ?? null);
+    }
+    expect(owners).toEqual(['s1', 's2', 's3', null]);
+  });
+
+  test('should claim a given id, and be a no-op for its owner', () => {
+    const first = claimStep(makeState(), { agent: 'a', id: 's3', now: NOW });
+    expect(first.step?.id).toBe('s3');
+    const again = claimStep(first.state, { agent: 'a', id: 's3', now: NOW });
+    expect(again.state).toBe(first.state);
+    expect(again.step).toBe(first.step);
+  });
+
+  test('should refuse a step another agent claimed', () => {
+    const { state } = claimStep(makeState(), {
+      agent: 'a',
+      id: 's1',
+      now: NOW,
+    });
+    expect(() => claimStep(state, { agent: 'b', id: 's1', now: NOW })).toThrow(
+      `Step s1 is already claimed by a (since ${NOW.toISOString()})`
+    );
+    state.steps[0] = { ...state.steps[0], owner: null };
+    delete state.steps[0].claimedAt;
+    expect(() => claimStep(state, { agent: 'b', id: 's1', now: NOW })).toThrow(
+      /^Step s1 is already claimed by someone\.\nFix:/
+    );
+  });
+
+  test('should refuse unknown, finished, and waiting steps', () => {
+    const state = makeState();
+    state.steps[1].status = 'done';
+    state.steps[2].deps = ['s1'];
+    expect(() => claimStep(state, { agent: 'a', id: 's9', now: NOW })).toThrow(
+      'Unknown step "s9" (steps: s1, s2, s3)'
+    );
+    expect(() =>
+      claimStep(makeState({ steps: [] }), { agent: 'a', id: 's1', now: NOW })
+    ).toThrow('(steps: none)');
+    expect(() => claimStep(state, { agent: 'a', id: 's2', now: NOW })).toThrow(
+      /Step s2 is done; only todo steps/
+    );
+    expect(() => claimStep(state, { agent: 'a', id: 's3', now: NOW })).toThrow(
+      'Step s3 is waiting on s1'
+    );
+  });
+
+  test('should return no step when nothing is ready', () => {
+    const state = makeState({ steps: [] });
+    expect(claimStep(state, { agent: 'a', now: NOW })).toEqual({
+      state,
+      step: null,
+    });
+  });
+});
+
+describe('setStepStatus ownership', () => {
+  const claimed = () =>
+    claimStep(makeState(), { agent: 'a', id: 's1', now: NOW }).state;
+
+  test('should refuse to start a step another agent owns unless forced', () => {
+    expect(() =>
+      setStepStatus(claimed(), { id: 's1', status: 'in_progress', agent: 'b' })
+    ).toThrow(/already claimed by a\.\nFix: .*--force/);
+    const { step } = setStepStatus(claimed(), {
+      id: 's1',
+      status: 'in_progress',
+      agent: 'b',
+      force: true,
+      now: new Date(0),
+    });
+    expect(step).toMatchObject({ owner: 'b', claimedAt: NOW.toISOString() });
+  });
+
+  test('should let the owner restart its step', () => {
+    expect(
+      setStepStatus(claimed(), { id: 's1', status: 'in_progress', agent: 'a' })
+        .step.owner
+    ).toBe('a');
+  });
+
+  test('should stamp a fresh start and release the claim on todo', () => {
+    const started = setStepStatus(makeState(), {
+      id: 's1',
+      status: 'in_progress',
+      agent: 'a',
+      now: NOW,
+    }).step;
+    expect(started.claimedAt).toBe(NOW.toISOString());
+    const released = setStepStatus(claimed(), {
+      id: 's1',
+      status: 'todo',
+    }).step;
+    expect(released.owner).toBeNull();
+    expect(released).not.toHaveProperty('claimedAt');
+  });
+
+  test('should keep owner and claim time when a step is done', () => {
+    const { step } = setStepStatus(claimed(), { id: 's1', status: 'done' });
+    expect(step).toMatchObject({ owner: 'a', claimedAt: NOW.toISOString() });
   });
 });

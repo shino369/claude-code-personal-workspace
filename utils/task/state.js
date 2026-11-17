@@ -17,7 +17,7 @@ export const DATE_SUFFIX_RE = /-\d{6}$/;
 
 /**
  * @typedef {'todo' | 'in_progress' | 'blocked' | 'done'} StepStatus
- * @typedef {{ id: string, title: string, status: StepStatus, deps: string[], owner: string | null, note?: string }} Step
+ * @typedef {{ id: string, title: string, status: StepStatus, deps: string[], owner: string | null, claimedAt?: string, note?: string }} Step
  * @typedef {{ at: string, ok: boolean, failed: string | null, summary: string }} VerifyResult
  * @typedef {{
  *   version: number,
@@ -167,6 +167,9 @@ export function validateState(state) {
     if (st.note !== undefined && !isString(st.note)) {
       errors.push(`${label}.note must be a string`);
     }
+    if (st.claimedAt !== undefined && !isString(st.claimedAt)) {
+      errors.push(`${label}.claimedAt must be a string`);
+    }
   });
 
   for (const step of /** @type {Step[]} */ (s.steps)) {
@@ -251,6 +254,26 @@ export function createState({
 }
 
 /**
+ * @param {TaskState} state
+ * @returns {Set<string>} ids of done steps
+ */
+const doneIds = (state) =>
+  new Set(state.steps.filter((s) => s.status === 'done').map((s) => s.id));
+
+/**
+ * Todo steps whose dependencies are all done, in plan order.
+ *
+ * @param {TaskState} state
+ * @returns {Step[]}
+ */
+export function readySteps(state) {
+  const done = doneIds(state);
+  return state.steps.filter(
+    (s) => s.status === 'todo' && s.deps.every((dep) => done.has(dep))
+  );
+}
+
+/**
  * The step to work on next: an in-progress step first, then the first todo
  * step whose dependencies are all done. Null when nothing is ready.
  *
@@ -258,16 +281,104 @@ export function createState({
  * @returns {Step | null}
  */
 export function nextStep(state) {
-  const inProgress = state.steps.find((s) => s.status === 'in_progress');
-  if (inProgress) return inProgress;
-  const done = new Set(
-    state.steps.filter((s) => s.status === 'done').map((s) => s.id)
-  );
   return (
-    state.steps.find(
-      (s) => s.status === 'todo' && s.deps.every((dep) => done.has(dep))
-    ) ?? null
+    state.steps.find((s) => s.status === 'in_progress') ??
+    readySteps(state)[0] ??
+    null
   );
+}
+
+/**
+ * Why no step can be claimed right now, for `pnpm task claim`.
+ *
+ * @param {TaskState} state
+ * @returns {string}
+ */
+export function idleReason(state) {
+  const list = (
+    /** @type {Step[]} */ steps,
+    /** @type {(s: Step) => string} */ show
+  ) => steps.map(show).join(', ');
+  const running = state.steps.filter((s) => s.status === 'in_progress');
+  const blocked = state.steps.filter((s) => s.status === 'blocked');
+  const todo = state.steps.filter((s) => s.status === 'todo');
+  const ready = readySteps(state);
+  const waiting = todo.filter((s) => !ready.includes(s));
+  const done = doneIds(state);
+  if (running.length + blocked.length + todo.length === 0) {
+    return state.steps.length === 0
+      ? 'the task has no steps (add one: pnpm task step add "…")'
+      : 'every step is done (when verify passes: pnpm task done)';
+  }
+  return [
+    running.length > 0 &&
+      `in progress: ${list(running, (s) => `${s.id}${s.owner ? ` (${s.owner})` : ''}`)}`,
+    blocked.length > 0 && `blocked: ${list(blocked, (s) => s.id)}`,
+    ready.length > 0 && `ready: ${list(ready, (s) => s.id)}`,
+    waiting.length > 0 &&
+      `waiting on dependencies: ${list(waiting, (s) => `${s.id} (needs ${s.deps.filter((dep) => !done.has(dep)).join(', ')})`)}`,
+  ]
+    .filter(Boolean)
+    .join('; ');
+}
+
+/**
+ * Claim a step for `agent`: the given id, or the first ready step. Claiming
+ * is the only way two agents can share a task without doing the same step,
+ * so call it inside the task lock (`updateState`).
+ *
+ * Claiming a step you already own is a no-op; a step owned by someone else
+ * is refused. `step` is null when nothing is ready (see `idleReason`).
+ *
+ * @param {TaskState} state
+ * @param {{ agent: string, id?: string, now: Date }} options
+ * @returns {{ state: TaskState, step: Step | null }}
+ */
+export function claimStep(state, { agent, id, now }) {
+  /** @type {Step | undefined} */
+  let target;
+  if (id === undefined) {
+    target = readySteps(state)[0];
+    if (!target) return { state, step: null };
+  } else {
+    target = state.steps.find((s) => s.id === id);
+    if (!target) {
+      const known = state.steps.map((s) => s.id).join(', ') || 'none';
+      throw new Error(`Unknown step "${id}" (steps: ${known})`);
+    }
+    if (target.status === 'in_progress') {
+      if (target.owner === agent) return { state, step: target };
+      throw new Error(
+        `Step ${id} is already claimed by ${target.owner ?? 'someone'}${target.claimedAt ? ` (since ${target.claimedAt})` : ''}.\nFix: pnpm task claim (takes the next free step); if that agent is gone: pnpm task step ${id} todo`
+      );
+    }
+    if (target.status !== 'todo') {
+      throw new Error(
+        `Step ${id} is ${target.status}; only todo steps can be claimed.\nFix: pnpm task step ${id} todo, then claim it`
+      );
+    }
+    const done = doneIds(state);
+    const pending = target.deps.filter((dep) => !done.has(dep));
+    if (pending.length > 0) {
+      throw new Error(
+        `Step ${id} is waiting on ${pending.join(', ')}; finish those first`
+      );
+    }
+  }
+  /** @type {Step} */
+  const step = {
+    ...target,
+    status: 'in_progress',
+    owner: agent,
+    claimedAt: now.toISOString(),
+  };
+  return {
+    state: {
+      ...state,
+      steps: state.steps.map((s) => (s.id === step.id ? step : s)),
+    },
+    step,
+  };
 }
 
 /**
@@ -308,14 +419,18 @@ export function addStep(state, { title, deps = [] }) {
 }
 
 /**
- * Change a step's status. `start` also sets the owner; `blocked` requires a
- * reason so the next agent knows why.
+ * Change a step's status. `start` also sets the owner and refuses a step
+ * another agent is working on (unless `force`); `todo` releases the claim;
+ * `blocked` requires a reason so the next agent knows why.
  *
  * @param {TaskState} state
- * @param {{ id: string, status: StepStatus, agent?: string | null, note?: string }} options
+ * @param {{ id: string, status: StepStatus, agent?: string | null, note?: string, force?: boolean, now?: Date }} options
  * @returns {{ state: TaskState, step: Step }}
  */
-export function setStepStatus(state, { id, status, agent = null, note }) {
+export function setStepStatus(
+  state,
+  { id, status, agent = null, note, force = false, now = new Date() }
+) {
   if (!STEP_STATUSES.includes(status)) {
     throw new Error(
       `Unknown step status "${status}" (use ${STEP_STATUSES.join(', ')})`
@@ -330,9 +445,17 @@ export function setStepStatus(state, { id, status, agent = null, note }) {
     throw new Error('A blocked step needs a reason: -m "why it is blocked"');
   }
   if (status === 'in_progress') {
-    const done = new Set(
-      state.steps.filter((s) => s.status === 'done').map((s) => s.id)
-    );
+    if (
+      !force &&
+      current.status === 'in_progress' &&
+      current.owner &&
+      current.owner !== agent
+    ) {
+      throw new Error(
+        `Step ${id} is already claimed by ${current.owner}.\nFix: pnpm task claim (takes the next free step), or --force to take it over`
+      );
+    }
+    const done = doneIds(state);
     const pending = current.deps.filter((dep) => !done.has(dep));
     if (pending.length > 0) {
       throw new Error(
@@ -345,8 +468,18 @@ export function setStepStatus(state, { id, status, agent = null, note }) {
   const step = {
     ...current,
     status,
-    owner: status === 'in_progress' ? agent : current.owner,
+    owner:
+      status === 'in_progress'
+        ? agent
+        : status === 'todo'
+          ? null
+          : current.owner,
   };
+  if (status === 'in_progress' && current.status !== 'in_progress') {
+    step.claimedAt = now.toISOString();
+  } else if (status === 'todo') {
+    delete step.claimedAt;
+  }
   if (note) step.note = note;
   else delete step.note;
 

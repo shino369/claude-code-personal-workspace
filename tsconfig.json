@@ -39,6 +39,7 @@
     "tasks",
     "logs",
     ".claude/skills",
+    ".claude/workflows/*.js",
     ".github/skills"
   ]
 }

@@ -22,7 +22,9 @@ import {
 import {
   STEP_STATUSES,
   addStep,
+  claimStep,
   createState,
+  idleReason,
   makeSteps,
   nextStep,
   setStepStatus,
@@ -59,9 +61,12 @@ Start / resume
 
 Work
   next                          Print the next ready step
+  claim [id]                    Atomically take the next ready step (or <id>) for --agent;
+                                exit 2 when nothing is ready (prints why)
   step add "title" [--deps s1,s2]
-  step <id> start|done|blocked|todo [-m "…"]
-                                Update a step (blocked needs -m "reason")
+  step <id> start|done|blocked|todo [-m "…"] [--force]
+                                Update a step (blocked needs -m "reason"; todo releases a
+                                claim; --force takes over a step another agent claimed)
   note --done "…" --next "…" [--open "…"] [-m "…"]
                                 Append a NOTES.md entry (State line is filled in for you)
   verify [--fast]               Run the task's verify commands; exit 1 on failure
@@ -435,6 +440,37 @@ export const COMMANDS = {
     return 0;
   },
 
+  claim(options, deps) {
+    const name = resolveTaskName(deps.rootDir, options.task);
+    const agent = detectAgent(options, deps.env);
+    const now = deps.now();
+    const id = options.positionals[1];
+    /** @type {import('./state.js').Step | null} */
+    let claimed = null;
+    let reason = '';
+    updateState(
+      deps.rootDir,
+      name,
+      (current) => {
+        const result = claimStep(current, { agent, id, now });
+        claimed = result.step;
+        if (!claimed) reason = idleReason(current);
+        return result.state;
+      },
+      { now, agent }
+    );
+    const step = /** @type {import('./state.js').Step | null} */ (claimed);
+    output(
+      deps,
+      options,
+      { ok: step !== null, task: name, step, reason: step ? null : reason },
+      step
+        ? `Claimed ${step.id}. ${step.title} for ${agent}. When finished: pnpm task step ${step.id} done -m "…" (give it back: pnpm task step ${step.id} todo)`
+        : `Nothing to claim: ${reason}.`
+    );
+    return step ? 0 : 2;
+  },
+
   step(options, deps) {
     const [, first, second] = options.positionals;
     if (!first) {
@@ -502,6 +538,8 @@ export const COMMANDS = {
           status: actions[action],
           agent,
           note: options.message,
+          force: options.force,
+          now,
         });
         changed = result.step;
         return result.state;

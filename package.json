@@ -27,6 +27,7 @@
     "workspace:check": "node utils/workspace-setup.js --check",
     "task": "node utils/task/cli.js",
     "loop": "node utils/loop/cli.js",
+    "swarm": "node utils/swarm/cli.js",
     "agent": "node utils/agent/cli.js",
     "tools": "node utils/tools/cli.js"
   },

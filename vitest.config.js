@@ -54,6 +54,9 @@ export default defineConfig({
         '**/*.test.js',
         '**/*.spec.js',
         '**/*.integration.test.js',
+        // Run only in the Workflow tool's runtime; smoke-tested by evaluating
+        // them against stubs in .claude/workflows/__tests__/.
+        '.claude/workflows/*.js',
         ...thirdPartySkills,
       ],
       reportOnFailure: true,

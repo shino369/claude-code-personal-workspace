@@ -699,6 +699,7 @@ describe('done', () => {
 test('COMMANDS should list every documented command', () => {
   expect(Object.keys(COMMANDS).sort()).toEqual(
     [
+      'claim',
       'done',
       'help',
       'init',
@@ -714,4 +715,91 @@ test('COMMANDS should list every documented command', () => {
       'verify',
     ].sort()
   );
+});
+
+describe('claim', () => {
+  test('should claim ready steps in order and exit 2 when none is left', () => {
+    newTask();
+    run(['step', 'add', 'Three', '--deps', 's1']);
+    expect(run(['claim', '--agent', 'w1'])).toEqual({
+      code: 0,
+      out: 'Claimed s1. One for w1. When finished: pnpm task step s1 done -m "…" (give it back: pnpm task step s1 todo)',
+    });
+    expect(JSON.parse(run(['claim', '--agent', 'w2', '--json']).out)).toEqual(
+      expect.objectContaining({
+        ok: true,
+        step: expect.objectContaining({ id: 's2', owner: 'w2' }),
+        reason: null,
+      })
+    );
+    expect(state().steps[1].claimedAt).toBe(NOW.toISOString());
+    expect(run(['claim', '--agent', 'w3'])).toEqual({
+      code: 2,
+      out: 'Nothing to claim: in progress: s1 (w1), s2 (w2); waiting on dependencies: s3 (needs s1).',
+    });
+    expect(JSON.parse(run(['claim', '--json']).out)).toMatchObject({
+      ok: false,
+      step: null,
+      reason: expect.stringContaining('in progress'),
+    });
+  });
+
+  test('should claim a given step and refuse one another agent owns', () => {
+    newTask();
+    expect(run(['claim', 's2']).out).toContain('Claimed s2. Two for tester.');
+    expect(() => run(['claim', 's2', '--agent', 'other'])).toThrow(
+      /already claimed by tester/
+    );
+    expect(() => run(['step', 's2', 'start', '--agent', 'other'])).toThrow(
+      /already claimed by tester/
+    );
+    run(['step', 's2', 'start', '--agent', 'other', '--force']);
+    expect(state().steps[1].owner).toBe('other');
+    run(['step', 's2', 'todo']);
+    expect(state().steps[1]).toMatchObject({ status: 'todo', owner: null });
+  });
+
+  test('should never hand one step to two concurrent processes', async () => {
+    run([
+      'new',
+      'demo',
+      '--goal',
+      'G',
+      ...Array.from({ length: 4 }, (_, i) => ['--step', `S${i + 1}`]).flat(),
+    ]);
+    const cli = new URL('../cli.js', import.meta.url).href;
+    const script = `import { main } from ${JSON.stringify(cli)};
+const code = main({ argv: ['claim', '--json', '--agent', process.argv[1]], deps: { rootDir: process.argv[2], log: (m) => process.stdout.write(m) } });
+process.exitCode = code;`;
+    const { spawn } = await import('child_process');
+    const workers = Array.from(
+      { length: 6 },
+      (_, i) =>
+        new Promise((resolve, reject) => {
+          const child = spawn(
+            process.execPath,
+            ['--input-type=module', '-e', script, `w${i}`, root],
+            { stdio: ['ignore', 'pipe', 'pipe'] }
+          );
+          let out = '';
+          child.stdout.on('data', (chunk) => (out += chunk));
+          child.on('error', reject);
+          child.on('close', (code) =>
+            resolve({ code, result: JSON.parse(out) })
+          );
+        })
+    );
+    const results =
+      /** @type {Array<{ code: number, result: { step: { id: string, owner: string } | null } }>} */ (
+        await Promise.all(workers)
+      );
+    const claimed = results
+      .filter((r) => r.code === 0)
+      .map((r) => r.result.step?.id);
+    expect(claimed.sort()).toEqual(['s1', 's2', 's3', 's4']);
+    expect(results.filter((r) => r.code === 2)).toHaveLength(2);
+    const owners = state().steps.map((s) => s.owner);
+    expect(new Set(owners).size).toBe(4);
+    expect(owners.every((o) => o && /^w\d$/.test(o))).toBe(true);
+  }, 20_000);
 });

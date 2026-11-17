@@ -47,6 +47,7 @@ outputs.
 | Tools on this machine         | `pnpm tools list` · `pnpm tools show <name>` · `pnpm tools scan` |
 | Ask another agent (read-only) | `pnpm agent ask --agent claude\|codex\|dsh "…"`                  |
 | Fix until verify passes       | `pnpm loop <task> --agent claude\|codex\|dsh` (`--help`)         |
+| Run a plan with N workers     | `pnpm swarm <task> --agent claude\|codex\|dsh --workers 2`       |
 | Set up / verify the workspace | `pnpm workspace:setup` / `pnpm workspace:check`                  |
 | Third-party skills            | `pnpm skills:install` · `pnpm skills:check` · `pnpm skills:link` |
 | Add a dev dependency          | `pnpm add -D <pkg> --save-catalog-name=dev`                      |
@@ -91,6 +92,7 @@ In `plan.md`, edit the Goal, Acceptance, and Decisions by hand. The Steps block 
 | When                                 | Run                                                         |
 | ------------------------------------ | ----------------------------------------------------------- |
 | Pick up the next step                | `pnpm task next`, then `pnpm task step <id> start`          |
+| Another agent works on the same task | `pnpm task claim` (atomic: takes the next free ready step)  |
 | A step is finished                   | `pnpm task step <id> done -m "what changed"`                |
 | A step cannot continue               | `pnpm task step <id> blocked -m "why"`                      |
 | New work appears                     | `pnpm task step add "title" [--deps s1,s2]`                 |
@@ -118,6 +120,16 @@ It runs the agent headless in a git worktree (`../<repo>-wt/<task>`, branch `loo
 main checkout it creates it), re-runs the task's `verify` after each try, and stops on a pass, at
 `--max`, after two tries in a row with no progress, or at the wall-clock cap. Uncommitted changes
 are not in a new worktree. Logs: `tasks/<task>/loop/`. Review and commit the result yourself.
+
+Several agents on one plan: `pnpm task claim` hands each agent a different ready step (its
+dependencies done) under the task lock, so no step is claimed twice; `step <id> start` refuses a
+step another agent owns (`--force` takes it over; `step <id> todo` gives it back). Unattended,
+`pnpm swarm <task> --agent … --workers N` does this for you: each worker runs one step in its own
+worktree (`../<repo>-wt/swarm-<task>--<step>`), the swarm commits the step there once the task's
+`verify` passes and merges it into the integration branch `swarm/<task>`, so dependent steps start
+from their dependencies' work. A failed step is marked `blocked` and its dependents wait. Steps must
+leave `verify` green on their own. Logs: `tasks/<task>/swarm/`. Review and merge `swarm/<task>`
+yourself.
 
 ### 4.3 Resume
 
@@ -228,6 +240,8 @@ and follow it as a checklist.
 
 | File                       | Role                                                          |
 | -------------------------- | ------------------------------------------------------------- |
+| `planner.md`               | Goal → small, verifiable steps with deps (`pnpm task`)        |
+| `verifier.md`              | Independent PASS/FAIL: verify, acceptance, weakened tests     |
 | `security-reviewer.md`     | Security review: auth, injection, data exposure, dependencies |
 | `test-runner.md`           | Run tests and report failures and coverage                    |
 | `trilingual-translator.md` | EN/JA/zh-TW translation: initial, proofread, refine           |

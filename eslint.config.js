@@ -19,6 +19,9 @@ export default [
       '**/logs/**',
       // Third-party skills and the .claude/skills link mirror
       ...vendoredGlobs(),
+      // Workflow scripts run in the Workflow tool's runtime (top-level return,
+      // agent()/pipeline() globals); tested by .claude/workflows/__tests__/
+      '.claude/workflows/*.js',
       '**/*.min.js',
       'pnpm-lock.yaml',
       'package-lock.json',

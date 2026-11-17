@@ -86,14 +86,15 @@ pnpm check
 │   ├── agents/              # Role prompts / subagents
 │   ├── hooks/               # Resume brief, context monitor, audit logger, formatter
 │   ├── rules/               # Path-scoped rules (scripts, tests)
-│   └── skills/              # Links into .agents/skills (generated, ignored)
+│   ├── skills/              # Links into .agents/skills (generated, ignored)
+│   └── workflows/           # Saved Claude Code workflows (review, implement-plan, research)
 ├── .githooks/               # pre-commit + commit-msg (all harnesses)
 ├── docs/testing/            # Deep testing guides
 ├── e2e/                     # Playwright e2e tests
 ├── tasks/                   # Generated task outputs (git-ignored)
 ├── templates/task/          # plan/NOTES/REVIEW/STUDIES templates for pnpm task
 ├── tools/                   # catalog.json (tracked) + local.json (this machine, ignored)
-├── utils/                   # Shared Node utilities (task/, loop/, agent/, tools/ CLIs)
+├── utils/                   # Shared Node utilities (task/, loop/, swarm/, agent/, tools/ CLIs)
 ├── AGENTS.md                # Instructions for every agent
 ├── CLAUDE.md                # @AGENTS.md + Claude Code notes
 ├── skills-lock.json         # skills.sh lockfile
@@ -253,6 +254,8 @@ Browser skills that attach to local Chrome need its CDP endpoint. Either enable
 
 | Agent                   | Purpose                                                               |
 | ----------------------- | --------------------------------------------------------------------- |
+| `planner`               | Turns a goal into small, verifiable steps with deps (`pnpm task`).    |
+| `verifier`              | Independent PASS/FAIL: runs verify, checks acceptance and tests.      |
 | `security-reviewer`     | Security-focused review: auth, injection, XSS, secrets, dependencies. |
 | `test-runner`           | Runs tests and reports failures and coverage.                         |
 | `trilingual-translator` | EN/JA/ZH translation in initial, proofread, and refine roles.         |
@@ -294,6 +297,7 @@ pnpm tools list --all                                   # what is here, and how 
 pnpm tools add dsh --kind agent --command "npx -y @deepseek-ai/dsh"
 pnpm agent ask --agent codex "Review utils/task/loop.js for edge cases"   # read-only second opinion
 pnpm loop my-task --agent codex --max 3                 # unattended fix-until-green, in a worktree
+pnpm swarm my-task --agent claude --workers 2           # parallel workers, one worktree per step
 ```
 
 ## Hooks
