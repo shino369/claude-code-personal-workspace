@@ -1010,7 +1010,7 @@ describe('template', () => {
   test('should create review and study files from templates', () => {
     newTask();
     expect(run(['template', 'review']).out).toBe(
-      `Created ${path.join('tasks', NAME, 'reviews', 'REVIEW_demo.md')} — fill in every (…) placeholder.`
+      `Created tasks/${NAME}/reviews/REVIEW_demo.md — fill in every (…) placeholder.`
     );
     expect(read(path.join('reviews', 'REVIEW_demo.md'))).toMatch(
       /^# Review — demo\n\nDate: 2026-11-17/
@@ -1023,7 +1023,7 @@ describe('template', () => {
       '--json',
     ]);
     expect(JSON.parse(out).file).toBe(
-      path.join('tasks', NAME, 'studies', 'STUDIES_api-limits.md')
+      `tasks/${NAME}/studies/STUDIES_api-limits.md`
     );
   });
 

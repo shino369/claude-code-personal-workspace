@@ -307,7 +307,8 @@ describe('main', () => {
       timeoutMs: DEFAULT_TIMEOUT_MIN * 60 * 1000,
       env: { HOME: '/home/t', TASK_INNER_LOOP: 'off', TASK_AGENT: 'codex' },
     });
-    const record = path.join('logs', '20261117', 'agent-codex-093005.md');
+    // Shown with / on every OS; read() joins it natively.
+    const record = 'logs/20261117/agent-codex-093005.md';
     expect(err).toBe(`(codex, read: exit 0; record: ${record})`);
     expect(read(record)).toContain('# Agent call — codex (read)');
     expect(read(record)).toContain('What is this?');
