@@ -1,3 +1,8 @@
+---
+paths:
+  - '**/*.{js,mjs,cjs,ts}'
+---
+
 # Working With Script
 
 Always use Node.js first - this is a pnpm workspace.
@@ -104,36 +109,3 @@ Use `code-review` skill for comprehensive review.
 - [ ] **Hardcoded Secrets**: No API keys/passwords in code
 - [ ] **Error Handling**: All async ops have try-catch
 - [ ] **Input Validation**: Validate before processing
-
-## Quality Checklist
-
-### Phase 1: Development
-
-- [ ] Node.js (unless exception)
-- [ ] Proper error handling
-- [ ] Input validation
-- [ ] Tests in `__tests__/` (if non-trivial)
-- [ ] Exports for testability
-- [ ] Uses `runIfMain()`
-
-### Phase 2: Testing
-
-- [ ] `pnpm lint` passes
-- [ ] `pnpm test` passes
-- [ ] **100% coverage** (`pnpm test:coverage`)
-- [ ] All branches tested
-- [ ] Edge cases covered
-
-### Phase 3: Review
-
-- [ ] Run code review (use `code-review` skill)
-- [ ] Fix security vulnerabilities
-- [ ] Fix critical bugs
-- [ ] Follows best practices
-
-### Phase 4: Final
-
-- [ ] Re-run `pnpm lint`
-- [ ] Re-run `pnpm test:coverage`
-- [ ] Manual test with real inputs
-- [ ] Ready to commit

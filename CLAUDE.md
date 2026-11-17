@@ -12,32 +12,17 @@ This is a personal workspace for Claude Code to assist with various daily tasks 
 
 **Why Context Management Matters**: Quality degrades at 20-40% usage, long before a window is full. The actual window depends on the model (1M tokens by default; set `CLAUDE_CONTEXT_WINDOW` to override). A `UserPromptSubmit` hook (`.claude/hooks/context_monitor.js`) measures real usage from the transcript and injects `[Context Monitor]` warnings at 20/40/60%, so act on those warnings rather than estimating from message counts.
 
-**Best Practices:**
-
-1. **Scope conversations per feature** - One conversation per task/feature prevents context bleeding. Don't build auth and refactor database in the same session.
-
-2. **Use external memory** - Write plans and progress into the task directory: `tasks/<task-name-yymmdd>/plan.md` and `NOTES.md`. These persist across sessions, allowing fresh context with preserved knowledge.
-
-3. **The copy-paste reset** - When context gets bloated:
-   - Copy important info from terminal
-   - Run `/compact` to summarize
-   - Run `/clear` to wipe context
-   - Paste back only what matters
-
-4. **Know when to clear** - If explaining the same thing 3+ times, `/clear` and reframe. Fresh context > fighting through degraded context.
-
-5. **Write plans to a file** - For complex tasks, outline the approach in `tasks/<task-name-yymmdd>/plan.md`. It survives context resets and keeps the implementation focused.
-
-**External Memory Files:**
-
-- `tasks/<task-name-yymmdd>/plan.md` - Implementation plan and design decisions
-- `tasks/<task-name-yymmdd>/NOTES.md` - Progress, findings, and handoff notes
+**Use external memory** - Write plans and progress into the task directory: `tasks/<task-name-yymmdd>/plan.md` (implementation plan and design decisions) and `NOTES.md` (progress, findings, and handoff notes). These persist across sessions, allowing fresh context with preserved knowledge.
 
 **Model Selection: important! use inherit model from the main session**
 
 ## Task Organization
 
 Conventions for creating outputs (task directories under `tasks/`, content subdirectories, file naming) live in `.claude/rules/task-organization.md`.
+
+## Scripts
+
+Write scripts in Node.js (ESM) by default; use Python only for data science/ML and Bash for shell automation. Script structure, testing, and coverage rules live in `.claude/rules/working-with-script.md` (loaded when working with script files).
 
 ## Quality Checks
 
@@ -55,10 +40,6 @@ pnpm format:check
 ### Translation
 
 Ask for a translation, or invoke the `trilingual-translator` agent directly. The `translation-expertise` skill supplies the methodology; `engineering-terminology` and `document-writing` add domain and style guidance.
-
-### Web Content
-
-Use `WebFetch` for simple pages. For browser work, use the `web-browsing` skill and `.claude/rules/browser-tools.md`: `pnpm exec agent-browser ...` is the default for ad-hoc interaction, `browser-use` is for the user's real Chrome or autonomous/cloud work, and Playwright is **e2e-only** (`e2e/*.e2e.*`, `pnpm test:e2e`).
 
 ### Skill Runtimes
 
@@ -80,17 +61,3 @@ to omit optional skills, or `--only <name>` to select specific ones); third-part
 `pnpm skills:check` to verify every lock entry is installed with a matching frontmatter name.
 
 If a runtime is missing, tell the user what to install rather than silently switching tools.
-
-## Additional Documentation
-
-**Task Memory:**
-
-- `tasks/<task-name-yymmdd>/plan.md` - Implementation plan and design decisions
-- `tasks/<task-name-yymmdd>/NOTES.md` - Progress, findings, and handoff notes
-
-**Quick Reference:**
-
-- Context degradation starts at 20-40%, not 100% - manage proactively
-- Record complex plans in the task's `plan.md` so they survive context resets
-- Task files under `tasks/` persist across sessions
-- `/clear` without hesitation - fresh context beats degraded context
