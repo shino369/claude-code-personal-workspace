@@ -1096,8 +1096,27 @@ describe('template', () => {
 });
 
 describe('done', () => {
+  const finishSteps = () => {
+    run(['step', 's1', 'done']);
+    run(['step', 's2', 'done']);
+  };
+
+  test('should refuse open steps in any task unless forced', () => {
+    newTask(['--kind', 'general']);
+    run(['step', 's1', 'start']);
+    expect(() => run(['done'])).toThrow(
+      /^demo-261117 is not finished:\n- 2 step\(s\) not done: s1 \(in_progress\), s2 \(todo\)\. Fix: finish them/
+    );
+    expect(state().status).toBe('active');
+    expect(run(['done', '--force']).out).toBe(`Closed ${NAME}.`);
+    expect(read('NOTES.md')).toContain(
+      'Forced past: 2 step(s) not done: s1 (in_progress), s2 (todo).'
+    );
+  });
+
   test('should close a task without verify commands and clear the pointer', () => {
     newTask();
+    finishSteps();
     expect(run(['done', '-m', 'All good.']).out).toBe(`Closed ${NAME}.`);
     expect(state()).toMatchObject({ status: 'done', next: null });
     expect(readActive(root)).toBeNull();
@@ -1108,6 +1127,7 @@ describe('done', () => {
 
   test('should require a passing verify unless forced', () => {
     newTask(['--verify', 'pnpm test']);
+    finishSteps();
     expect(() => run(['done'])).toThrow(/did not pass \(not run\)/);
     run(['verify'], { runCommands: fakeRunner([{ ok: false }]) });
     expect(() => run(['done'])).toThrow(/`pnpm test` failed/);
@@ -1116,6 +1136,7 @@ describe('done', () => {
 
   test('should close a passing non-active task and keep the pointer', () => {
     newTask(['--verify', 'a', '--kind', 'general']);
+    finishSteps();
     run(['verify']);
     legacyTask();
     run(['switch', 'old']);
@@ -1152,13 +1173,14 @@ describe('done', () => {
     });
     const greenCode = () => {
       newTask(['--verify', 'pnpm test']);
+      finishSteps();
       run(['verify']);
     };
 
     test('should refuse a code task that never had a review round', () => {
       greenCode();
       expect(() => run(['done'])).toThrow(
-        /code task and its quality loop is not finished:\n- No review round ran\. Fix: pnpm task review/
+        /is not finished:\n- No review round ran\. Fix: pnpm task review/
       );
       expect(state().status).not.toBe('done');
     });
@@ -1187,6 +1209,8 @@ describe('done', () => {
         '2 CONFIRMED must-fix/high finding(s) not fixed: r1-1 (step s3), r1-2.'
       );
       expect(message).not.toContain('No review round ran');
+      // s3 is the fix step of r1-1: reported with the finding, not again as a step
+      expect(message).not.toContain('step(s) not done');
       expect(message).toContain('pnpm task done --force');
     });
 

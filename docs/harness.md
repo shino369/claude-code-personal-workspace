@@ -166,7 +166,8 @@ plan ─▶ build test-first ─▶ e2e (if required) ─▶ review round N ─�
 - **Manual / other harnesses.** The same commands by hand, with
   `pnpm agent ask --agent <other> "…"` as the clean-context reviewer.
 
-**The `done` gate.** `pnpm task done` refuses a code task until:
+**The `done` gate.** `pnpm task done` refuses any task with a step not done (drop out-of-scope
+steps with `pnpm task step <id> done -m "dropped: …"`), and a code task until:
 
 - at least one review round has been recorded;
 - no round is still open;
@@ -236,8 +237,8 @@ this command on `live-notifier-261117` (a Chrome extension) took 38 minutes:
 
 A translation, a study, or docs: `pnpm task new translate-post --goal "…"` with no `--verify`, or
 `--kind general`. It has the same plan, notes, and resume, but no check, no review gate, and the loop
-stays off unless you turn it on. `pnpm task done` only needs the last verify to have passed, if the
-task has verify commands.
+stays off unless you turn it on. `pnpm task done` needs every step done and, if the task has verify
+commands, the last verify to have passed.
 
 ## Limits and gotchas
 

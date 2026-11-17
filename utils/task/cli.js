@@ -113,8 +113,8 @@ Work
                                 findings become fix: steps
   template review|study [--name <kebab>]
                                 Copy a REVIEW_/STUDIES_ template into the task
-  done [-m "…"] [--force]       Close the task (needs a passing verify; code tasks also a
-                                finished review loop; --force overrides)
+  done [-m "…"] [--force]       Close the task (needs every step done and a passing verify;
+                                code tasks also a finished review loop; --force overrides)
 
 Options
   --task <name>   Act on <name> instead of the active task
@@ -406,19 +406,29 @@ export function codeTaskLines(state) {
 }
 
 /**
- * Why a code task cannot be closed yet (empty = it can): the quality loop
- * (AGENTS.md §4.5) needs at least one review round, no open round, no open
- * CONFIRMED must-fix/high finding, and an e2e verify command when e2e is
- * required. General tasks have no such gate.
+ * Why a task cannot be closed yet (empty = it can). Every task: no step left
+ * open. Code tasks also need the quality loop (AGENTS.md §4.5) finished: at
+ * least one review round, no open round, no open CONFIRMED must-fix/high
+ * finding, and an e2e verify command when e2e is required.
  *
  * @param {import('./state.js').TaskState} state
- * @returns {string[]} one "problem — Fix: …" line each
+ * @returns {string[]} one "problem. Fix: …" line each
  */
 export function doneBlockers(state) {
-  if (state.kind !== 'code') return [];
   const quality = state.quality ?? freshQuality();
+  // Fix steps of open findings are reported with the findings below.
+  const fixSteps = new Set(toFix(quality).map((f) => f.step));
+  const unfinished = state.steps.filter(
+    (s) => s.status !== 'done' && !fixSteps.has(s.id)
+  );
   /** @type {string[]} */
-  const blockers = [];
+  const blockers =
+    unfinished.length > 0
+      ? [
+          `${unfinished.length} step(s) not done: ${unfinished.map((s) => `${s.id} (${s.status})`).join(', ')}. Fix: finish them (pnpm task next), or drop what is out of scope: pnpm task step <id> done -m "dropped: <why>"`,
+        ]
+      : [];
+  if (state.kind !== 'code') return blockers;
   if (quality.reviewRounds === 0) {
     blockers.push(
       'No review round ran. Fix: pnpm task review, then the reviewer and the triage in clean contexts, then pnpm task review record'
@@ -1097,7 +1107,7 @@ export const COMMANDS = {
     if (blockers.length > 0 && !options.force) {
       throw new Error(
         [
-          `${name} is a code task and its quality loop is not finished:`,
+          `${name} is not finished:`,
           ...blockers.map((b) => `- ${b}`),
           'Fix: the lines above — or, if the user agrees, pnpm task done --force',
         ].join('\n')
