@@ -88,6 +88,19 @@ describe('summarizeTask', () => {
     });
   });
 
+  test('should skip deferred plan steps unless only deferred steps remain', () => {
+    const plan = 'Goal: G\n- [ ] (deferred) later\n- [ ] now\n';
+    expect(
+      summarizeTask(makeTask({ state: null, plan }), GIT).nextStep?.title
+    ).toBe('now');
+    expect(
+      summarizeTask(
+        makeTask({ state: null, plan: '- [x] a\n- [ ] (Deferred) later\n' }),
+        GIT
+      ).nextStep?.title
+    ).toBe('(Deferred) later');
+  });
+
   test('should handle a legacy task with no plan and all steps done', () => {
     expect(
       summarizeTask(makeTask({ state: null, plan: null }), GIT)

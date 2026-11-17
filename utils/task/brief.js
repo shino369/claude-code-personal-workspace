@@ -77,7 +77,9 @@ export function summarizeTask(task, git) {
   }
 
   const plan = parsePlan(task.plan ?? '');
-  const open = plan.steps.find((s) => !s.done);
+  // Prefer the first open step not marked "(deferred)"; fall back to any open step.
+  const todo = plan.steps.filter((s) => !s.done);
+  const open = todo.find((s) => !/^\(deferred\)/i.test(s.title)) ?? todo[0];
   return {
     name: task.name,
     status: 'active',
