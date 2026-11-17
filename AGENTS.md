@@ -25,11 +25,11 @@ outputs.
 
 1. **New clone or machine?** Run `pnpm workspace:setup` and fix every `✗` line by running its
    `Fix:` command. Details: `.agents/skills/workspace-setup/SKILL.md`.
-2. **Continuing earlier work?** Follow §4.3 (resume) before doing anything else.
-3. **New multi-step task?** Create a task directory (§4.1) and write `plan.md` first.
-4. **Before you say a change is done:** `pnpm check` must pass. Report failures honestly, with
-   their output.
-5. **Before you stop working on a task:** append a `NOTES.md` entry (§4.2).
+2. **Continuing earlier work?** Run `pnpm task status` and follow §4.3 before doing anything else.
+3. **New multi-step task?** Run `pnpm task new <name> --goal "…"` (§4.1) before writing files.
+4. **Before you say a change is done:** `pnpm check` (or the task's `pnpm task verify`) must pass.
+   Report failures honestly, with their output.
+5. **Before you stop working on a task:** `pnpm task note --done "…" --next "…"` (§4.2).
 6. **Unsure what the user wants?** Ask. Do not guess on anything destructive or outward-facing.
 
 ## 3. Commands
@@ -41,6 +41,7 @@ outputs.
 | Lint / auto-fix               | `pnpm lint` / `pnpm lint:fix`                                    |
 | Format / check format         | `pnpm format` / `pnpm format:check`                              |
 | Typecheck                     | `pnpm typecheck`                                                 |
+| Task brief / log / help       | `pnpm task status` · `pnpm task note …` · `pnpm task help`       |
 | Set up / verify the workspace | `pnpm workspace:setup` / `pnpm workspace:check`                  |
 | Third-party skills            | `pnpm skills:install` · `pnpm skills:check` · `pnpm skills:link` |
 | Add a dev dependency          | `pnpm add -D <pkg> --save-catalog-name=dev`                      |
@@ -50,64 +51,73 @@ Every workspace script prints a `Fix:` line when it fails — run that command.
 
 ## 4. Tasks — how to perform a task
 
-`tasks/` is git-ignored: tasks are personal to each machine. Only this procedure is shared.
+`tasks/` is git-ignored: tasks are personal to each machine. Only this procedure and the
+`pnpm task` CLI are shared. Every `pnpm task` command accepts `--json`, `--task <name>` (act on a
+task other than the active one), and `--agent <name>` (who is acting; or set `TASK_AGENT`).
 
 ### 4.1 Create
 
-For anything that takes more than one session or produces files, create
-`tasks/<task-name>-<yymmdd>/` (kebab-case name + two-digit year, month, day, e.g.
-`translate-x-post-260111`):
+For anything that takes more than one session or produces files:
+
+```bash
+pnpm task new <task-name> --goal "<one sentence>" --step "<first step>" --step "…" --verify "pnpm check"
+```
+
+This creates `tasks/<task-name>-<yymmdd>/` (kebab-case name + two-digit year, month, day, e.g.
+`translate-x-post-260111`) and makes it the active task (`tasks/.active`):
 
 ```text
 tasks/<task-name>-<yymmdd>/
-├── plan.md        # goal, acceptance, steps — write first
-├── NOTES.md       # append-only progress log — write before stopping
-├── reviews/       # REVIEW_<task-name>.md
-├── studies/       # STUDIES_<task-name>.md (research)
+├── plan.md        # goal, acceptance, steps, decisions
+├── state.json     # machine state — change it only through pnpm task, never by hand
+├── NOTES.md       # append-only progress log
+├── reviews/       # REVIEW_<task-name>.md   (pnpm task template review)
+├── studies/       # STUDIES_<task-name>.md  (pnpm task template study)
 ├── scripts/       # task-only scripts (tests optional)
 ├── docs/  translated/
 └── tmp/           # scratch and intermediate files
 ```
 
-`plan.md`:
+In `plan.md`, edit the Goal, Acceptance, and Decisions by hand. The Steps block between the
+`task:steps` markers is regenerated from `state.json` on every change — do not edit it.
 
-```markdown
-# Plan — <task>
+### 4.2 Work and log progress
 
-Goal: <one sentence>
-Acceptance: <commands or checks that prove it is done, e.g. `pnpm check` passes>
+| When                                 | Run                                                       |
+| ------------------------------------ | --------------------------------------------------------- |
+| Pick up the next step                | `pnpm task next`, then `pnpm task step <id> start`        |
+| A step is finished                   | `pnpm task step <id> done -m "what changed"`              |
+| A step cannot continue               | `pnpm task step <id> blocked -m "why"`                    |
+| New work appears                     | `pnpm task step add "title" [--deps s1,s2]`               |
+| Check the work                       | `pnpm task verify` (`--fast` for the quick subset)        |
+| Change the goal or verify commands   | `pnpm task set --verify "pnpm check" [--verify-fast "…"]` |
+| End of every session (required)      | `pnpm task note --done "…" --next "…" [--open "…"]`       |
+| Write a review or study              | `pnpm task template review` / `pnpm task template study`  |
+| Everything is done and verify passes | `pnpm task done`                                          |
 
-## Steps
-
-- [ ] 1. <small, verifiable step>
-- [ ] 2. …
-
-## Decisions
-
-- <date>: <decision> — <why>
-```
-
-### 4.2 Log progress
-
-Append (never rewrite) one entry to `NOTES.md` per working session, and whenever you finish a step:
+`pnpm task note` appends (never rewrites) this entry to `NOTES.md` and fills in `State:` for you.
+Write the same shape by hand only when the CLI cannot run:
 
 ```markdown
 ## <yyyy-mm-dd hh:mm> — <agent/harness> (<model>)
 
 Done: <what changed, file paths>
-State: branch <name>; uncommitted <yes/no>; `pnpm check` <pass/fail/not run>
+State: branch <name>; uncommitted <yes/no>; verify <pass/fail/not run>
 Next: <the single next action, concrete enough to start without rereading everything>
 Open: <blockers or decisions waiting on the user>
 ```
 
-Tick the matching `plan.md` checkboxes.
-
 ### 4.3 Resume
 
-1. `ls tasks/` and pick the task the user means (ask if unclear).
-2. Read `plan.md`, then the **last** `NOTES.md` entry.
-3. Run `git status` and `git branch --show-current`; compare them with the entry's `State:`.
-4. Do the entry's `Next:` action. If the state no longer matches, report the difference first.
+1. Run `pnpm task status`. It prints the active task's goal, progress, next step, last verify,
+   git state, and last note. No active task? `pnpm task list`, pick the task the user means (ask if
+   unclear), then `pnpm task switch <name>`.
+2. Compare the `Git:` line with the last note's `State:`. If they differ (branch, uncommitted
+   files), report the difference to the user first.
+3. Do the `Next step` (or `Next (last note)`).
+
+Tasks written by hand (no `state.json`) still get a brief from `plan.md` checkboxes and `NOTES.md`;
+run `pnpm task init <name>` to track their steps with the CLI.
 
 ### 4.4 Outputs
 

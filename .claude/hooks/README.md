@@ -88,10 +88,37 @@ pnpm add -D prettier
 - Reads the newest assistant `usage` entry from the session transcript
 - Injects `[Context Monitor]` at 20%, `[WARNING]` at 40%, and `[URGENT]` at 60%
 - Also sets `systemMessage` for warning/urgent levels so the warning is visible in the UI
+- At warning/urgent levels, names the active task and tells the model to run `pnpm task note`
 - Fails open (stays silent) if the transcript is missing or unparsable
 
 **Configuration:** The window defaults to 1M tokens. Set `CLAUDE_CONTEXT_WINDOW` to the model's
 actual window if it differs.
+
+### 4. Session Start (`session_start.js`)
+
+**Event:** SessionStart (matcher `startup|resume|clear|compact`)
+**Purpose:** Hands every new or reset session the task it was working on.
+
+**What it does:**
+
+- With an active task (`tasks/.active`), injects the `pnpm task status` brief as
+  `additionalContext`: goal, progress, next step, last verify, git state, last NOTES entry
+- With no active task, lists up to five open tasks to pick from; with no tasks, stays silent
+- Fails open: an unreadable task becomes a one-line notice, never a blocked session
+
+### 5. Pre-Compact (`pre_compact.js`)
+
+**Event:** PreCompact
+**Purpose:** Leaves a checkpoint on disk before the conversation is summarized.
+
+**What it does:**
+
+- Appends a mechanical entry to the active task's `NOTES.md`: time, trigger (manual/auto), branch,
+  uncommitted files, last verify result, and `git diff --shortstat`
+- Does nothing when no task is active; never blocks compaction
+
+The task logic lives in `utils/task/` (the `pnpm task` CLI), so other harnesses get the same brief
+by running `pnpm task status`.
 
 ## Hook Configuration
 
@@ -100,6 +127,29 @@ Hooks are configured in `.claude/settings.json`:
 ```json
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session_start.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre_compact.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [

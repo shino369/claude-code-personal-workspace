@@ -42,7 +42,8 @@ This workspace keeps the Claude Code setup in one repository:
 - `.claude/skills/` — generated links into `.agents/skills/` for Claude Code (git-ignored)
 - `.claude/rules/` — path-scoped rules (scripts, tests)
 - `.claude/agents/` — role prompts / subagents
-- `.claude/hooks/` — context monitor, audit logger, auto-formatter (Claude Code only)
+- `.claude/hooks/` — task resume brief, context monitor, audit logger, auto-formatter (Claude Code only)
+- `utils/task/` + `templates/task/` — the `pnpm task` CLI and task templates (every harness)
 - `.githooks/` — commit hooks for every harness (format, lint, Conventional Commits)
 - `skills-lock.json` — pinned sources and hashes for third-party skills
 
@@ -83,14 +84,15 @@ pnpm check
 ├── .agents/skills/          # Skills: project-owned (tracked) + third-party (ignored)
 ├── .claude/
 │   ├── agents/              # Role prompts / subagents
-│   ├── hooks/               # Context monitor, audit logger, formatter
+│   ├── hooks/               # Resume brief, context monitor, audit logger, formatter
 │   ├── rules/               # Path-scoped rules (scripts, tests)
 │   └── skills/              # Links into .agents/skills (generated, ignored)
 ├── .githooks/               # pre-commit + commit-msg (all harnesses)
 ├── docs/testing/            # Deep testing guides
 ├── e2e/                     # Playwright e2e tests
 ├── tasks/                   # Generated task outputs (git-ignored)
-├── utils/                   # Shared Node utilities
+├── templates/task/          # plan/NOTES/REVIEW/STUDIES templates for pnpm task
+├── utils/                   # Shared Node utilities (utils/task/ = pnpm task CLI)
 ├── AGENTS.md                # Instructions for every agent
 ├── CLAUDE.md                # @AGENTS.md + Claude Code notes
 ├── skills-lock.json         # skills.sh lockfile
@@ -102,18 +104,31 @@ Third-party skills are not committed. `pnpm skills:install` installs the recomme
 
 ### Tasks
 
-Generated work goes in `tasks/<task-name-yymmdd>/`:
+Generated work goes in `tasks/<task-name-yymmdd>/`, managed with the `pnpm task` CLI so any
+agent (or you) can stop and resume without losing the thread:
+
+```bash
+pnpm task new some-task --goal "Translate the X post" --step "Draft" --step "Proofread" --verify "pnpm check"
+pnpm task step s1 start            # … work …
+pnpm task step s1 done -m "draft in translated/"
+pnpm task note --done "drafted" --next "proofread section 2"
+pnpm task status                   # resume brief: goal, next step, last note, verify, git
+```
 
 ```text
 tasks/some-task-260101/
-├── reviews/REVIEW_some-task.md
-├── studies/STUDIES_some-task.md
-├── scripts/some-script.js
-└── ...
+├── plan.md                        # goal, acceptance, generated steps, decisions
+├── state.json                     # machine state (only via pnpm task)
+├── NOTES.md                       # append-only log
+├── reviews/REVIEW_some-task.md    # pnpm task template review
+├── studies/STUDIES_some-task.md   # pnpm task template study
+└── scripts/ docs/ translated/ tmp/
 ```
 
-The procedure (create, log progress, resume) is in `AGENTS.md` §4. `tasks/` and `logs/` are
-git-ignored — tasks are personal to each machine.
+`tasks/.active` names the active task. In Claude Code, the `SessionStart` hook injects the brief
+after startup, `/clear`, and `/compact`; other harnesses run `pnpm task status` (AGENTS.md §2).
+The full procedure is in `AGENTS.md` §4; `pnpm task help` lists every command. `tasks/` and
+`logs/` are git-ignored — tasks are personal to each machine.
 
 ## Skills
 
@@ -262,12 +277,15 @@ to read:
 | DeepSeek harness and others | `AGENTS.md` (point it there if needed) | `.agents/skills/`, or `pnpm workspace:setup --target <dir>` |
 
 Claude Code hooks do not run in other harnesses. The git hooks in `.githooks/` (enabled by
-`pnpm workspace:setup`) enforce formatting, linting, and commit messages for everyone.
+`pnpm workspace:setup`) enforce formatting, linting, and commit messages for everyone, and
+`pnpm task status` gives every harness the same resume brief the `SessionStart` hook injects.
 
 ## Hooks
 
 | Hook                 | Event                         | Purpose                                           |
 | -------------------- | ----------------------------- | ------------------------------------------------- |
+| `session_start.js`   | `SessionStart`                | Injects the active task's resume brief.           |
+| `pre_compact.js`     | `PreCompact`                  | Appends a checkpoint to the task's `NOTES.md`.    |
 | `context_monitor.js` | `UserPromptSubmit`            | Warns at 20/40/60% of the context window.         |
 | `audit_logger.js`    | `PostToolUse` (`*`)           | Logs tool use to `logs/<YYYYMMDD>/logging.jsonl`. |
 | `auto_format.js`     | `PostToolUse` (`Edit\|Write`) | Runs Prettier on edited files.                    |

@@ -16,6 +16,8 @@
  */
 import fs from 'fs';
 import { runIfMain } from '#utils/module-runner.js';
+import { readActive } from '#utils/task/store.js';
+import { ROOT_DIR } from '#utils/workspace-config.js';
 
 export const DEFAULT_CONTEXT_WINDOW = 1_000_000;
 
@@ -105,13 +107,44 @@ export function getUsageFromTranscript(transcriptPath) {
 }
 
 /**
+ * The active task name, or null when none is set or tasks/ is unreadable.
+ *
+ * @param {string} [rootDir]
+ * @returns {string | null}
+ */
+export function getActiveTask(rootDir = ROOT_DIR) {
+  try {
+    return readActive(rootDir);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The concrete "save your progress" instruction, naming the active task.
+ *
+ * @param {string | null} activeTask
+ * @returns {string}
+ */
+export function saveInstruction(activeTask) {
+  return activeTask
+    ? `run \`pnpm task note --done "…" --next "…"\` (appends to tasks/${activeTask}/NOTES.md)`
+    : 'no task is active — run `pnpm task switch <name>` (or `pnpm task new <name> --goal "…"`), then `pnpm task note --done "…" --next "…"`; for one-off work, append to tasks/<task-name-yymmdd>/NOTES.md';
+}
+
+/**
  * Build the warning text for a usage fraction, or null when below the note level.
  *
  * @param {number} usagePct
  * @param {number} [contextWindow]
+ * @param {string | null} [activeTask]
  * @returns {string | null}
  */
-export function buildMessage(usagePct, contextWindow = DEFAULT_CONTEXT_WINDOW) {
+export function buildMessage(
+  usagePct,
+  contextWindow = DEFAULT_CONTEXT_WINDOW,
+  activeTask = null
+) {
   if (usagePct < THRESHOLDS.note) return null;
 
   const pctStr = (usagePct * 100).toFixed(1);
@@ -122,10 +155,10 @@ export function buildMessage(usagePct, contextWindow = DEFAULT_CONTEXT_WINDOW) {
   }
 
   if (usagePct < THRESHOLDS.urgent) {
-    return `[Context Monitor][WARNING] Usage at ${pctStr}% of ${windowLabel} context window. Save progress to tasks/<task-name-yymmdd>/NOTES.md now. Prepare to urge the user to run /compact and start fresh if quality degrades. Delegate subtasks to subagents when possible.`;
+    return `[Context Monitor][WARNING] Usage at ${pctStr}% of ${windowLabel} context window. Save progress now: ${saveInstruction(activeTask)}. Prepare to urge the user to run /compact and start fresh if quality degrades. Delegate subtasks to subagents when possible.`;
   }
 
-  return `[Context Monitor][URGENT] Usage at ${pctStr}% of ${windowLabel} context window — context likely degraded. IMMEDIATE ACTION: write current progress to tasks/<task-name-yymmdd>/NOTES.md, urge the user to run /compact, then /clear to restore quality. Do NOT continue in this session for complex tasks.`;
+  return `[Context Monitor][URGENT] Usage at ${pctStr}% of ${windowLabel} context window — context likely degraded. IMMEDIATE ACTION: save progress — ${saveInstruction(activeTask)} — then urge the user to run /compact, then /clear to restore quality. Do NOT continue in this session for complex tasks.`;
 }
 
 /**
@@ -137,15 +170,24 @@ export function buildMessage(usagePct, contextWindow = DEFAULT_CONTEXT_WINDOW) {
  *
  * @param {{ transcript_path?: string }} [input]
  * @param {NodeJS.ProcessEnv} [env]
+ * @param {{ activeTask?: () => string | null }} [options]
  * @returns {HookOutput | null}
  */
-export function processHookInput(input, env = process.env) {
+export function processHookInput(
+  input,
+  env = process.env,
+  { activeTask = getActiveTask } = {}
+) {
   const usage = getUsageFromTranscript(input?.transcript_path);
   if (!usage) return null;
 
   const contextWindow = getContextWindow(env);
   const usagePct = usage.inputTokens / contextWindow;
-  const message = buildMessage(usagePct, contextWindow);
+  const message = buildMessage(
+    usagePct,
+    contextWindow,
+    usagePct >= THRESHOLDS.warn ? activeTask() : null
+  );
   if (!message) return null;
 
   /** @type {HookOutput} */

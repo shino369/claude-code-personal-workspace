@@ -98,9 +98,32 @@
     "DISABLE_AUTO_COMPACT": "1"
   },
   "companyAnnouncements": [
-    "Welcome! This workspace organizes task outputs in tasks/<task-name-yymmdd>/"
+    "Welcome! Tasks live in tasks/<task-name-yymmdd>/ — resume with: pnpm task status"
   ],
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session_start.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre_compact.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [

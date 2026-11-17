@@ -9,9 +9,13 @@ Everything above (AGENTS.md) applies. These notes cover only what is specific to
 - **Subagents:** always inherit the main session's model (do not pick a cheaper one).
 - **Context:** quality degrades at 20–40% usage, long before the window is full. The
   `UserPromptSubmit` hook `.claude/hooks/context_monitor.js` injects `[Context Monitor]` warnings
-  at 20/40/60% of the window (1M by default; set `CLAUDE_CONTEXT_WINDOW` to override). Act on
-  them: append a `NOTES.md` entry (AGENTS.md §4.2), delegate independent work to subagents, and
-  suggest `/compact` or `/clear` at the URGENT level.
+  at 20/40/60% of the window (1M by default; set `CLAUDE_CONTEXT_WINDOW` to override), naming the
+  active task. Act on them: run `pnpm task note --done "…" --next "…"` (AGENTS.md §4.2), delegate
+  independent work to subagents, and suggest `/compact` or `/clear` at the URGENT level.
+- **Resume:** the `SessionStart` hook (`session_start.js`, on startup/resume/clear/compact)
+  injects the `pnpm task status` brief, and the `PreCompact` hook (`pre_compact.js`) appends a
+  mechanical checkpoint to the active task's `NOTES.md`. When a `[Task]` brief is in context, do
+  not rediscover the task — continue from its `Next step`, after comparing its `Git:` line.
 - **Hooks** (`.claude/settings.json`): `audit_logger.js` appends redacted tool calls to
   `logs/<YYYYMMDD>/logging.jsonl`, and `auto_format.js` runs Prettier after Edit/Write. These run
   only in Claude Code; the git hooks from `pnpm workspace:setup` cover every harness.

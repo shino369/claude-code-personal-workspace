@@ -24,7 +24,8 @@
     "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test:coverage",
     "skills:link": "node utils/skills-link.js",
     "workspace:setup": "node utils/workspace-setup.js",
-    "workspace:check": "node utils/workspace-setup.js --check"
+    "workspace:check": "node utils/workspace-setup.js --check",
+    "task": "node utils/task/cli.js"
   },
   "keywords": [],
   "author": "shino369",
