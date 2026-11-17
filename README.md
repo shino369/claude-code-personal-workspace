@@ -92,7 +92,8 @@ pnpm check
 ├── e2e/                     # Playwright e2e tests
 ├── tasks/                   # Generated task outputs (git-ignored)
 ├── templates/task/          # plan/NOTES/REVIEW/STUDIES templates for pnpm task
-├── utils/                   # Shared Node utilities (utils/task/ = pnpm task CLI)
+├── tools/                   # catalog.json (tracked) + local.json (this machine, ignored)
+├── utils/                   # Shared Node utilities (task/, loop/, agent/, tools/ CLIs)
 ├── AGENTS.md                # Instructions for every agent
 ├── CLAUDE.md                # @AGENTS.md + Claude Code notes
 ├── skills-lock.json         # skills.sh lockfile
@@ -279,6 +280,21 @@ to read:
 Claude Code hooks do not run in other harnesses. The git hooks in `.githooks/` (enabled by
 `pnpm workspace:setup`) enforce formatting, linting, and commit messages for everyone, and
 `pnpm task status` gives every harness the same resume brief the `SessionStart` hook injects.
+
+### Tools and calling other agents
+
+`pnpm tools scan` records the agents, CLIs, and runtimes this machine has in `tools/local.json`
+(git-ignored), checking the list in `tools/catalog.json`. `pnpm tools list` shows them, and the
+`SessionStart` brief ends with a one-line summary so Claude knows what it can call. Tools the scan
+cannot find (an `npx`-only harness, a cloned reference repo) are recorded with `pnpm tools add`;
+source checkouts live outside the repo in `~/.cache/agent-tools/src/` (`pnpm tools sources`).
+
+```bash
+pnpm tools list --all                                   # what is here, and how to install the rest
+pnpm tools add dsh --kind agent --command "npx -y @deepseek-ai/dsh"
+pnpm agent ask --agent codex "Review utils/task/loop.js for edge cases"   # read-only second opinion
+pnpm loop my-task --agent codex --max 3                 # unattended fix-until-green, in a worktree
+```
 
 ## Hooks
 

@@ -11,6 +11,7 @@ import { gitInfo } from '../task/git.js';
 import { parseMax } from '../task/loop.js';
 import { loadTask, resolveTaskName } from '../task/store.js';
 import { runCommands } from '../task/verify.js';
+import { commandFor } from '../tools/registry.js';
 import { ROOT_DIR } from '../workspace-config.js';
 import { AGENTS, buildCommand, runAgent } from './adapters.js';
 import { fingerprint, runLoop } from './driver.js';
@@ -30,7 +31,8 @@ Options
   --timeout-min <n>           Wall-clock cap for the whole run (default 60)
   --iteration-timeout-min <n> Cap for one agent run (default 20)
   --bin "<cmd>"               Executable to run, split on spaces (no shell),
-                              e.g. --bin "npx -y @deepseek-ai/dsh"
+                              e.g. --bin "npx -y @deepseek-ai/dsh"; default: the
+                              tool registry entry (pnpm tools list), else <agent>
   --max-budget-usd <n>        Spend cap per iteration (claude only)
   --dry-run                   Print the plan and the first prompt; run nothing
   --help                      Show this help
@@ -179,6 +181,7 @@ export function main({ argv = process.argv.slice(2), deps = {} } = {}) {
   const command = buildCommand({
     agent: options.agent,
     bin: options.bin,
+    argv: options.bin ? null : commandFor(d.rootDir, options.agent),
     maxBudgetUsd: options.maxBudgetUsd,
   });
   const name = resolveTaskName(d.rootDir, options.task);

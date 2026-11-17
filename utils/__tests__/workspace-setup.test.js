@@ -2,7 +2,6 @@ import { vi } from 'vitest';
 import {
   HELP,
   HOOK_FILES,
-  OPTIONAL_TOOLS,
   checkNode,
   formatResult,
   main,
@@ -41,6 +40,17 @@ function makeDeps(overrides = {}) {
     linkSkills: vi.fn(() => [
       { target: '.claude/skills', name: 'tdd', status: 'ok' },
     ]),
+    tools: {
+      scan: vi.fn(),
+      registry: vi.fn(() => ({
+        version: 1,
+        updatedAt: null,
+        tools: [{ name: 'codex', kind: 'agent', ok: true }],
+      })),
+      catalog: vi.fn(() => [
+        { name: 'codex', kind: 'agent', recommended: true, check: ['codex'] },
+      ]),
+    },
     logs,
     ...overrides,
   });
@@ -318,27 +328,82 @@ describe('stepBrowsers', () => {
 });
 
 describe('stepTools', () => {
-  test('should report all tools found', () => {
-    expect(stepTools(makeDeps()).status).toBe('ok');
+  /** @param {Record<string, unknown>} [tools] */
+  const withTools = (tools = {}) => {
+    const deps = makeDeps();
+    return makeDeps({ tools: { ...deps.tools, ...tools } });
+  };
+
+  test('should scan in setup mode and report the recorded tools', () => {
+    const deps = withTools();
+    expect(stepTools(opts(), deps)).toEqual({
+      id: 'tools',
+      status: 'ok',
+      detail: '1 tool(s) in tools/local.json (pnpm tools list)',
+    });
+    expect(deps.tools.scan).toHaveBeenCalled();
   });
 
-  test('should warn about missing tools with install hints', () => {
-    const spawn = vi.fn((/** @type {string} */ tool) => ({
-      status: tool === 'codex' ? 1 : 0,
-    }));
-    const result = stepTools(makeDeps({ spawn }));
+  test('should only read the registry in check mode', () => {
+    const deps = withTools();
+    stepTools(opts(['--check']), deps);
+    expect(deps.tools.scan).not.toHaveBeenCalled();
+  });
+
+  test('should warn about recommended tools that are missing or broken', () => {
+    const deps = withTools({
+      registry: () => ({
+        version: 1,
+        updatedAt: null,
+        tools: [{ name: 'codex', kind: 'agent', ok: false }],
+      }),
+      catalog: () => [
+        {
+          name: 'codex',
+          recommended: true,
+          docs: 'https://developers.openai.com/codex/cli',
+        },
+        {
+          name: 'gh',
+          recommended: true,
+          install: { darwin: 'brew install gh' },
+        },
+        { name: 'weird', recommended: true },
+        { name: 'jq' },
+      ],
+    });
+    const result = stepTools(opts(['--check']), deps);
     expect(result.status).toBe('warn');
-    expect(result.fix).toContain('codex: https://developers.openai.com/codex');
+    expect(result.detail).toContain(
+      'recommended but missing: codex, gh, weird'
+    );
+    expect(result.fix).toBe(
+      'codex: see https://developers.openai.com/codex/cli | gh: brew install gh | weird: see pnpm tools show'
+    );
   });
 
-  test('should use a shell on Windows for cmd shims', () => {
-    const deps = makeDeps({ platform: 'win32' });
-    stepTools(deps);
-    expect(deps.spawn).toHaveBeenCalledWith(
-      OPTIONAL_TOOLS[0].tool,
-      ['--version'],
-      { stdio: 'ignore', shell: true }
-    );
+  test('should point at pnpm tools scan when nothing is recorded', () => {
+    const deps = withTools({
+      registry: () => ({ version: 1, updatedAt: null, tools: [] }),
+    });
+    expect(stepTools(opts(['--check']), deps)).toMatchObject({
+      status: 'warn',
+      fix: 'pnpm tools scan',
+    });
+  });
+
+  test('should warn with a reset fix when the registry is unreadable', () => {
+    const deps = withTools({
+      registry: () => {
+        throw new Error('Invalid tools/local.json:\n  - version must be 1');
+      },
+    });
+    expect(stepTools(opts(['--check']), deps)).toEqual({
+      id: 'tools',
+      status: 'warn',
+      detail: 'tool registry unreadable: Invalid tools/local.json:',
+      fix: 'pnpm tools scan --reset',
+    });
   });
 });
 

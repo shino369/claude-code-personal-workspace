@@ -5,7 +5,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { vi } from 'vitest';
-import { processHookInput } from '../session_start.js';
+import { processHookInput, registryLine } from '../session_start.js';
 
 /** @type {string} */
 let root;
@@ -33,10 +33,69 @@ afterEach(() => {
 });
 
 describe('session_start processHookInput', () => {
-  test('should stay silent when there are no tasks', () => {
+  test('should stay silent with no tasks and no tools line', () => {
+    expect(
+      processHookInput(
+        { source: 'startup' },
+        { rootDir: root, tools: () => null }
+      )
+    ).toBeNull();
+  });
+
+  test('should nudge a scan when no tools are recorded', () => {
     expect(
       processHookInput({ source: 'startup' }, { rootDir: root })
-    ).toBeNull();
+        ?.hookSpecificOutput.additionalContext
+    ).toBe(
+      'Tools: none recorded on this machine — run pnpm tools scan to list the agents and CLIs you can call'
+    );
+  });
+
+  test('should append the tools line after the task brief', () => {
+    makeTask('demo-261117');
+    fs.writeFileSync(path.join(root, 'tasks', '.active'), 'demo-261117\n');
+    fs.mkdirSync(path.join(root, 'tools'));
+    fs.writeFileSync(
+      path.join(root, 'tools', 'local.json'),
+      JSON.stringify({
+        version: 1,
+        updatedAt: null,
+        tools: [
+          {
+            name: 'codex',
+            kind: 'agent',
+            path: '/bin/codex',
+            version: '1',
+            source: 'scan',
+            ok: true,
+            checkedAt: 'x',
+          },
+        ],
+      })
+    );
+    const context =
+      processHookInput({ source: 'clear' }, { rootDir: root })
+        ?.hookSpecificOutput.additionalContext ?? '';
+    expect(context.split('\n').at(-1)).toMatch(
+      /^Tools: agents codex \(pnpm tools list;/
+    );
+    expect(context).toContain('[Task] demo-261117');
+  });
+
+  test('should send the task brief alone when there is no tools line', () => {
+    makeTask('demo-261117');
+    fs.writeFileSync(path.join(root, 'tasks', '.active'), 'demo-261117\n');
+    const context =
+      processHookInput({}, { rootDir: root, tools: () => null })
+        ?.hookSpecificOutput.additionalContext ?? '';
+    expect(context).not.toContain('Tools:');
+    expect(context).toContain('[Task] demo-261117');
+  });
+
+  test('should skip the tools line when the registry is unreadable', () => {
+    fs.mkdirSync(path.join(root, 'tools'));
+    fs.writeFileSync(path.join(root, 'tools', 'local.json'), '{oops');
+    expect(registryLine(root)).toBeNull();
   });
 
   test('should inject the active task brief with its goal and next step', () => {

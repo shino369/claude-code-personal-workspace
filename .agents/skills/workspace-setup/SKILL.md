@@ -52,6 +52,7 @@ One command does the work; this skill tells you how to run it and how to fix wha
 | Commit rejected by `commit-msg`           | Rewrite the message as `<type>(<scope>): <description>`; see AGENTS.md → Git conventions.                                                                           |
 | Commit rejected by `pre-commit`           | Run the printed `Fix:` command (prettier/eslint), `git add` the files, commit again.                                                                                |
 | A harness still cannot see a skill        | Codex: skill must be in `.agents/skills/`. Claude Code: run `pnpm skills:link`, then restart. Other harness: `pnpm workspace:setup --target <its skill dir>`.       |
+| `tools: … recommended but missing: …`     | Optional. Install the listed tools with the printed hints, then `pnpm tools scan`. `pnpm tools list --all` shows the rest.                                          |
 | `node_modules missing` / install fails    | `corepack enable && pnpm install`. Never use `npm`.                                                                                                                 |
 
 ## Adding a project-owned skill

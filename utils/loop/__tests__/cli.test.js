@@ -70,7 +70,7 @@ function run(argv, deps = {}) {
   const logs = [];
   const runAgent = vi.fn((/** @type {{ cwd: string }} */ { cwd }) => {
     fs.appendFileSync(path.join(cwd, 'touched.txt'), 'x');
-    return { code: 0, signal: null, output: 'ok', durationMs: 1 };
+    return { code: 0, signal: null, output: 'ok', stdout: 'ok', durationMs: 1 };
   });
   const code = main({
     argv,
@@ -215,6 +215,36 @@ describe('main', () => {
     expect(out).toContain(`Worktree: ${worktreePath(repo, NAME)}`);
     expect(runAgent).not.toHaveBeenCalled();
     expect(fs.existsSync(worktreePath(repo, NAME))).toBe(false);
+  });
+
+  test('should take the executable from the tool registry unless --bin is given', () => {
+    seedTask(repo);
+    fs.mkdirSync(path.join(repo, 'tools'), { recursive: true });
+    fs.writeFileSync(
+      path.join(repo, 'tools', 'local.json'),
+      JSON.stringify({
+        version: 1,
+        updatedAt: null,
+        tools: [
+          {
+            name: 'dsh',
+            kind: 'agent',
+            path: null,
+            command: 'npx -y @deepseek-ai/dsh',
+            version: null,
+            source: 'manual',
+            ok: true,
+            checkedAt: NOW.toISOString(),
+          },
+        ],
+      })
+    );
+    expect(run(['--agent', 'dsh', '--dry-run']).out).toContain(
+      'Agent: npx -y @deepseek-ai/dsh --profile headless'
+    );
+    expect(
+      run(['--agent', 'dsh', '--dry-run', '--bin', 'mydsh']).out
+    ).toContain('Agent: mydsh --profile headless');
   });
 
   test('should run in place inside a linked worktree', () => {

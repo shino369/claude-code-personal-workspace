@@ -15,6 +15,8 @@ import { runIfMain } from './module-runner.js';
 import { installSkills } from './skills-install.js';
 import { PROBLEM_STATUSES, linkSkills } from './skills-link.js';
 import { checkSkills } from './skills-lock.js';
+import { installHint } from './tools/catalog.js';
+import { setupTools } from './tools/cli.js';
 import {
   DEFAULT_LINK_TARGETS,
   MIN_NODE_MAJOR,
@@ -35,18 +37,6 @@ Options:
 /** Git hook shims that must be executable. */
 export const HOOK_FILES = ['pre-commit', 'commit-msg'];
 
-/** Optional CLIs reported (never installed) by the setup. */
-export const OPTIONAL_TOOLS = [
-  { tool: 'claude', hint: 'https://code.claude.com/docs' },
-  { tool: 'codex', hint: 'https://developers.openai.com/codex' },
-  {
-    tool: 'uv',
-    hint: 'https://docs.astral.sh/uv/ (browser-use, skill-creator)',
-  },
-  { tool: 'gh', hint: 'https://cli.github.com/ (dependency-update)' },
-  { tool: 'browser-use', hint: 'uv tool install --python 3.12 browser-use' },
-];
-
 /**
  * @typedef {'ok' | 'done' | 'warn' | 'fail' | 'skip'} StepStatus
  * @typedef {{ id: string, status: StepStatus, detail: string, fix?: string }} StepResult
@@ -63,7 +53,13 @@ export const OPTIONAL_TOOLS = [
  *   installSkills: typeof installSkills,
  *   checkSkills: typeof checkSkills,
  *   linkSkills: typeof linkSkills,
+ *   tools: ToolsDeps,
  * }} Deps
+ * @typedef {{
+ *   scan: () => void,
+ *   registry: () => import('./tools/registry.js').Registry,
+ *   catalog: () => import('./tools/catalog.js').CatalogEntry[],
+ * }} ToolsDeps
  * @typedef {{ check: boolean, skipInstall: boolean, skipSkills: boolean, withBrowsers: boolean, json: boolean, help: boolean, targets: string[] }} Options
  */
 
@@ -334,28 +330,54 @@ export function stepBrowsers(options, deps) {
 }
 
 /**
- * Report optional CLIs; never installs anything.
+ * The tool registry (`pnpm tools`): setup records what is on PATH; check only
+ * reports. Never installs anything; recommended catalog tools that are
+ * missing only warn, with their install hints.
  *
+ * @param {Options} options
  * @param {Deps} deps
  * @returns {StepResult}
  */
-export function stepTools(deps) {
-  const missing = OPTIONAL_TOOLS.filter(
-    ({ tool }) =>
-      deps.spawn(tool, ['--version'], {
-        stdio: 'ignore',
-        // Windows CLIs are often .cmd shims; tool names are constants above.
-        shell: deps.platform === 'win32',
-      }).status !== 0
+export function stepTools(options, deps) {
+  let registry;
+  let catalog;
+  try {
+    if (!options.check) deps.tools.scan();
+    registry = deps.tools.registry();
+    catalog = deps.tools.catalog();
+  } catch (error) {
+    return {
+      id: 'tools',
+      status: 'warn',
+      detail: `tool registry unreadable: ${/** @type {Error} */ (error).message.split('\n')[0]}`,
+      fix: 'pnpm tools scan --reset',
+    };
+  }
+  if (registry.tools.length === 0) {
+    return {
+      id: 'tools',
+      status: 'warn',
+      detail: 'no tools recorded in tools/local.json',
+      fix: 'pnpm tools scan',
+    };
+  }
+  const working = new Set(
+    registry.tools.filter((t) => t.ok).map((t) => t.name)
   );
-  const found = OPTIONAL_TOOLS.length - missing.length;
+  const missing = catalog.filter((t) => t.recommended && !working.has(t.name));
+  const detail = `${registry.tools.length} tool(s) in tools/local.json (pnpm tools list)`;
   return missing.length === 0
-    ? { id: 'tools', status: 'ok', detail: `${found} optional CLI(s) found` }
+    ? { id: 'tools', status: 'ok', detail }
     : {
         id: 'tools',
         status: 'warn',
-        detail: `optional CLI(s) not found: ${missing.map((m) => m.tool).join(', ')}`,
-        fix: missing.map((m) => `${m.tool}: ${m.hint}`).join(' | '),
+        detail: `${detail}; recommended but missing: ${missing.map((t) => t.name).join(', ')}`,
+        fix: missing
+          .map(
+            (t) =>
+              `${t.name}: ${installHint(t, deps.platform) ?? 'see pnpm tools show'}`
+          )
+          .join(' | '),
       };
 }
 
@@ -384,7 +406,7 @@ export async function runSteps(options, deps) {
   results.push(stepLinks(options, deps));
   results.push(stepGitHooks(options, deps));
   results.push(stepBrowsers(options, deps));
-  results.push(stepTools(deps));
+  results.push(stepTools(options, deps));
   return results;
 }
 
@@ -419,6 +441,7 @@ export async function main({ argv = process.argv.slice(2), deps = {} } = {}) {
     installSkills,
     checkSkills,
     linkSkills,
+    tools: setupTools(ROOT_DIR),
     ...deps,
   };
   const options = parseArgs(argv);

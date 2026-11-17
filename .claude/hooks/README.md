@@ -103,7 +103,10 @@ actual window if it differs.
 
 - With an active task (`tasks/.active`), injects the `pnpm task status` brief as
   `additionalContext`: goal, progress, next step, last verify, git state, last NOTES entry
-- With no active task, lists up to five open tasks to pick from; with no tasks, stays silent
+- With no active task, lists up to five open tasks to pick from
+- Ends with a `Tools:` line from `tools/local.json` (`pnpm tools`): the agents, CLIs, runtimes,
+  and source checkouts this machine has, so the session knows what it can call (or a nudge to run
+  `pnpm tools scan`). With no tasks and an unreadable registry it stays silent
 - Fails open: an unreadable task becomes a one-line notice, never a blocked session
 
 ### 5. Pre-Compact (`pre_compact.js`)

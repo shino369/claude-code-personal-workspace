@@ -55,6 +55,56 @@ describe('buildCommand', () => {
     expect(buildCommand({ agent: 'codex', bin: '  ' }).bin).toBe('codex');
   });
 
+  test('should build read-only commands in read mode', () => {
+    expect(buildCommand({ agent: 'claude', mode: 'read' }).args).toEqual([
+      '-p',
+      '--permission-mode',
+      'plan',
+      '--output-format',
+      'text',
+      '--no-session-persistence',
+    ]);
+    expect(buildCommand({ agent: 'codex', mode: 'read' }).args).toEqual([
+      'exec',
+      '--sandbox',
+      'read-only',
+      '--ephemeral',
+      '-',
+    ]);
+    expect(buildCommand({ agent: 'dsh', mode: 'read' }).args).toEqual([
+      '--profile',
+      'headless',
+      '--permission-mode',
+      'read-only',
+      '--approval-policy',
+      'never',
+      '-',
+    ]);
+  });
+
+  test('should reject an unknown mode with a Fix line', () => {
+    expect(() => buildCommand({ agent: 'codex', mode: 'yolo' })).toThrow(
+      /Unknown mode "yolo"\.\nFix: use mode write or read/
+    );
+  });
+
+  test('should use a registry argv prefix as-is, paths with spaces included', () => {
+    const command = buildCommand({
+      agent: 'codex',
+      argv: ['/Program Files/codex', '--profile', 'x'],
+    });
+    expect(command.bin).toBe('/Program Files/codex');
+    expect(command.args.slice(0, 3)).toEqual(['--profile', 'x', 'exec']);
+  });
+
+  test('should prefer --bin over the registry argv, and ignore an empty argv', () => {
+    expect(
+      buildCommand({ agent: 'dsh', bin: 'mydsh', argv: ['npx', '-y', 'x'] }).bin
+    ).toBe('mydsh');
+    expect(buildCommand({ agent: 'dsh', argv: [] }).bin).toBe('dsh');
+    expect(buildCommand({ agent: 'dsh', argv: null }).bin).toBe('dsh');
+  });
+
   test('should append the spend cap for claude', () => {
     expect(
       buildCommand({ agent: 'claude', maxBudgetUsd: 2.5 }).args.slice(-2)
@@ -114,6 +164,7 @@ describe('runAgent', () => {
       code: 0,
       signal: null,
       output: 'done\nnote',
+      stdout: 'done',
       durationMs: 1000,
     });
   });
@@ -135,6 +186,7 @@ describe('runAgent', () => {
     });
     expect(result.signal).toBe('SIGTERM');
     expect(result.output).toContain('ETIMEDOUT');
+    expect(result.stdout).toBe('');
     expect(result.output).toContain('(stopped by SIGTERM; timeout 60s)');
   });
 

@@ -3,12 +3,15 @@
  * array; the prompt always goes on stdin and nothing runs through a shell, so
  * task text can never become a command.
  *
- * Permission choices keep unattended runs inside the worktree:
+ * Two modes. `write` (the default, used by `pnpm loop`) keeps unattended runs
+ * inside the worktree:
  * - claude: `acceptEdits` auto-approves file edits; Bash still follows the
  *   project allow/deny lists (anything else is denied in -p mode).
  * - codex: the `workspace-write` sandbox.
  * - dsh: the `workspace-write` preset with `--approval-policy never`
  *   (headless has no approval channel; calls that need one are rejected).
+ * `read` (the default for `pnpm agent ask`) cannot change files: claude `plan`
+ * mode, codex `read-only` sandbox, dsh `read-only` preset.
  */
 import { spawnSync } from 'child_process';
 
@@ -16,36 +19,64 @@ export const AGENTS = /** @type {const} */ (['claude', 'codex', 'dsh']);
 
 /** @typedef {typeof AGENTS[number]} AgentName */
 
-/** @type {Record<AgentName, { bin: string, args: string[], install: string }>} */
+export const MODES = /** @type {const} */ (['write', 'read']);
+
+/** @typedef {typeof MODES[number]} Mode */
+
+/** @type {Record<AgentName, { bin: string, args: Record<Mode, string[]>, install: string }>} */
 const ADAPTERS = {
   claude: {
     bin: 'claude',
-    args: [
-      '-p',
-      '--permission-mode',
-      'acceptEdits',
-      '--output-format',
-      'text',
-      '--no-session-persistence',
-    ],
+    args: {
+      write: [
+        '-p',
+        '--permission-mode',
+        'acceptEdits',
+        '--output-format',
+        'text',
+        '--no-session-persistence',
+      ],
+      read: [
+        '-p',
+        '--permission-mode',
+        'plan',
+        '--output-format',
+        'text',
+        '--no-session-persistence',
+      ],
+    },
     install: 'https://code.claude.com/docs (then: claude --version)',
   },
   codex: {
     bin: 'codex',
-    args: ['exec', '--sandbox', 'workspace-write', '--ephemeral', '-'],
+    args: {
+      write: ['exec', '--sandbox', 'workspace-write', '--ephemeral', '-'],
+      read: ['exec', '--sandbox', 'read-only', '--ephemeral', '-'],
+    },
     install: 'install the Codex CLI (see its docs), or pass --bin <path>',
   },
   dsh: {
     bin: 'dsh',
-    args: [
-      '--profile',
-      'headless',
-      '--permission-mode',
-      'workspace-write',
-      '--approval-policy',
-      'never',
-      '-',
-    ],
+    args: {
+      write: [
+        '--profile',
+        'headless',
+        '--permission-mode',
+        'workspace-write',
+        '--approval-policy',
+        'never',
+        '-',
+      ],
+      read: [
+        '--profile',
+        'headless',
+        '--permission-mode',
+        'read-only',
+        '--approval-policy',
+        'never',
+        '-',
+      ],
+    },
     install: 'pass --bin "npx -y @deepseek-ai/dsh" (Node ^22.19 or >=24)',
   },
 };
@@ -57,23 +88,38 @@ const ADAPTERS = {
 /**
  * Build the command for one harness.
  *
- * @param {{ agent: string, bin?: string, maxBudgetUsd?: number }} options
- *   `bin` replaces the executable; it is split on whitespace (no shell), so
- *   `npx -y @deepseek-ai/dsh` works.
+ * Executable precedence: `bin` (the `--bin` flag, split on whitespace with no
+ * shell, so `npx -y @deepseek-ai/dsh` works) > `argv` (an argv prefix from the
+ * tool registry, kept as-is so paths with spaces survive) > the default.
+ *
+ * @param {{ agent: string, bin?: string, argv?: string[] | null, mode?: string, maxBudgetUsd?: number }} options
  * @returns {AgentCommand}
  */
-export function buildCommand({ agent, bin, maxBudgetUsd }) {
+export function buildCommand({
+  agent,
+  bin,
+  argv,
+  mode = 'write',
+  maxBudgetUsd,
+}) {
   if (!AGENTS.includes(/** @type {AgentName} */ (agent))) {
     throw new Error(
       `Unknown agent "${agent}".\nFix: use --agent ${AGENTS.join('|')}`
+    );
+  }
+  if (!MODES.includes(/** @type {Mode} */ (mode))) {
+    throw new Error(
+      `Unknown mode "${mode}".\nFix: use mode ${MODES.join(' or ')}`
     );
   }
   const name = /** @type {AgentName} */ (agent);
   const adapter = ADAPTERS[name];
   const [exe, ...prefix] = bin?.trim()
     ? bin.trim().split(/\s+/)
-    : [adapter.bin];
-  const args = [...prefix, ...adapter.args];
+    : argv && argv.length > 0
+      ? argv
+      : [adapter.bin];
+  const args = [...prefix, ...adapter.args[/** @type {Mode} */ (mode)]];
   if (maxBudgetUsd !== undefined) {
     if (name !== 'claude') {
       throw new Error(
@@ -97,7 +143,10 @@ export function installHint(agent) {
 
 /**
  * @typedef {(bin: string, args: string[], options: object) => { status: number | null, signal?: string | null, stdout?: string | Buffer | null, stderr?: string | Buffer | null, error?: Error & { code?: string } }} AgentSpawn
- * @typedef {{ code: number | null, signal: string | null, output: string, durationMs: number }} AgentResult
+ * @typedef {{ code: number | null, signal: string | null, output: string, stdout: string, durationMs: number }} AgentResult
+ *   `output` is everything (stdout, stderr, spawn errors, a timeout note);
+ *   `stdout` alone is the final answer for harnesses that log progress to
+ *   stderr (codex exec, dsh headless).
  */
 
 /**
@@ -140,6 +189,7 @@ export function runAgent({
     output: result.signal
       ? `${output}\n(stopped by ${result.signal}; timeout ${Math.round(timeoutMs / 1000)}s)`
       : output,
+    stdout: String(result.stdout ?? ''),
     durationMs: now() - started,
   };
 }

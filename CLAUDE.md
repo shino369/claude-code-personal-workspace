@@ -13,7 +13,8 @@ Everything above (AGENTS.md) applies. These notes cover only what is specific to
   active task. Act on them: run `pnpm task note --done "…" --next "…"` (AGENTS.md §4.2), delegate
   independent work to subagents, and suggest `/compact` or `/clear` at the URGENT level.
 - **Resume:** the `SessionStart` hook (`session_start.js`, on startup/resume/clear/compact)
-  injects the `pnpm task status` brief, and the `PreCompact` hook (`pre_compact.js`) appends a
+  injects the `pnpm task status` brief plus a `Tools:` line (AGENTS.md §12: other agents you can
+  call with `pnpm agent ask`), and the `PreCompact` hook (`pre_compact.js`) appends a
   mechanical checkpoint to the active task's `NOTES.md`. When a `[Task]` brief is in context, do
   not rediscover the task — continue from its `Next step`, after comparing its `Git:` line.
 - **Inner loop:** `pnpm task set --loop on` makes the `Stop` hook (`task_loop.js`) re-run the

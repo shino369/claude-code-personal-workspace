@@ -16,7 +16,7 @@ outputs.
 - Never force-push, `git reset --hard`, `git clean -fd`, delete branches or tags, or
   `pnpm publish`. Never push, merge, or rebase unless the user asks.
 - Never `git commit --no-verify`. If a hook rejects a commit, fix the cause.
-- Never commit `tasks/`, `logs/`, third-party skills, `.claude/settings.local.json`, or `.mcp.json`.
+- Never commit `tasks/`, `logs/`, `tools/local.json`, third-party skills, `.claude/settings.local.json`, or `.mcp.json`.
 - Never edit files under `.claude/skills/` — they are links. Edit `.agents/skills/` instead.
 - Never add attribution lines (`Co-Authored-By`, "Generated with …") to commits or PRs.
 - Never create summary or completion documents unless the user asks.
@@ -31,6 +31,8 @@ outputs.
    Report failures honestly, with their output.
 5. **Before you stop working on a task:** `pnpm task note --done "…" --next "…"` (§4.2).
 6. **Unsure what the user wants?** Ask. Do not guess on anything destructive or outward-facing.
+7. **Need another agent, a CLI, or a tool an earlier task installed?** Run `pnpm tools list` (§12)
+   before saying it is unavailable or installing anything.
 
 ## 3. Commands
 
@@ -42,6 +44,8 @@ outputs.
 | Format / check format         | `pnpm format` / `pnpm format:check`                              |
 | Typecheck                     | `pnpm typecheck`                                                 |
 | Task brief / log / help       | `pnpm task status` · `pnpm task note …` · `pnpm task help`       |
+| Tools on this machine         | `pnpm tools list` · `pnpm tools show <name>` · `pnpm tools scan` |
+| Ask another agent (read-only) | `pnpm agent ask --agent claude\|codex\|dsh "…"`                  |
 | Fix until verify passes       | `pnpm loop <task> --agent claude\|codex\|dsh` (`--help`)         |
 | Set up / verify the workspace | `pnpm workspace:setup` / `pnpm workspace:check`                  |
 | Third-party skills            | `pnpm skills:install` · `pnpm skills:check` · `pnpm skills:link` |
@@ -212,9 +216,10 @@ Skill runtimes:
 - `browser-use` — `uv tool install --python 3.12 browser-use`.
 - `playwright-cli` — `pnpm exec playwright cli …`.
 - `skill-creator` — `uv run --with pyyaml --python 3.12 python …`.
-- `gh` (GitHub CLI) — for Dependabot PR review; may not be installed.
+- `gh` (GitHub CLI) — for Dependabot PR review; may not be installed (`pnpm tools show gh`).
 
-If a runtime is missing, tell the user what to install. Do not silently switch tools.
+If a runtime is missing, tell the user what to install (`pnpm tools show <name>` prints the hint for
+this OS). Do not silently switch tools.
 
 ## 10. Roles (reusable agent prompts)
 
@@ -231,3 +236,21 @@ and follow it as a checklist.
 
 Use the `trilingual-translator` role with the `translation-expertise`, `engineering-terminology`,
 and `document-writing` skills. Write drafts and passes to the task's `translated/` folder.
+
+## 12. Tools and other agents
+
+Each machine records what it can call in `tools/local.json` (git-ignored, so it is never in a
+fresh clone; run `pnpm tools scan` to create it). `tools/catalog.json` (committed) lists the tools
+worth having, how to check them, how agents call them headless, and per-OS install hints.
+
+- **Look before you give up or install:** `pnpm tools list` (`--all` adds install hints for
+  missing tools); details for one tool: `pnpm tools show <name>`.
+- **Call another agent** for a second opinion or a delegated question:
+  `pnpm agent ask --agent claude|codex|dsh "…"` (or `-` to read the prompt from stdin). It is
+  read-only by default and saves the exchange to the active task's `tmp/`. `--write` lets the agent
+  edit files; use it only in a git worktree.
+- **Record what you install:** after installing a tool or cloning a reusable repo, run
+  `pnpm tools add <name> --kind agent|cli|runtime|source (--path … | --command "…")`. Clone source
+  checkouts into `pnpm tools sources` (`~/.cache/agent-tools/src/<name>`), never into `tasks/` or
+  the repo. Treat them as read-only references: do not build or run them.
+- **Never** put secrets in the registry: `--env` records env var names, not values.
