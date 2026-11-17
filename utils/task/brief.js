@@ -147,16 +147,30 @@ function formatVerify(verify, commands) {
 }
 
 /**
+ * How a task's status reads to people. "active" is reserved for the active
+ * task (`tasks/.active`), so an unfinished task is "open"; a hand-written task
+ * without state.json is "untracked".
+ *
+ * @param {string} status state.json status (active | blocked | done)
+ * @param {boolean} tracked whether the task has state.json
+ * @returns {string}
+ */
+export function statusLabel(status, tracked) {
+  return `${status === 'active' ? 'open' : status}${tracked ? '' : ', untracked'}`;
+}
+
+/**
  * Render the resume brief (≤ ~40 lines).
  *
  * @param {TaskSummary} summary
+ * @param {{ active?: boolean }} [options] active: this is the active task
  * @returns {string}
  */
-export function formatBrief(summary) {
+export function formatBrief(summary, { active = false } = {}) {
   const { name, git } = summary;
   /** @type {string[]} */
   const lines = [
-    `[Task] ${name} — ${summary.status} (tasks/${name}/)`,
+    `[Task] ${name}${active ? ' (active task)' : ''} — ${statusLabel(summary.status, summary.tracked)} (tasks/${name}/)`,
     `Goal: ${summary.goal}`,
     `Progress: ${summary.progress.done}/${summary.progress.total} steps done`,
   ];
@@ -230,7 +244,7 @@ export function formatBrief(summary) {
 /**
  * Brief when no task is active: the most recently updated tasks to pick from.
  *
- * @param {Array<{ name: string, status: string, updated: string }>} tasks newest first
+ * @param {Array<{ name: string, status: string, tracked: boolean, updated: string }>} tasks newest first
  * @param {number} [limit]
  * @returns {string}
  */
@@ -243,7 +257,10 @@ export function formatNoActiveBrief(tasks, limit = 5) {
     '[Task] No active task. Open tasks (newest first):',
     ...open
       .slice(0, limit)
-      .map((t) => `  - ${t.name} (${t.status}, updated ${t.updated})`),
+      .map(
+        (t) =>
+          `  - ${t.name} (${statusLabel(t.status, t.tracked)}, updated ${t.updated})`
+      ),
     'Resume one: pnpm task switch <name>, then pnpm task status. New work: pnpm task new <name> --goal "…"',
   ].join('\n');
 }

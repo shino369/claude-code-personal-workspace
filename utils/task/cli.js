@@ -9,7 +9,12 @@
 import fs from 'fs';
 import path from 'path';
 import { runIfMain } from '../module-runner.js';
-import { formatBrief, formatNoActiveBrief, summarizeTask } from './brief.js';
+import {
+  formatBrief,
+  formatNoActiveBrief,
+  statusLabel,
+  summarizeTask,
+} from './brief.js';
 import { defaultDeps } from './deps.js';
 import { formatGit } from './git.js';
 import {
@@ -282,7 +287,9 @@ export function sessionBrief(deps) {
   const active = readActive(deps.rootDir);
   if (active) {
     const task = loadTask(deps.rootDir, active);
-    return formatBrief(summarizeTask(task, deps.git(deps.rootDir)));
+    return formatBrief(summarizeTask(task, deps.git(deps.rootDir)), {
+      active: true,
+    });
   }
   const tasks = listTasks(deps);
   return tasks.length === 0 ? null : formatNoActiveBrief(tasks);
@@ -560,7 +567,7 @@ export const COMMANDS = {
     }
     for (const t of tasks) {
       deps.log(
-        `${t.active ? '*' : ' '} ${t.name}  [${t.status}${t.tracked ? '' : ', no state.json'}]  updated ${t.updated}  next: ${t.next}`
+        `${t.active ? '*' : ' '} ${t.name}  [${statusLabel(t.status, t.tracked)}${t.active ? ', active task' : ''}]  updated ${t.updated}  next: ${t.next}`
       );
     }
     return 0;
@@ -572,7 +579,12 @@ export const COMMANDS = {
       loadTask(deps.rootDir, name),
       deps.git(deps.rootDir)
     );
-    output(deps, options, summary, formatBrief(summary));
+    output(
+      deps,
+      options,
+      summary,
+      formatBrief(summary, { active: name === readActive(deps.rootDir) })
+    );
     return 0;
   },
 

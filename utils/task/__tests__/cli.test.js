@@ -355,10 +355,10 @@ describe('list', () => {
     const lines = run(['list']).out.split('\n');
     expect(lines).toHaveLength(2);
     expect(lines[0]).toBe(
-      `* ${NAME}  [active]  updated 2026-11-17 09:30  next: s1. One`
+      `* ${NAME}  [open, active task]  updated 2026-11-17 09:30  next: s1. One`
     );
     expect(lines[1]).toMatch(
-      /^ {2}old-251101 {2}\[active, no state\.json\].*next: b$/
+      /^ {2}old-251101 {2}\[open, untracked\].*next: b$/
     );
     expect(run(['list', '--all']).out.split('\n')).toHaveLength(3);
   });
@@ -382,8 +382,17 @@ describe('list', () => {
 describe('status, switch, and sessionBrief', () => {
   test('should print the brief for the active task', () => {
     newTask();
-    expect(run(['status']).out).toContain(`[Task] ${NAME} — active`);
-    expect(JSON.parse(run(['status', '--json']).out).name).toBe(NAME);
+    expect(run(['status']).out).toContain(
+      `[Task] ${NAME} (active task) — open (tasks/${NAME}/)`
+    );
+    expect(JSON.parse(run(['status', '--json']).out)).toMatchObject({
+      name: NAME,
+      status: 'active',
+    });
+    legacyTask();
+    expect(run(['status', 'old']).out).toContain(
+      '[Task] old-251101 — open, untracked (tasks/old-251101/)'
+    );
   });
 
   test('should switch tasks by name or --task', () => {
