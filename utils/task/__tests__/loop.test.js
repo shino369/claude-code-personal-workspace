@@ -278,7 +278,16 @@ describe('runInnerLoop', () => {
   });
 
   test('should skip when the loop is off or the task is done', () => {
-    cli(['new', 'demo', '--goal', 'G', '--verify', 'pnpm test']);
+    cli([
+      'new',
+      'demo',
+      '--goal',
+      'G',
+      '--verify',
+      'pnpm test',
+      '--kind',
+      'general',
+    ]);
     const runCommands = vi.fn();
     expect(runInnerLoop({ deps: deps({ runCommands }) })).toEqual({
       action: 'skip',

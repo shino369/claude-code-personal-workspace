@@ -20,7 +20,9 @@ import {
   renderTemplate,
 } from './markdown.js';
 import {
+  E2E_MODES,
   STEP_STATUSES,
+  TASK_KINDS,
   addStep,
   claimStep,
   createState,
@@ -57,7 +59,10 @@ Start / resume
   switch <name>                 Make <name> the active task
   new <name> --goal "…"         Create tasks/<name>-<yymmdd>/ and make it active
       [--acceptance "…"] [--step "…"]… [--verify "cmd"]… [--verify-fast "cmd"]…
-  init [name] [--goal "…"] [--verify "cmd"]…
+      [--kind code|general] [--e2e required|no]
+                                --kind code (the default when --verify is given): the
+                                inner loop starts on and pnpm task check runs before verify
+  init [name] [--goal "…"] [--verify "cmd"]… [--kind …] [--e2e …]
                                 Add state.json to a hand-written task (steps from plan.md)
 
 Work
@@ -76,6 +81,8 @@ Work
                                 with code run pnpm task check first (--no-check skips it)
   set [--goal "…"] [--verify "cmd"]… [--verify-fast "cmd"]…
                                 Change the goal or replace the verify command lists
+  set --kind code|general [--e2e required|no]
+                                Change the task kind (code turns the loop on) or e2e mode
   set --loop on|off [--loop-max N]
                                 Inner loop (Claude Stop hook): keep working until the
                                 fast verify passes, at most N times (default 5)
@@ -106,6 +113,8 @@ const VALUE_FLAGS = {
   '--name': 'name',
   '--loop': 'loop',
   '--loop-max': 'loopMax',
+  '--kind': 'kind',
+  '--e2e': 'e2e',
 };
 const REPEATABLE = new Set(['step', 'verify', 'verifyFast']);
 const BOOLEAN_FLAGS = {
@@ -124,7 +133,7 @@ const BOOLEAN_FLAGS = {
  *   positionals: string[],
  *   goal?: string, acceptance?: string, deps?: string, message?: string,
  *   done?: string, next?: string, open?: string, agent?: string, task?: string, name?: string,
- *   loop?: string, loopMax?: string,
+ *   loop?: string, loopMax?: string, kind?: string, e2e?: string,
  *   step: string[], verify: string[], verifyFast: string[],
  *   json: boolean, fast: boolean, all: boolean, force: boolean, help: boolean,
  *   fix: boolean, noCheck: boolean,
@@ -301,6 +310,91 @@ function output(deps, options, json, text) {
   deps.log(options.json ? JSON.stringify(json, null, 2) : text);
 }
 
+/**
+ * Validate --kind / --e2e values.
+ *
+ * @param {Options} options
+ * @returns {{ kind?: 'code' | 'general', e2e?: 'required' | 'no' }}
+ */
+export function parseKind(options) {
+  if (options.kind !== undefined && !TASK_KINDS.includes(options.kind)) {
+    throw new Error(
+      `--kind must be ${TASK_KINDS.join(' or ')} (got "${options.kind}")`
+    );
+  }
+  if (options.e2e !== undefined && !E2E_MODES.includes(options.e2e)) {
+    throw new Error(
+      `--e2e must be ${E2E_MODES.join(' or ')} (got "${options.e2e}")`
+    );
+  }
+  return /** @type {{ kind?: 'code' | 'general', e2e?: 'required' | 'no' }} */ ({
+    kind: options.kind,
+    e2e: options.e2e,
+  });
+}
+
+/**
+ * Kind and e2e mode for a new task: --kind, else `code` when verify commands
+ * are given. A code task needs verify commands (the loop's finish line).
+ *
+ * @param {Options} options
+ * @returns {{ kind: 'code' | 'general', e2e: 'required' | 'no' }}
+ */
+export function resolveKind(options) {
+  const parsed = parseKind(options);
+  const kind = parsed.kind ?? (options.verify.length > 0 ? 'code' : 'general');
+  if (kind === 'code' && options.verify.length === 0) {
+    throw new Error(
+      'A code task needs a finish line: its test command. pnpm task check (lint, format, types) runs before it automatically.\nFix: add --verify "<test command>" (e.g. pnpm exec vitest run --root tasks/<name>/app), or use --kind general'
+    );
+  }
+  return { kind, e2e: parsed.e2e ?? 'no' };
+}
+
+/** Matches verify commands that run end-to-end tests. */
+export const E2E_COMMAND_RE = /e2e|playwright/i;
+
+/**
+ * What a new or re-kinded code task does, for the CLI output.
+ *
+ * @param {import('./state.js').TaskState} state
+ * @returns {string[]}
+ */
+export function codeTaskLines(state) {
+  if (state.kind !== 'code') return [];
+  const lines = [
+    `Coding task: work test-first (failing test, then code); verify = ${state.verify.join(' && ')}; pnpm task check (lint, format, types) runs before it once the task has code; inner loop ${state.loop.enabled ? `on (max ${state.loop.max})` : 'off'}.`,
+  ];
+  if (
+    state.e2e === 'required' &&
+    !state.verify.some((command) => E2E_COMMAND_RE.test(command))
+  ) {
+    lines.push(
+      'e2e: required, but no verify command runs e2e tests yet. Fix: pnpm task set --verify "<unit tests>" --verify "<e2e tests>" once the e2e suite exists.'
+    );
+  }
+  return lines;
+}
+
+/**
+ * The default Acceptance line for a new task.
+ *
+ * @param {Options} options
+ * @param {{ kind: string, e2e: string }} mode
+ * @returns {string}
+ */
+export function defaultAcceptance(options, { kind, e2e }) {
+  const parts = [
+    options.verify.length > 0
+      ? `\`${options.verify.join('` and `')}\` ${options.verify.length === 1 ? 'passes' : 'pass'}`
+      : '`pnpm check` passes',
+  ];
+  if (kind === 'code')
+    parts.push('`pnpm task check` passes (lint, format, types)');
+  if (e2e === 'required') parts.push('e2e tests cover the user-facing flows');
+  return parts.join('; ');
+}
+
 /** @type {Record<string, (options: Options, deps: Deps) => number | Promise<number>>} */
 export const COMMANDS = {
   help(_options, deps) {
@@ -317,6 +411,7 @@ export const COMMANDS = {
     const now = deps.now();
     const name = taskDirName(raw, now);
     const agent = detectAgent(options, deps.env);
+    const mode = resolveKind(options);
     const state = createState({
       name,
       goal: options.goal,
@@ -326,16 +421,13 @@ export const COMMANDS = {
       branch: deps.git(deps.rootDir).branch,
       agent,
       now,
+      ...mode,
     });
     const dir = scaffoldTask({
       rootDir: deps.rootDir,
       name,
       state,
-      acceptance:
-        options.acceptance ??
-        (options.verify.length > 0
-          ? `\`${options.verify.join('` and `')}\` ${options.verify.length === 1 ? 'passes' : 'pass'}`
-          : '`pnpm check` passes'),
+      acceptance: options.acceptance ?? defaultAcceptance(options, mode),
       date: formatLocal(now),
       templatesDir: deps.templatesDir,
     });
@@ -346,6 +438,7 @@ export const COMMANDS = {
       { ok: true, name, dir, state },
       [
         `Created ${path.relative(deps.rootDir, dir)}/ (active task).`,
+        ...codeTaskLines(state),
         state.steps.length === 0
           ? 'Next: add steps — pnpm task step add "…"'
           : `Next: pnpm task step ${state.steps[0].id} start`,
@@ -374,13 +467,17 @@ export const COMMANDS = {
       branch: deps.git(deps.rootDir).branch,
       agent: detectAgent(options, deps.env),
       now: deps.now(),
+      ...resolveKind(options),
     });
     saveState(task.dir, state);
     output(
       deps,
       options,
       { ok: true, name, state },
-      `Created ${name}/${STATE_FILE} with ${state.steps.length} step(s) from plan.md. state.json now tracks the steps; plan.md is unchanged.`
+      [
+        `Created ${name}/${STATE_FILE} with ${state.steps.length} step(s) from plan.md. state.json now tracks the steps; plan.md is unchanged.`,
+        ...codeTaskLines(state),
+      ].join('\n')
     );
     return 0;
   },
@@ -677,12 +774,15 @@ export const COMMANDS = {
       options.verify.length === 0 &&
       options.verifyFast.length === 0 &&
       options.loop === undefined &&
-      options.loopMax === undefined
+      options.loopMax === undefined &&
+      options.kind === undefined &&
+      options.e2e === undefined
     ) {
       throw new Error(
-        'Usage: pnpm task set [--goal "…"] [--verify "cmd"]… [--verify-fast "cmd"]… (each list replaces the old one) [--loop on|off] [--loop-max N]'
+        'Usage: pnpm task set [--goal "…"] [--verify "cmd"]… [--verify-fast "cmd"]… (each list replaces the old one) [--loop on|off] [--loop-max N] [--kind code|general] [--e2e required|no]'
       );
     }
+    const mode = parseKind(options);
     if (options.loop !== undefined && !['on', 'off'].includes(options.loop)) {
       throw new Error(`--loop must be on or off (got "${options.loop}")`);
     }
@@ -697,17 +797,23 @@ export const COMMANDS = {
       (current) => {
         const verify =
           options.verify.length > 0 ? options.verify : current.verify;
+        // Becoming a code task turns the loop on unless --loop says otherwise.
+        const becomesCode = mode.kind === 'code' && current.kind !== 'code';
+        const turnsOn =
+          options.loop === 'on' || (options.loop === undefined && becomesCode);
         const enabled =
           options.loop === undefined
-            ? current.loop.enabled
+            ? current.loop.enabled || becomesCode
             : options.loop === 'on';
-        if (enabled && options.loop === 'on' && verify.length === 0) {
+        if (turnsOn && verify.length === 0) {
           throw new Error(
-            `${name} has no verify commands, so the loop has no finish line.\nFix: pnpm task set --verify "pnpm check" --loop on`
+            `${name} has no verify commands, so the loop has no finish line.\nFix: pnpm task set --verify "<test command>" ${becomesCode ? '--kind code' : '--loop on'}`
           );
         }
         return {
           ...current,
+          ...(mode.kind ? { kind: mode.kind } : {}),
+          ...(mode.e2e ? { e2e: mode.e2e } : {}),
           goal: options.goal ?? current.goal,
           verify,
           verifyFast:
@@ -715,7 +821,7 @@ export const COMMANDS = {
               ? options.verifyFast
               : current.verifyFast,
           loop:
-            options.loop === undefined && max === undefined
+            options.loop === undefined && max === undefined && !becomesCode
               ? current.loop
               : { enabled, max: max ?? current.loop.max, ...FRESH_LOOP },
         };
@@ -731,6 +837,7 @@ export const COMMANDS = {
         state.loop.enabled
           ? `Inner loop: on (max ${state.loop.max}) — in Claude Code, each stop re-runs the fast verify until it passes. Turn off: pnpm task set --loop off`
           : 'Inner loop: off',
+        ...(mode.kind || mode.e2e ? codeTaskLines(state) : []),
       ].join('\n')
     );
     return 0;

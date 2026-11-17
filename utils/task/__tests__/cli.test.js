@@ -212,6 +212,74 @@ describe('new', () => {
     expect(read('plan.md')).toContain(expected);
   });
 
+  test('should make a task with verify commands a code task with the loop on', () => {
+    const { out } = newTask(['--verify', 'pnpm test']);
+    expect(state()).toMatchObject({
+      kind: 'code',
+      e2e: 'no',
+      loop: { enabled: true },
+    });
+    expect(out).toContain(
+      'Coding task: work test-first (failing test, then code); verify = pnpm test; pnpm task check (lint, format, types) runs before it once the task has code; inner loop on (max 5).'
+    );
+    expect(read('plan.md')).toContain(
+      'Acceptance: `pnpm test` passes; `pnpm task check` passes (lint, format, types)'
+    );
+  });
+
+  test('should keep a task without verify commands general', () => {
+    const { out } = newTask();
+    expect(state()).toMatchObject({
+      kind: 'general',
+      loop: { enabled: false },
+    });
+    expect(out).not.toContain('Coding task');
+  });
+
+  test('should require verify commands for --kind code', () => {
+    expect(() => newTask(['--kind', 'code'])).toThrow(
+      /A code task needs a finish line[^]*Fix: add --verify "<test command>"/
+    );
+  });
+
+  test('should allow a general task with verify commands', () => {
+    newTask(['--verify', 'pnpm check', '--kind', 'general']);
+    expect(state()).toMatchObject({
+      kind: 'general',
+      loop: { enabled: false },
+    });
+  });
+
+  test('should warn when e2e is required but no verify command runs it', () => {
+    const { out } = newTask(['--verify', 'pnpm test', '--e2e', 'required']);
+    expect(out).toContain(
+      'e2e: required, but no verify command runs e2e tests yet.'
+    );
+    expect(read('plan.md')).toContain(
+      '; e2e tests cover the user-facing flows'
+    );
+  });
+
+  test('should not warn when a verify command runs e2e tests', () => {
+    const { out } = newTask([
+      '--verify',
+      'pnpm test',
+      '--verify',
+      'pnpm exec playwright test',
+      '--e2e',
+      'required',
+    ]);
+    expect(state().e2e).toBe('required');
+    expect(out).not.toContain('e2e: required, but');
+  });
+
+  test.each([
+    [['--kind', 'app'], /--kind must be code or general \(got "app"\)/],
+    [['--e2e', 'yes'], /--e2e must be required or no \(got "yes"\)/],
+  ])('should reject %j', (extra, error) => {
+    expect(() => newTask(extra)).toThrow(error);
+  });
+
   test('should print JSON', () => {
     expect(JSON.parse(newTask(['--json']).out)).toMatchObject({
       ok: true,
@@ -246,6 +314,16 @@ describe('init', () => {
     fs.rmSync(path.join(tasksRoot(root), 'bare-251101', 'plan.md'));
     const { out } = run(['init', 'bare', '--goal', 'Given', '--json']);
     expect(JSON.parse(out).state.goal).toBe('Given');
+  });
+
+  test('should make the adopted task a code task when verify is given', () => {
+    legacyTask();
+    const { out } = run(['init', 'old', '--verify', 'pnpm test']);
+    expect(loadTask(root, 'old-251101').state).toMatchObject({
+      kind: 'code',
+      loop: { enabled: true },
+    });
+    expect(out).toContain('Coding task:');
   });
 
   test('should refuse a plan with no goal', () => {
@@ -599,7 +677,7 @@ describe('check', () => {
 
 describe('set', () => {
   test('should replace the goal and verify lists', () => {
-    newTask(['--verify', 'old']);
+    newTask(['--verify', 'old', '--kind', 'general']);
     expect(
       run(['set', '--goal', 'New goal', '--verify', 'a', '--verify', 'b']).out
     ).toBe(
@@ -641,7 +719,7 @@ describe('set', () => {
   });
 
   test('should change only the cap and keep the loop setting', () => {
-    newTask(['--verify', 'pnpm test']);
+    newTask(['--verify', 'pnpm test', '--kind', 'general']);
     run(['set', '--loop-max', '7']);
     expect(state().loop).toMatchObject({ enabled: false, max: 7 });
     run(['set', '--loop', 'on']);
@@ -652,9 +730,53 @@ describe('set', () => {
   test('should refuse to turn the loop on without verify commands', () => {
     newTask();
     expect(() => run(['set', '--loop', 'on'])).toThrow(
-      /no verify commands, so the loop has no finish line\.\nFix: pnpm task set --verify "pnpm check" --loop on/
+      /no verify commands, so the loop has no finish line\.\nFix: pnpm task set --verify "<test command>" --loop on/
     );
     expect(state().loop.enabled).toBe(false);
+  });
+
+  test('should turn the loop on when a task becomes a code task', () => {
+    newTask(['--verify', 'pnpm test', '--kind', 'general']);
+    const { out } = run(['set', '--kind', 'code', '--e2e', 'required']);
+    expect(state()).toMatchObject({
+      kind: 'code',
+      e2e: 'required',
+      loop: { enabled: true, iteration: 0 },
+    });
+    expect(out).toContain('Inner loop: on (max 5)');
+    expect(out).toContain('Coding task:');
+  });
+
+  test('should respect --loop off when a task becomes a code task', () => {
+    newTask(['--verify', 'pnpm test', '--kind', 'general']);
+    run(['set', '--kind', 'code', '--loop', 'off']);
+    expect(state()).toMatchObject({ kind: 'code', loop: { enabled: false } });
+  });
+
+  test('should keep the loop as is when an existing code task changes e2e', () => {
+    newTask(['--verify', 'pnpm test']);
+    run(['set', '--loop', 'off']);
+    run(['set', '--kind', 'code', '--e2e', 'no']);
+    expect(state()).toMatchObject({ e2e: 'no', loop: { enabled: false } });
+  });
+
+  test('should keep the kind of a task when only e2e changes', () => {
+    newTask(['--verify', 'pnpm test', '--kind', 'general']);
+    const { out } = run(['set', '--e2e', 'required']);
+    expect(state()).toMatchObject({ kind: 'general', e2e: 'required' });
+    expect(out).not.toContain('Coding task:');
+  });
+
+  test('should refuse to make a task without verify commands a code task', () => {
+    newTask();
+    expect(() => run(['set', '--kind', 'code'])).toThrow(
+      /Fix: pnpm task set --verify "<test command>" --kind code/
+    );
+  });
+
+  test('should reject an unknown kind', () => {
+    newTask();
+    expect(() => run(['set', '--kind', 'app'])).toThrow(/--kind must be/);
   });
 
   test('should accept verify and loop on in one call', () => {

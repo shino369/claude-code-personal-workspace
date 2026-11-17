@@ -24,6 +24,8 @@ export const LINE_WIDTH = 220;
  *   lastVerify: import('./state.js').VerifyResult | null,
  *   loop: import('./state.js').TaskState['loop'] | null,
  *   verify: string[],
+ *   kind: 'code' | 'general',
+ *   e2e: 'required' | 'no',
  *   branch: string | null,
  *   git: GitInfo,
  *   notes: Array<{ heading: string, body: string }>,
@@ -72,6 +74,8 @@ export function summarizeTask(task, git) {
       lastVerify: state.lastVerify,
       loop: state.loop,
       verify: state.verify,
+      kind: state.kind ?? 'general',
+      e2e: state.e2e ?? 'no',
       branch: state.branch,
       git,
       notes,
@@ -98,6 +102,8 @@ export function summarizeTask(task, git) {
     lastVerify: null,
     loop: null,
     verify: [],
+    kind: 'general',
+    e2e: 'no',
     branch: null,
     git,
     notes,
@@ -159,6 +165,11 @@ export function formatBrief(summary) {
   lines.push(
     `Last verify: ${formatVerify(summary.lastVerify, summary.verify)}`
   );
+  if (summary.kind === 'code') {
+    lines.push(
+      `Kind: code — test-first; pnpm task check runs before verify; e2e ${summary.e2e}`
+    );
+  }
   if (summary.loop?.enabled) {
     lines.push(
       `Loop: on — iteration ${summary.loop.iteration}/${summary.loop.max}; each stop re-runs the fast verify (off: pnpm task set --loop off)`
