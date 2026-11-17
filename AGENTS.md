@@ -242,6 +242,7 @@ and follow it as a checklist.
 | -------------------------- | ------------------------------------------------------------- |
 | `planner.md`               | Goal → small, verifiable steps with deps (`pnpm task`)        |
 | `verifier.md`              | Independent PASS/FAIL: verify, acceptance, weakened tests     |
+| `reviewer.md`              | Clean-context review round: findings with failure scenarios   |
 | `security-reviewer.md`     | Security review: auth, injection, data exposure, dependencies |
 | `test-runner.md`           | Run tests and report failures and coverage                    |
 | `trilingual-translator.md` | EN/JA/zh-TW translation: initial, proofread, refine           |

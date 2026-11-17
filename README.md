@@ -256,6 +256,7 @@ Browser skills that attach to local Chrome need its CDP endpoint. Either enable
 | ----------------------- | --------------------------------------------------------------------- |
 | `planner`               | Turns a goal into small, verifiable steps with deps (`pnpm task`).    |
 | `verifier`              | Independent PASS/FAIL: runs verify, checks acceptance and tests.      |
+| `reviewer`              | Clean-context review round from a brief; findings for triage.         |
 | `security-reviewer`     | Security-focused review: auth, injection, XSS, secrets, dependencies. |
 | `test-runner`           | Runs tests and reports failures and coverage.                         |
 | `trilingual-translator` | EN/JA/ZH translation in initial, proofread, and refine roles.         |

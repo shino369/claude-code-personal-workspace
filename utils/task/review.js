@@ -199,8 +199,9 @@ export function formatReviewBrief({ state, round, scope, taskRel }) {
   const lines = [
     `# Review brief — ${state.name}, round ${round}/${quality.maxRounds}`,
     '',
-    'You review in a clean context: judge the code against the plan and the standards, not',
-    "the author's intentions. Read the files; do not edit anything.",
+    'You review in a clean context (role: .claude/agents/reviewer.md): judge the code',
+    "against the plan and the standards, not the author's intentions. Read the files;",
+    'edit nothing but the findings table named under Output.',
     '',
     `Goal: ${state.goal}`,
     `Plan (acceptance, steps, decisions): ${taskRel}/plan.md`,
