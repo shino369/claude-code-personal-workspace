@@ -298,6 +298,7 @@ pnpm tools list --all                                   # what is here, and how 
 pnpm tools add dsh --kind agent --command "npx -y @deepseek-ai/dsh"
 pnpm agent ask --agent codex "Review utils/task/loop.js for edge cases"   # read-only second opinion
 pnpm loop my-task --agent codex --max 3                 # unattended fix-until-green, in a worktree
+pnpm loop my-task --agent codex --review --reviewer claude   # + review rounds and fixes (code tasks)
 pnpm swarm my-task --agent claude --workers 2           # parallel workers, one worktree per step
 ```
 
@@ -307,7 +308,7 @@ pnpm swarm my-task --agent claude --workers 2           # parallel workers, one 
 | -------------------- | ----------------------------- | ------------------------------------------------- |
 | `session_start.js`   | `SessionStart`                | Injects the active task's resume brief.           |
 | `pre_compact.js`     | `PreCompact`                  | Appends a checkpoint to the task's `NOTES.md`.    |
-| `task_loop.js`       | `Stop`, `UserPromptSubmit`    | Opt-in inner loop: blocks until verify passes.    |
+| `task_loop.js`       | `Stop`, `UserPromptSubmit`    | Inner loop: verify, then the review loop (code).  |
 | `context_monitor.js` | `UserPromptSubmit`            | Warns at 20/40/60% of the context window.         |
 | `audit_logger.js`    | `PostToolUse` (`*`)           | Logs tool use to `logs/<YYYYMMDD>/logging.jsonl`. |
 | `auto_format.js`     | `PostToolUse` (`Edit\|Write`) | Runs Prettier on edited files.                    |

@@ -2,7 +2,7 @@
  * Quality loop state for code tasks (`state.quality`): schema, validation,
  * and summaries. Pure; no I/O.
  *
- * The loop (AGENTS.md §4): build with TDD → review in a clean context →
+ * The loop (AGENTS.md §4.5): build with TDD → review in a clean context →
  * triage (each finding is CONFIRMED or REFUTED by another clean agent) →
  * fix only CONFIRMED must-fix and high findings → at most `maxRounds`
  * review rounds, then stop; the rest go to NOTES "Open".

@@ -398,7 +398,7 @@ export function codeTaskLines(state) {
 
 /**
  * Why a code task cannot be closed yet (empty = it can): the quality loop
- * (AGENTS.md §4) needs at least one review round, no open round, no open
+ * (AGENTS.md §4.5) needs at least one review round, no open round, no open
  * CONFIRMED must-fix/high finding, and an e2e verify command when e2e is
  * required. General tasks have no such gate.
  *

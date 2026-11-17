@@ -1,6 +1,6 @@
 /**
  * `pnpm loop --review`: the quality loop of a code task, headless, for any
- * harness (AGENTS.md §4). After the build loop makes verify green:
+ * harness (AGENTS.md §4.5). After the build loop makes verify green:
  *
  * 1. open a review round (`pnpm task review`);
  * 2. a reviewer agent — read-only, fresh context — prints findings rows;
