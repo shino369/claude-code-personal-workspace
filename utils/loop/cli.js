@@ -33,7 +33,8 @@ Options
   --review                    Code tasks: after verify passes, run the quality
                               loop — review round (reviewer + triage, read-only,
                               fresh agents), fix confirmed must-fix/high
-                              findings, at most 2 rounds (AGENTS.md §4.5)
+                              findings, at most 2 rounds (AGENTS.md §4.5);
+                              needs every step done before the first round
   --reviewer <name>           Agent for the reviewer and the triage (default:
                               --agent; a different one gives a second opinion)
   --max <n>                   Agent iterations at most (default 5; with

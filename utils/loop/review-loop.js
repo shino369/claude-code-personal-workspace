@@ -24,7 +24,12 @@ import {
   formatLocal,
   formatNoteEntry,
 } from '../task/markdown.js';
-import { decideQuality, freshQuality, toFix } from '../task/quality.js';
+import {
+  SEVERITIES,
+  decideQuality,
+  freshQuality,
+  toFix,
+} from '../task/quality.js';
 import { FINDINGS_HEADER, splitRow } from '../task/review.js';
 import {
   appendNotes,
@@ -123,6 +128,43 @@ export function replaceRows(markdown, rows) {
   return [...lines.slice(0, start + 2), ...rows, ...lines.slice(end)].join(
     '\n'
   );
+}
+
+/**
+ * Problems with the reviewer's rows (empty = fine): every row has all cells,
+ * a known severity, a location, a claim, and a scenario, and no verdict
+ * (verdicts are the triage's job). Checked before anything is written, so a
+ * bad reply never sticks in the findings file.
+ *
+ * @param {string[]} rows
+ * @returns {string[]}
+ */
+export function reviewerProblems(rows) {
+  /** @type {string[]} */
+  const problems = [];
+  rows.forEach((row, i) => {
+    const cells = splitRow(row);
+    const at = `row ${i + 1}`;
+    if (cells.length !== FINDINGS_HEADER.length) {
+      problems.push(
+        `${at}: ${cells.length} cells, expected ${FINDINGS_HEADER.length}`
+      );
+      return;
+    }
+    const [, location, severity, claim, scenario, verdict, reason] = cells;
+    if (!SEVERITIES.includes(severity.toLowerCase())) {
+      problems.push(
+        `${at}: severity "${severity}" is not one of ${SEVERITIES.join(', ')}`
+      );
+    }
+    if (!location || !claim || !scenario) {
+      problems.push(`${at}: file:line, claim, or failure scenario is empty`);
+    }
+    if (verdict || reason) {
+      problems.push(`${at}: verdict and reason must stay empty for the triage`);
+    }
+  });
+  return problems;
 }
 
 /**
@@ -405,6 +447,13 @@ export function runReviewLoop({
         return finish(
           'reviewer',
           `the reviewer ${result.code === 0 ? `printed no ${BEGIN} … ${END} block` : `exited ${result.signal ?? result.code}`}; round ${round} stays open.`
+        );
+      }
+      const problems = reviewerProblems(printed);
+      if (problems.length > 0) {
+        return finish(
+          'reviewer',
+          `the reviewer printed malformed rows (${problems.join('; ')}); nothing was written, round ${round} stays open.`
         );
       }
       rows = printed;

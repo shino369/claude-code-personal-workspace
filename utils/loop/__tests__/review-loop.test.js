@@ -13,6 +13,7 @@ import {
   extractRows,
   pendingFixes,
   replaceRows,
+  reviewerProblems,
   reviewerPrompt,
   runReviewLoop,
   tableRows,
@@ -251,6 +252,28 @@ describe('tableRows / replaceRows', () => {
     expect(replaceRows('# R\n', [HIGH])).toBe(
       `# R\n\n${HEADER}\n${SEP}\n${HIGH}\n`
     );
+  });
+});
+
+describe('reviewerProblems', () => {
+  test('should accept well-formed rows', () => {
+    expect(reviewerProblems([HIGH, LOW])).toEqual([]);
+  });
+
+  test('should flag missing cells, bad severity, empty cells, and verdicts', () => {
+    expect(
+      reviewerProblems([
+        '| a | b |',
+        HIGH.replace('| high |', '| critical |'),
+        '|  | x.js | low |  | s |  |  |',
+        triaged(HIGH, 'CONFIRMED'),
+      ])
+    ).toEqual([
+      'row 1: 2 cells, expected 7',
+      'row 2: severity "critical" is not one of must-fix, high, medium, low',
+      'row 3: file:line, claim, or failure scenario is empty',
+      'row 4: verdict and reason must stay empty for the triage',
+    ]);
   });
 });
 
@@ -596,16 +619,30 @@ describe('runReviewLoop', () => {
     );
   });
 
+  test('should refuse malformed reviewer rows without writing them', () => {
+    seedTask();
+    const { runAgent, calls } = fakeAgents({
+      reviewer: [[HIGH.replace('| high |', '| severe |')]],
+    });
+    const result = review(makeDeps(runAgent));
+    expect(result).toMatchObject({ ok: false, reason: 'reviewer' });
+    expect(result.detail).toContain('severity "severe"');
+    expect(result.detail).toContain('nothing was written, round 1 stays open.');
+    expect(calls.triage).toBe(0);
+    const file = path.join(taskDir(), 'reviews', `REVIEW_${NAME}-r1.md`);
+    expect(tableRows(fs.readFileSync(file, 'utf-8'))).toEqual([]);
+  });
+
   test('should report a findings table that record rejects', () => {
     seedTask();
     const { runAgent } = fakeAgents({
-      reviewer: [[HIGH.replace('| high |', '| severe |')]],
-      triage: [[triaged(HIGH.replace('| high |', '| severe |'), 'CONFIRMED')]],
+      reviewer: [[HIGH]],
+      triage: [[triaged(HIGH, 'MAYBE')]],
     });
     const result = review(makeDeps(runAgent));
     expect(result.reason).toBe('record');
     expect(result.detail).toContain('pnpm task review record failed:');
-    expect(result.detail).toContain('severity "severe"');
+    expect(result.detail).toContain('verdict "MAYBE"');
   });
 
   test('should stop at the wall-clock cap', () => {

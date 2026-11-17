@@ -66,15 +66,18 @@ export const reviewFiles = (name, round) => ({
 
 /**
  * The base a round reviews against: an open round keeps its own; otherwise
- * `--base`, else none for a task with code (its folder is the scope), else
- * `main` (the task changes the workspace).
+ * `--base`, else the git base an earlier round used (so the Stop hook and the
+ * next round compare the same files), else none for a task with code (its
+ * folder is the scope), else `main` (the task changes the workspace).
  *
  * @param {{ quality: import('./quality.js').Quality, taskDir: string, base?: string }} options
  * @returns {string | null}
  */
 export function reviewBase({ quality, taskDir, base }) {
   if (quality.phase === 'review') return quality.base ?? null;
-  return base ?? (hasTaskCode(taskDir) ? null : DEFAULT_BASE);
+  if (base !== undefined) return base;
+  if (quality.base) return quality.base;
+  return hasTaskCode(taskDir) ? null : DEFAULT_BASE;
 }
 
 /**

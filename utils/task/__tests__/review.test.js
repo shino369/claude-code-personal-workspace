@@ -13,6 +13,7 @@ import {
   openRound,
   parseFindings,
   recordFindings,
+  reviewBase,
   reviewFiles,
   reviewScope,
   splitRow,
@@ -90,6 +91,53 @@ describe('reviewFiles', () => {
       brief: `reviews/BRIEF_${NAME}-r2.md`,
       findings: `reviews/REVIEW_${NAME}-r2.md`,
     });
+  });
+});
+
+describe('reviewBase', () => {
+  const taskDir = () => path.join(root, 'tasks', NAME);
+  const withCode = () => {
+    fs.mkdirSync(path.join(taskDir(), 'app'), { recursive: true });
+    fs.writeFileSync(path.join(taskDir(), 'app', 'a.js'), '');
+  };
+
+  test("should keep the open round's base", () => {
+    const quality = {
+      ...freshQuality(),
+      phase: /** @type {const} */ ('review'),
+      base: 'dev',
+    };
+    expect(reviewBase({ quality, taskDir: taskDir(), base: 'main' })).toBe(
+      'dev'
+    );
+    expect(
+      reviewBase({
+        quality: { ...quality, base: undefined },
+        taskDir: taskDir(),
+      })
+    ).toBeNull();
+  });
+
+  test('should prefer --base, then the base an earlier round used', () => {
+    withCode();
+    const recorded = {
+      ...freshQuality(),
+      phase: /** @type {const} */ ('fix'),
+      reviewRounds: 1,
+      base: 'dev',
+    };
+    expect(
+      reviewBase({ quality: recorded, taskDir: taskDir(), base: 'x' })
+    ).toBe('x');
+    expect(reviewBase({ quality: recorded, taskDir: taskDir() })).toBe('dev');
+  });
+
+  test('should default to the task folder for code, else main', () => {
+    fs.mkdirSync(taskDir(), { recursive: true });
+    const quality = { ...freshQuality(), base: null };
+    expect(reviewBase({ quality, taskDir: taskDir() })).toBe('main');
+    withCode();
+    expect(reviewBase({ quality, taskDir: taskDir() })).toBeNull();
   });
 });
 

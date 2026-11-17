@@ -191,7 +191,7 @@ Severity rubric (the reviewer picks it, the triage may lower it):
 
 Unattended, any harness: `pnpm loop <task> --agent <a> --review [--reviewer <b>]` runs steps 4–7
 headless: verify to green, then each round with a read-only reviewer and triage (fresh agents), and
-the fixes by `<a>`. In Claude Code the `Stop` hook reminds you of the next step of the loop once per
+the fixes by `<a>`. It reviews only once every step is done (otherwise it stops with `steps-open`). In Claude Code the `Stop` hook reminds you of the next step of the loop once per
 situation.
 
 `pnpm swarm` refuses a task that keeps code in its task folder: `tasks/` is git-ignored, and the
