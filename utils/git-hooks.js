@@ -9,7 +9,7 @@
  *   node utils/git-hooks.js commit-msg <message-file>
  *
  * pre-commit checks staged files with Prettier and ESLint; commit-msg enforces
- * Conventional Commits (see AGENTS.md / .claude/rules/git-conventions.md).
+ * Conventional Commits (see AGENTS.md §5).
  * Every failure ends with the exact command that fixes it.
  */
 import { spawnSync } from 'child_process';

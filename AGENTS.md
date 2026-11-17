@@ -156,7 +156,7 @@ The `commit-msg` hook enforces the header; `pnpm workspace:setup` enables it.
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org/):
   `<type>(<scope>): <description>`
   - Types: `feat` `fix` `refactor` `docs` `test` `chore` `style` `perf` `ci` `build`.
-  - Scope (optional): `hooks` `skills` `rules` `config` `docs` `deps` `tests`.
+  - Scope (optional): `hooks` `skills` `rules` `config` `docs` `deps` `tests` `tasks` `tools`.
   - Description: imperative mood, lowercase, ≤50 characters, no trailing period.
   - Body (optional): blank line, wrap at 72, explain **why**. Footer: `Closes #123`,
     `BREAKING CHANGE: …`.
