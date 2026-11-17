@@ -142,6 +142,30 @@ describe('formatBrief', () => {
     ]);
   });
 
+  test('should summarize the quality state of a code task', () => {
+    const task = makeTask();
+    const state = /** @type {import('../state.js').TaskState} */ (task.state);
+    const code = {
+      ...task,
+      state: { ...state, kind: /** @type {const} */ ('code') },
+    };
+    expect(summarizeTask(code, GIT)).toMatchObject({
+      quality: { phase: 'build', reviewRounds: 0 },
+      qualityLine: 'build — review round 0/2; no findings yet',
+    });
+    expect(summarizeTask(task, GIT)).toMatchObject({
+      quality: null,
+      qualityLine: null,
+    });
+  });
+
+  test('should show the quality line only when there is one', () => {
+    expect(brief({ qualityLine: 'build — review round 0/2' })).toContain(
+      'Quality: build — review round 0/2'
+    );
+    expect(brief({ qualityLine: null })).not.toContain('Quality:');
+  });
+
   test('should show the kind line only for code tasks', () => {
     expect(brief({ kind: 'code', e2e: 'required' })).toContain(
       'Kind: code — test-first; pnpm task check runs before verify; e2e required'

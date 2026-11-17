@@ -142,6 +142,14 @@ describe('validateState', () => {
     expect(validateState(legacy)).toEqual([]);
   });
 
+  test('should validate quality when present', () => {
+    const code = createState({ name: 'n', goal: 'g', kind: 'code', now: NOW });
+    expect(validateState(code)).toEqual([]);
+    expect(
+      validateState({ ...code, quality: { ...code.quality, phase: 'x' } })
+    ).toEqual(['quality.phase must be one of build, review, fix, complete']);
+  });
+
   test('should reject an unknown kind or e2e mode', () => {
     expect(validateState({ ...makeState(), kind: 'app', e2e: 'yes' })).toEqual([
       'kind must be one of code, general',
@@ -241,10 +249,19 @@ describe('createState', () => {
     });
   });
 
-  test('should start a code task with the loop on', () => {
+  test('should start a code task with the loop on and a fresh quality state', () => {
     expect(
       createState({ name: 'n', goal: 'g', kind: 'code', e2e: 'required' })
-    ).toMatchObject({ kind: 'code', e2e: 'required', loop: { enabled: true } });
+    ).toMatchObject({
+      kind: 'code',
+      e2e: 'required',
+      loop: { enabled: true },
+      quality: { phase: 'build', reviewRounds: 0, maxRounds: 2 },
+    });
+  });
+
+  test('should give a general task no quality state', () => {
+    expect(createState({ name: 'n', goal: 'g' }).quality).toBeUndefined();
   });
 
   test('should default the timestamp to now', () => {

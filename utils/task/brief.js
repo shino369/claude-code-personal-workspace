@@ -5,6 +5,7 @@
  */
 import { formatGit } from './git.js';
 import { formatLocal, parseNotes, parsePlan } from './markdown.js';
+import { freshQuality, formatQuality } from './quality.js';
 import { nextStep, progress } from './state.js';
 
 export const NOTE_BODY_LINES = 15;
@@ -25,6 +26,8 @@ export const LINE_WIDTH = 220;
  *   loop: import('./state.js').TaskState['loop'] | null,
  *   verify: string[],
  *   kind: 'code' | 'general',
+ *   quality: import('./quality.js').Quality | null,
+ *   qualityLine: string | null,
  *   e2e: 'required' | 'no',
  *   branch: string | null,
  *   git: GitInfo,
@@ -35,6 +38,19 @@ export const LINE_WIDTH = 220;
 /** @param {string} line */
 const clip = (line) =>
   line.length > LINE_WIDTH ? `${line.slice(0, LINE_WIDTH - 1)}…` : line;
+
+/**
+ * The quality loop state of a code task (a fresh one when state.json was
+ * written before quality existed), else null.
+ *
+ * @param {import('./state.js').TaskState} state
+ * @returns {{ quality: import('./quality.js').Quality | null, qualityLine: string | null }}
+ */
+function qualityOf(state) {
+  if (state.kind !== 'code') return { quality: null, qualityLine: null };
+  const quality = state.quality ?? freshQuality();
+  return { quality, qualityLine: formatQuality(quality, state.steps) };
+}
 
 /**
  * Collect everything the brief needs from a task (state.json or, for
@@ -76,6 +92,7 @@ export function summarizeTask(task, git) {
       verify: state.verify,
       kind: state.kind ?? 'general',
       e2e: state.e2e ?? 'no',
+      ...qualityOf(state),
       branch: state.branch,
       git,
       notes,
@@ -104,6 +121,8 @@ export function summarizeTask(task, git) {
     verify: [],
     kind: 'general',
     e2e: 'no',
+    quality: null,
+    qualityLine: null,
     branch: null,
     git,
     notes,
@@ -170,6 +189,7 @@ export function formatBrief(summary) {
       `Kind: code — test-first; pnpm task check runs before verify; e2e ${summary.e2e}`
     );
   }
+  if (summary.qualityLine) lines.push(`Quality: ${summary.qualityLine}`);
   if (summary.loop?.enabled) {
     lines.push(
       `Loop: on — iteration ${summary.loop.iteration}/${summary.loop.max}; each stop re-runs the fast verify (off: pnpm task set --loop off)`

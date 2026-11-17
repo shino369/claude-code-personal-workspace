@@ -6,6 +6,8 @@
  * validated on read and before every write.
  */
 
+import { freshQuality, validateQuality } from './quality.js';
+
 export const STATE_VERSION = 1;
 
 export const TASK_STATUSES = ['active', 'blocked', 'done'];
@@ -39,6 +41,7 @@ export const DATE_SUFFIX_RE = /-\d{6}$/;
  *   lastAgent: string | null,
  *   kind?: 'code' | 'general',
  *   e2e?: 'required' | 'no',
+ *   quality?: import('./quality.js').Quality,
  * }} TaskState
  */
 
@@ -197,6 +200,12 @@ export function validateState(state) {
     }
   }
 
+  if (s.quality !== undefined) {
+    errors.push(
+      ...validateQuality(s.quality, /** @type {Set<string>} */ (ids))
+    );
+  }
+
   return errors;
 }
 
@@ -268,6 +277,7 @@ export function createState({
     loop: { enabled: kind === 'code', iteration: 0, max: 5 },
     kind,
     e2e,
+    ...(kind === 'code' ? { quality: freshQuality() } : {}),
     createdAt: at,
     updatedAt: at,
     lastAgent: agent,

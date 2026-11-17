@@ -745,6 +745,18 @@ describe('set', () => {
     });
     expect(out).toContain('Inner loop: on (max 5)');
     expect(out).toContain('Coding task:');
+    expect(state().quality).toMatchObject({ phase: 'build', reviewRounds: 0 });
+  });
+
+  test('should keep the quality state when a task becomes a code task again', () => {
+    newTask(['--verify', 'pnpm test']);
+    const quality = { ...state().quality, reviewRounds: 1, phase: 'fix' };
+    fs.writeFileSync(
+      path.join(tasksRoot(root), NAME, 'state.json'),
+      JSON.stringify({ ...state(), kind: 'general', quality })
+    );
+    run(['set', '--kind', 'code']);
+    expect(state().quality).toMatchObject({ reviewRounds: 1, phase: 'fix' });
   });
 
   test('should respect --loop off when a task becomes a code task', () => {

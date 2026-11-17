@@ -49,6 +49,7 @@ import {
 } from './store.js';
 import { formatCheck, withCheck } from './check.js';
 import { FRESH_LOOP, parseMax } from './loop.js';
+import { freshQuality } from './quality.js';
 import { summarize, tail } from './verify.js';
 
 export const HELP = `Usage: pnpm task <command> [options]
@@ -813,6 +814,9 @@ export const COMMANDS = {
         return {
           ...current,
           ...(mode.kind ? { kind: mode.kind } : {}),
+          ...(becomesCode && !current.quality
+            ? { quality: freshQuality() }
+            : {}),
           ...(mode.e2e ? { e2e: mode.e2e } : {}),
           goal: options.goal ?? current.goal,
           verify,
