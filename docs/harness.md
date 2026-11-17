@@ -125,12 +125,13 @@ plan ─▶ build test-first ─▶ e2e (if required) ─▶ review round N ─�
                                                       ▲                         │
                                                       │   CONFIRMED must-fix/high → fix: steps
                                                       └──── fix test-first ◀────┘
-                                   stop after round 2, or when a round confirms nothing to fix
+                                   stop after round 2's fixes, or when a round confirms nothing to fix
 ```
 
-1. **`pnpm task review`** opens round N (only when every step is done and verify is green). It
-   writes `reviews/BRIEF_<task>-rN.md`, which has the goal, plan, standards files, the files in
-   scope, the severity rubric, and earlier refuted or fixed findings. It also writes an empty
+1. **`pnpm task review`** opens round N (only when every step is done and verify is green;
+   `--force` for an early review). It writes `reviews/BRIEF_<task>-rN.md`, which has the goal,
+   plan, standards files, the files in scope, the severity rubric, and earlier refuted or fixed
+   findings. It also writes an empty
    findings table in `reviews/REVIEW_<task>-rN.md`. The scope is the task's code, or the git
    changes since `--base` (default `main`) for a task that edits the workspace.
 2. **Reviewer** (`.claude/agents/reviewer.md`): a fresh agent that works from the brief only. Each
@@ -169,7 +170,7 @@ plan ─▶ build test-first ─▶ e2e (if required) ─▶ review round N ─�
 - at least one review round has been recorded;
 - no round is still open;
 - every CONFIRMED must-fix/high finding is fixed;
-- with `e2e: required`, a verify command runs e2e tests.
+- with `e2e: required`, a verify command mentions `e2e` or `playwright` (a name match only).
 
 `--force` overrides it (only with the user's agreement), and the NOTES entry lists what was skipped.
 
@@ -241,16 +242,21 @@ task has verify commands.
 
 - **`tasks/` is git-ignored.** Task-folder code is never committed. Unattended runs copy the task
   folder into their worktree, and you copy it back.
-- **`pnpm swarm` refuses tasks with code in their folder.** The swarm moves work between workers
-  only through git commits and merges, so that code would never reach other workers. Put product
-  code that needs parallel workers in a git-tracked place, or use `pnpm loop`.
+- **`pnpm swarm` and the `implement-plan` workflow refuse tasks with code in their folder.** The
+  swarm moves work between workers only through git commits and merges, so that code would never
+  reach other workers. Put product code that needs parallel workers in a git-tracked place, or use
+  `pnpm loop`.
 - **Only must-fix and high findings get fixed, in at most 2 rounds.** Everything else goes to
   NOTES "Open". That is deliberate: reviews always find something, and unbounded rounds burn time
   on style.
 - **Reminders fire once.** If an agent cannot run subagents, it says so and stops. The loop never
   traps it.
-- **The review starts only when every step is done.** `pnpm loop --review` stops with `steps-open`
-  otherwise.
+- **The review starts only when every step is done.** `pnpm task review` refuses otherwise (unless
+  `--force`), and `pnpm loop --review` stops with `steps-open`.
+- **Severity only goes down in triage.** `pnpm loop --review` rejects a triage that raises one; when
+  you triage by hand, it is the verifier role's rule, not a check.
+- **Role limits are prompts.** The reviewer and verifier subagents have Edit (for the findings
+  table only) by instruction, not by enforcement. The headless reviewers run read-only.
 - **Claude hooks run only in Claude Code.** Other harnesses get the same state through
   `pnpm task status`, and the same enforcement through git hooks and the `done` gate. DSH can run
   Claude hooks through its opt-in bridge.

@@ -168,6 +168,14 @@ export function openRound(state, { fingerprint: print, base, force = false }) {
       `Fix the findings from round ${quality.reviewRounds} before the next review: ${open.map((f) => f.step ?? f.id).join(', ')}.\nFix: pnpm task next`
     );
   }
+  const unfinished = state.steps.filter(
+    (s) => s.status !== 'done' && !s.title.startsWith('fix: ')
+  );
+  if (!force && unfinished.length > 0) {
+    throw new Error(
+      `Review finished work: ${unfinished.map((s) => s.id).join(', ')} not done yet.\nFix: finish the steps (pnpm task next), or pnpm task review --force for an early review`
+    );
+  }
   if (!force && !state.lastVerify?.ok) {
     throw new Error(
       `Review green code: the last verify ${state.lastVerify ? 'failed' : 'has not run'}.\nFix: pnpm task verify (or pnpm task review --force if the user agrees)`

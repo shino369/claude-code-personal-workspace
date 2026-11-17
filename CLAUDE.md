@@ -36,8 +36,8 @@ Everything above (AGENTS.md) applies. These notes cover only what is specific to
 - **Workflows** (`.claude/workflows/`, run only when the user asks for a workflow):
   `review-changes` (per-dimension review + adversarial verify), `implement-plan` (the task's todo
   steps in parallel worktrees in dependency order, merged into `wf/<task>`, then the `verifier`
-  role; the Claude-subagent counterpart of `pnpm swarm`), and `research` (sub-questions,
-  fact-checked, written as a study).
+  role; the Claude-subagent counterpart of `pnpm swarm`, and like it refuses task-folder code), and
+  `research` (sub-questions, fact-checked, written as a study).
 - **Rules:** `.claude/rules/testing.md` and `.claude/rules/working-with-script.md` load
   automatically when you work with matching files.
 - **Settings:** shared permissions are in `.claude/settings.json`; personal overrides go in the

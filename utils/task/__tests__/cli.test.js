@@ -676,12 +676,17 @@ describe('check', () => {
 });
 
 describe('review', () => {
+  const finishSteps = () => {
+    run(['step', 's1', 'done']);
+    run(['step', 's2', 'done']);
+  };
   const taskDir = () => path.join(tasksRoot(root), NAME);
   const findingsFile = (/** @type {number} */ n) =>
     path.join(taskDir(), 'reviews', `REVIEW_${NAME}-r${n}.md`);
   /** A code task with one code file and a green verify. */
   const greenCodeTask = () => {
     newTask(['--verify', 'pnpm test']);
+    finishSteps();
     fs.mkdirSync(path.join(taskDir(), 'app'), { recursive: true });
     fs.writeFileSync(path.join(taskDir(), 'app', 'a.js'), 'export {};\n');
     run(['verify'], { runCommands: fakeRunner([{ ok: true }, { ok: true }]) });
@@ -726,6 +731,7 @@ describe('review', () => {
 
   test('should review git changes since main when the task has no code', () => {
     newTask(['--verify', 'pnpm test']);
+    finishSteps();
     run(['verify']);
     /** @type {import('../review.js').RunGit} */
     const runGit = (args) =>
@@ -741,6 +747,7 @@ describe('review', () => {
 
   test('should take --base and --force', () => {
     newTask(['--verify', 'pnpm test']);
+    finishSteps();
     const runGit = vi.fn(() => 'abc');
     run(['review', '--base', 'dev', '--force'], { runGit });
     expect(runGit).toHaveBeenCalledWith(['merge-base', 'HEAD', 'dev'], root);

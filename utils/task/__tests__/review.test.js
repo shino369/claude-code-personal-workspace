@@ -34,7 +34,10 @@ function codeState(overrides = {}) {
     ...createState({
       name: NAME,
       goal: 'Ship it',
-      steps: makeSteps(['Build']),
+      steps: makeSteps(['Build']).map((step) => ({
+        ...step,
+        status: /** @type {const} */ ('done'),
+      })),
       verify: ['pnpm test'],
       kind: 'code',
     }),
@@ -313,6 +316,18 @@ describe('openRound', () => {
       open(codeState({ lastVerify: { ...GREEN, ok: false, failed: 'x' } }))
     ).toThrow(/last verify failed/);
     expect(open(codeState({ lastVerify: null }), true).round).toBe(1);
+  });
+
+  test('should refuse open steps unless forced, but not count fix steps', () => {
+    const todo = codeState({ steps: makeSteps(['Build', 'Polish']) });
+    expect(() => open(todo)).toThrow(
+      /s1, s2 not done yet\.\nFix: .*pnpm task review --force/
+    );
+    expect(open(todo, true).round).toBe(1);
+    const fixOpen = codeState({
+      steps: [...codeState().steps, { ...makeSteps(['fix: x'])[0], id: 's2' }],
+    });
+    expect(open(fixOpen).round).toBe(1);
   });
 });
 

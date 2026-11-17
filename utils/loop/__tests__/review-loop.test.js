@@ -298,6 +298,26 @@ describe('triageProblems', () => {
       'row 2: no verdict or no reason',
     ]);
   });
+
+  test('should allow lowering a severity but not raising it', () => {
+    const lowered = triaged(HIGH, 'CONFIRMED').replace(
+      '| high |',
+      '| medium |'
+    );
+    const raised = triaged(LOW, 'CONFIRMED').replace('| low |', '| must-fix |');
+    expect(triageProblems([HIGH], [lowered])).toEqual([]);
+    expect(triageProblems([LOW], [raised])).toEqual([
+      'row 1: severity low → must-fix: the triage may only lower it to one of must-fix, high, medium, low',
+    ]);
+    expect(
+      triageProblems(
+        [HIGH],
+        [triaged(HIGH, 'CONFIRMED').replace('| high |', '| meh |')]
+      )
+    ).toEqual([
+      'row 1: severity high → meh: the triage may only lower it to one of must-fix, high, medium, low',
+    ]);
+  });
 });
 
 describe('prompts', () => {

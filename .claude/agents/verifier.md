@@ -54,7 +54,8 @@ findings.
    when it does not (already handled, unreachable, wrong reading of the code), when it is a matter
    of taste, or when you are not sure. Unsure means REFUTED.
 4. Check the severity against the rubric. If a confirmed finding is over-rated (a style point as
-   high), confirm it and change the severity cell, saying so in the reason.
+   high), confirm it and lower the severity cell, saying so in the reason. Never raise a severity:
+   if you think a finding is under-rated, say so in the reason and leave the cell as it is.
 5. Write `CONFIRMED` or `REFUTED` in the verdict cell and one line of evidence in the reason cell
    (what you read or ran). Do not edit the other cells, except severity as in step 4.
 

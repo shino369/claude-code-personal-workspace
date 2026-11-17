@@ -169,7 +169,8 @@ export function reviewerProblems(rows) {
 
 /**
  * Problems with the triage's rows against the reviewer's (empty = fine):
- * same findings, same order; only severity, verdict, and reason may change.
+ * same findings, same order; only verdict and reason may change, and severity
+ * only downwards (raising one would create a fix the reviewer never claimed).
  *
  * @param {string[]} before
  * @param {string[]} after
@@ -184,11 +185,17 @@ export function triageProblems(before, after) {
   /** @type {string[]} */
   const problems = [];
   before.forEach((row, i) => {
-    const [, location, , claim] = splitRow(row);
+    const [, location, severity, claim] = splitRow(row);
     const cells = splitRow(after[i]);
+    const rank = (/** @type {string | undefined} */ value) =>
+      SEVERITIES.indexOf(String(value).toLowerCase());
     if (cells[1] !== location || cells[3] !== claim) {
       problems.push(
         `row ${i + 1}: the triage changed the finding (file:line or claim)`
+      );
+    } else if (rank(cells[2]) === -1 || rank(cells[2]) < rank(severity)) {
+      problems.push(
+        `row ${i + 1}: severity ${severity} → ${cells[2]}: the triage may only lower it to one of ${SEVERITIES.join(', ')}`
       );
     } else if (!cells[5] || !cells[6]) {
       problems.push(`row ${i + 1}: no verdict or no reason`);
