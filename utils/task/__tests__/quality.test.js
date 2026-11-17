@@ -78,6 +78,7 @@ describe('validateQuality', () => {
           reviewRounds: -1,
           maxRounds: 0,
           reviewedDiff: 3,
+          base: 4,
           findings: {},
         },
         STEPS
@@ -87,6 +88,7 @@ describe('validateQuality', () => {
       'quality.reviewRounds must be an int ≥ 0',
       'quality.maxRounds must be an int ≥ 1',
       'quality.reviewedDiff must be a string or null',
+      'quality.base must be a git ref or null',
       'quality.findings must be an array',
     ]);
   });

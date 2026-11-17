@@ -675,6 +675,194 @@ describe('check', () => {
   });
 });
 
+describe('review', () => {
+  const taskDir = () => path.join(tasksRoot(root), NAME);
+  const findingsFile = (/** @type {number} */ n) =>
+    path.join(taskDir(), 'reviews', `REVIEW_${NAME}-r${n}.md`);
+  /** A code task with one code file and a green verify. */
+  const greenCodeTask = () => {
+    newTask(['--verify', 'pnpm test']);
+    fs.mkdirSync(path.join(taskDir(), 'app'), { recursive: true });
+    fs.writeFileSync(path.join(taskDir(), 'app', 'a.js'), 'export {};\n');
+    run(['verify'], { runCommands: fakeRunner([{ ok: true }, { ok: true }]) });
+  };
+  const addRows = (/** @type {number} */ n, /** @type {string[]} */ rows) =>
+    fs.appendFileSync(findingsFile(n), `${rows.join('\n')}\n`);
+  const HIGH =
+    '| | app/a.js:1 | high | Leaks handle | open twice → EMFILE | CONFIRMED | no close |';
+  const LOW =
+    '| | app/a.js | low | Odd name | reading it | CONFIRMED | agreed |';
+
+  test('should open round 1, write the brief and findings files, and log it', () => {
+    greenCodeTask();
+    const { code, out } = run(['review']);
+    expect(code).toBe(0);
+    expect(out).toContain(`Opened review round 1/2 for ${NAME} (1 file(s)).`);
+    expect(out).toContain(`Brief: tasks/${NAME}/reviews/BRIEF_${NAME}-r1.md`);
+    expect(out).toContain('subagent_type "reviewer"');
+    expect(out).toContain('Then: pnpm task review record');
+    expect(state().quality).toMatchObject({
+      phase: 'review',
+      reviewRounds: 1,
+      base: null,
+    });
+    expect(read(`reviews/BRIEF_${NAME}-r1.md`)).toContain(
+      `- tasks/${NAME}/app/a.js`
+    );
+    expect(read('NOTES.md')).toContain('Review round 1/2 opened: 1 file(s)');
+  });
+
+  test('should reprint an open round without touching the findings file', () => {
+    greenCodeTask();
+    run(['review']);
+    addRows(1, [HIGH]);
+    const notes = read('NOTES.md');
+    const { out } = run(['review', '--json']);
+    expect(JSON.parse(out)).toMatchObject({ round: 1, reopened: true });
+    expect(fs.readFileSync(findingsFile(1), 'utf-8')).toContain('Leaks handle');
+    expect(read('NOTES.md')).toBe(notes);
+    expect(run(['review']).out).toContain('Review round still open 1/2');
+  });
+
+  test('should review git changes since main when the task has no code', () => {
+    newTask(['--verify', 'pnpm test']);
+    run(['verify']);
+    /** @type {import('../review.js').RunGit} */
+    const runGit = (args) =>
+      args[0] === 'merge-base' ? 'abc' : args[0] === 'diff' ? 'utils/x.js' : '';
+    const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
+    expect(parsed.scope).toEqual({
+      base: 'main',
+      mergeBase: 'abc',
+      files: ['utils/x.js'],
+    });
+    expect(state().quality?.base).toBe('main');
+  });
+
+  test('should take --base and --force', () => {
+    newTask(['--verify', 'pnpm test']);
+    const runGit = vi.fn(() => 'abc');
+    run(['review', '--base', 'dev', '--force'], { runGit });
+    expect(runGit).toHaveBeenCalledWith(['merge-base', 'HEAD', 'dev'], root);
+  });
+
+  test('should explain a missing state.json and an unknown subcommand', () => {
+    legacyTask();
+    expect(() => run(['review', '--task', 'old'])).toThrow(
+      /pnpm task init old-251101/
+    );
+    expect(() => run(['review', 'record', '--task', 'old'])).toThrow(
+      /pnpm task init old-251101/
+    );
+    expect(() => run(['review', 'later'])).toThrow(/Usage: pnpm task review/);
+  });
+
+  test('should record fixes, then run round 2 and complete the loop', () => {
+    greenCodeTask();
+    run(['review']);
+    addRows(1, [HIGH, LOW]);
+
+    const first = run(['review', 'record']).out;
+    expect(first).toContain(
+      'Round 1: 2 finding(s) — 2 confirmed, 0 refuted; 1 fix step(s) (s3); 1 medium/low recorded.'
+    );
+    expect(first).toContain('  s3. fix: Leaks handle (app/a.js:1; r1-1)');
+    expect(first).toContain('Recorded, not fixed (medium/low): r1-2');
+    expect(first).toContain(
+      'After all fixes pass verify: pnpm task review (next round).'
+    );
+    expect(state().quality?.phase).toBe('fix');
+    expect(() => run(['review'])).toThrow(/before the next review: s3/);
+
+    run(['step', 's3', 'done']);
+    const second = run(['review']).out;
+    expect(second).toContain('Opened review round 2/2');
+    expect(read(`reviews/BRIEF_${NAME}-r2.md`)).toContain('- fixed r1-1');
+
+    const last = run(['review', 'record']).out;
+    expect(last).toContain('Round 2: 0 finding(s)');
+    expect(last).toContain('the quality loop is complete');
+    expect(state().quality).toMatchObject({
+      phase: 'complete',
+      reviewRounds: 2,
+    });
+    expect(() => run(['review'])).toThrow(/2\/2 review rounds \(the limit\)/);
+  });
+
+  test('should say when the last round still has fixes', () => {
+    greenCodeTask();
+    const quality = { ...state().quality, reviewRounds: 1, phase: 'complete' };
+    fs.writeFileSync(
+      path.join(taskDir(), 'state.json'),
+      JSON.stringify({ ...state(), quality })
+    );
+    run(['review']);
+    addRows(2, [HIGH]);
+    const { out } = run(['review', 'record']);
+    expect(out).toContain(
+      'That was the last review round (2/2): after the fixes, no more reviews.'
+    );
+    expect(state().quality?.phase).toBe('fix');
+  });
+
+  test('should print the recorded round as JSON', () => {
+    greenCodeTask();
+    run(['review']);
+    addRows(1, [HIGH]);
+    const parsed = JSON.parse(run(['review', 'record', '--json']).out);
+    expect(parsed).toMatchObject({
+      ok: true,
+      round: 1,
+      fixSteps: [{ id: 's3' }],
+    });
+  });
+
+  test('should refuse rows that have not been triaged and name the file', () => {
+    greenCodeTask();
+    run(['review']);
+    addRows(1, ['| | app/a.js | high | c | s |  |  |']);
+    expect(() => run(['review', 'record'])).toThrow(
+      new RegExp(
+        `REVIEW_${NAME}-r1\\.md is not ready:\\n- row 1: no verdict yet`
+      )
+    );
+  });
+
+  test('should read a findings file given on the command line', () => {
+    greenCodeTask();
+    run(['review']);
+    const other = path.join(root, 'elsewhere.md');
+    fs.writeFileSync(
+      other,
+      fs.readFileSync(findingsFile(1), 'utf-8') + `${LOW}\n`
+    );
+    expect(run(['review', 'record', 'elsewhere.md']).out).toContain(
+      'Round 1: 1 finding(s)'
+    );
+  });
+
+  test('should handle a code task written before quality existed', () => {
+    greenCodeTask();
+    const { quality: _q, ...legacy } = state();
+    const file = path.join(taskDir(), 'state.json');
+    fs.writeFileSync(file, JSON.stringify(legacy));
+    expect(() => run(['review', 'record'])).toThrow(
+      /REVIEW_demo-261117-r0\.md/
+    );
+    fs.writeFileSync(file, JSON.stringify(legacy));
+    expect(run(['review']).out).toContain('Opened review round 1/2');
+  });
+
+  test('should explain a missing findings file', () => {
+    greenCodeTask();
+    expect(() => run(['review', 'record'])).toThrow(
+      new RegExp(
+        `No findings file at tasks/${NAME}/reviews/REVIEW_${NAME}-r0\\.md`
+      )
+    );
+  });
+});
+
 describe('set', () => {
   test('should replace the goal and verify lists', () => {
     newTask(['--verify', 'old', '--kind', 'general']);
@@ -892,6 +1080,7 @@ test('COMMANDS should list every documented command', () => {
       'list',
       'new',
       'next',
+      'review',
       'note',
       'set',
       'status',

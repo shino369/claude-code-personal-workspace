@@ -47,9 +47,20 @@ import {
   updateState,
   writeActive,
 } from './store.js';
-import { formatCheck, withCheck } from './check.js';
+import { formatCheck, hasTaskCode, withCheck } from './check.js';
 import { FRESH_LOOP, parseMax } from './loop.js';
-import { freshQuality } from './quality.js';
+import { countFindings, freshQuality, toFix } from './quality.js';
+import {
+  DEFAULT_BASE,
+  findingsTemplate,
+  fingerprint,
+  formatReviewBrief,
+  openRound,
+  parseFindings,
+  recordFindings,
+  reviewFiles,
+  reviewScope,
+} from './review.js';
 import { summarize, tail } from './verify.js';
 
 export const HELP = `Usage: pnpm task <command> [options]
@@ -87,6 +98,12 @@ Work
   set --loop on|off [--loop-max N]
                                 Inner loop (Claude Stop hook): keep working until the
                                 fast verify passes, at most N times (default 5)
+  review [--base <ref>] [--force]
+                                Code tasks: open the next review round (max 2) and write the
+                                brief + findings file for clean-context reviewers. Scope: the
+                                task's code, else git changes since --base (default main)
+  review record [file]          Read the triaged findings table; CONFIRMED must-fix/high
+                                findings become fix: steps
   template review|study [--name <kebab>]
                                 Copy a REVIEW_/STUDIES_ template into the task
   done [-m "…"] [--force]       Close the task (needs a passing verify unless --force)
@@ -116,6 +133,7 @@ const VALUE_FLAGS = {
   '--loop-max': 'loopMax',
   '--kind': 'kind',
   '--e2e': 'e2e',
+  '--base': 'base',
 };
 const REPEATABLE = new Set(['step', 'verify', 'verifyFast']);
 const BOOLEAN_FLAGS = {
@@ -134,7 +152,7 @@ const BOOLEAN_FLAGS = {
  *   positionals: string[],
  *   goal?: string, acceptance?: string, deps?: string, message?: string,
  *   done?: string, next?: string, open?: string, agent?: string, task?: string, name?: string,
- *   loop?: string, loopMax?: string, kind?: string, e2e?: string,
+ *   loop?: string, loopMax?: string, kind?: string, e2e?: string, base?: string,
  *   step: string[], verify: string[], verifyFast: string[],
  *   json: boolean, fast: boolean, all: boolean, force: boolean, help: boolean,
  *   fix: boolean, noCheck: boolean,
@@ -847,6 +865,98 @@ export const COMMANDS = {
     return 0;
   },
 
+  review(options, deps) {
+    const sub = options.positionals[1];
+    if (sub === 'record') return recordReview(options, deps);
+    if (sub !== undefined) {
+      throw new Error(
+        'Usage: pnpm task review [--base <ref>] [--force] | pnpm task review record [file]'
+      );
+    }
+    const name = resolveTaskName(deps.rootDir, options.task);
+    const task = loadTask(deps.rootDir, name);
+    if (!task.state) {
+      throw new Error(
+        `${name} has no ${STATE_FILE}.\nFix: pnpm task init ${name} --verify "<test command>"`
+      );
+    }
+    const quality = task.state.quality ?? freshQuality();
+    const base =
+      quality.phase === 'review'
+        ? (quality.base ?? null)
+        : (options.base ?? (hasTaskCode(task.dir) ? null : DEFAULT_BASE));
+    const scope = reviewScope({
+      rootDir: deps.rootDir,
+      taskDir: task.dir,
+      base,
+      runGit: deps.runGit,
+    });
+    const print = fingerprint(deps.rootDir, scope.files);
+    const now = deps.now();
+    const agent = detectAgent(options, deps.env);
+    let round = 0;
+    let reopened = false;
+    const state = updateState(
+      deps.rootDir,
+      name,
+      (current) => {
+        const result = openRound(current, {
+          fingerprint: print,
+          base,
+          force: options.force,
+        });
+        round = result.round;
+        reopened = result.reopened;
+        return result.state;
+      },
+      { now, agent }
+    );
+    const taskRel = path
+      .relative(deps.rootDir, task.dir)
+      .split(path.sep)
+      .join('/');
+    const files = reviewFiles(name, round);
+    fs.mkdirSync(path.join(task.dir, 'reviews'), { recursive: true });
+    fs.writeFileSync(
+      path.join(task.dir, files.brief),
+      formatReviewBrief({ state, round, scope, taskRel }),
+      'utf-8'
+    );
+    const findingsPath = path.join(task.dir, files.findings);
+    if (!fs.existsSync(findingsPath)) {
+      fs.writeFileSync(
+        findingsPath,
+        findingsTemplate({ name, round, brief: `${taskRel}/${files.brief}` }),
+        'utf-8'
+      );
+    }
+    if (!reopened) {
+      writeNote(deps, task, {
+        at: now,
+        agent,
+        label: `review r${round} opened`,
+        message: `Review round ${round}/${quality.maxRounds} opened: ${scope.files.length} file(s), fingerprint ${print}.`,
+      });
+    }
+    const brief = `${taskRel}/${files.brief}`;
+    const findings = `${taskRel}/${files.findings}`;
+    output(
+      deps,
+      options,
+      { ok: true, task: name, round, reopened, scope, brief, findings },
+      [
+        `${reopened ? 'Review round still open' : 'Opened review round'} ${round}/${quality.maxRounds} for ${name} (${scope.files.length} file(s)).`,
+        `Brief: ${brief}`,
+        `Findings: ${findings}`,
+        'Run the review and the triage in clean contexts, not yourself (you wrote the code):',
+        `  Claude Code: Agent tool, subagent_type "reviewer", prompt "Follow ${brief}"; then subagent_type "verifier", prompt "Triage ${findings} as step 2 of ${brief} says".`,
+        `  Other harnesses: pnpm agent ask --agent <another agent> - < ${brief}, paste its rows into the findings table, then ask another agent for the triage.`,
+        'Then: pnpm task review record',
+      ].join('\n')
+    );
+    return 0;
+  },
+
   template(options, deps) {
     const kind = options.positionals[1];
     /** @type {Record<string, { file: string, dir: string, prefix: string }>} */
@@ -936,6 +1046,100 @@ export const COMMANDS = {
     return 0;
   },
 };
+
+/**
+ * `pnpm task review record [file]`: close the open round with its findings.
+ *
+ * @param {Options} options
+ * @param {Deps} deps
+ * @returns {number}
+ */
+function recordReview(options, deps) {
+  const name = resolveTaskName(deps.rootDir, options.task);
+  const task = loadTask(deps.rootDir, name);
+  if (!task.state) {
+    throw new Error(
+      `${name} has no ${STATE_FILE}.\nFix: pnpm task init ${name}`
+    );
+  }
+  const quality = task.state.quality ?? freshQuality();
+  const round = quality.reviewRounds;
+  const given = options.positionals[2];
+  const file = given
+    ? path.resolve(deps.rootDir, given)
+    : path.join(task.dir, reviewFiles(name, round).findings);
+  if (!fs.existsSync(file)) {
+    throw new Error(
+      `No findings file at ${path.relative(deps.rootDir, file)}.\nFix: pnpm task review (opens a round and creates it)`
+    );
+  }
+  const { findings, errors } = parseFindings(fs.readFileSync(file, 'utf-8'), {
+    round,
+    takenIds: new Set(quality.findings.map((f) => f.id)),
+  });
+  if (errors.length > 0) {
+    throw new Error(
+      `${path.relative(deps.rootDir, file)} is not ready:\n${errors.map((e) => `- ${e}`).join('\n')}\nFix the rows above, then re-run: pnpm task review record`
+    );
+  }
+  const now = deps.now();
+  const agent = detectAgent(options, deps.env);
+  /** @type {import('./state.js').Step[]} */
+  let fixSteps = [];
+  const state = updateState(
+    deps.rootDir,
+    name,
+    (current) => {
+      const result = recordFindings(current, findings);
+      fixSteps = result.fixSteps;
+      return result.state;
+    },
+    { now, agent }
+  );
+  const recordedQuality = /** @type {import('./quality.js').Quality} */ (
+    state.quality
+  );
+  const counts = countFindings({ ...recordedQuality, findings }, state.steps);
+  const fixIds = new Set(
+    toFix({ ...recordedQuality, findings }).map((f) => f.id)
+  );
+  const recordedOnly = findings.filter(
+    (f) => f.verdict === 'CONFIRMED' && !fixIds.has(f.id)
+  );
+  const summary = `Round ${round}: ${counts.total} finding(s) — ${counts.confirmed} confirmed, ${counts.refuted} refuted; ${fixSteps.length} fix step(s)${fixSteps.length > 0 ? ` (${fixSteps.map((s) => s.id).join(', ')})` : ''}; ${recordedOnly.length} medium/low recorded.`;
+  writeNote(deps, task, {
+    at: now,
+    agent,
+    label: `review r${round} recorded`,
+    message: summary,
+  });
+  const last = round >= recordedQuality.maxRounds;
+  output(
+    deps,
+    options,
+    {
+      ok: true,
+      task: name,
+      round,
+      findings,
+      fixSteps,
+      quality: recordedQuality,
+    },
+    [
+      summary,
+      ...fixSteps.map((s) => `  ${s.id}. ${s.title}`),
+      ...(recordedOnly.length > 0
+        ? [
+            `Recorded, not fixed (medium/low): ${recordedOnly.map((f) => f.id).join(', ')} — list them under Open in the final note.`,
+          ]
+        : []),
+      fixSteps.length === 0
+        ? 'No must-fix/high findings: the quality loop is complete. When verify passes: pnpm task done'
+        : `Next: pnpm task step ${fixSteps[0].id} start — fix test-first, then pnpm task verify. ${last ? `That was the last review round (${round}/${recordedQuality.maxRounds}): after the fixes, no more reviews.` : 'After all fixes pass verify: pnpm task review (next round).'}`,
+    ].join('\n')
+  );
+  return 0;
+}
 
 /**
  * @param {{ argv?: string[], deps?: Partial<Deps> }} [options]

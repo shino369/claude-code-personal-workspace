@@ -41,6 +41,7 @@ export const DEFAULT_MAX_ROUNDS = 2;
  *   reviewRounds: number,
  *   maxRounds: number,
  *   reviewedDiff: string | null,
+ *   base?: string | null,
  *   findings: Finding[],
  * }} Quality
  */
@@ -122,6 +123,9 @@ export function validateQuality(quality, stepIds) {
   }
   if (q.reviewedDiff !== null && !isString(q.reviewedDiff)) {
     errors.push('quality.reviewedDiff must be a string or null');
+  }
+  if (q.base !== undefined && q.base !== null && !isString(q.base)) {
+    errors.push('quality.base must be a git ref or null');
   }
   if (!Array.isArray(q.findings)) {
     errors.push('quality.findings must be an array');
