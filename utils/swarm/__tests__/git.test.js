@@ -145,11 +145,18 @@ describe('copyTask', () => {
     const source = path.join(repo, 'tasks', TASK);
     fs.mkdirSync(path.join(source, 'swarm', 'run-1'), { recursive: true });
     fs.mkdirSync(path.join(source, 'loop'), { recursive: true });
-    fs.mkdirSync(path.join(source, 'tmp'), { recursive: true });
+    fs.mkdirSync(path.join(source, 'tmp', 'loop'), { recursive: true });
+    fs.mkdirSync(path.join(source, 'scripts', 'swarm'), { recursive: true });
     const dir = path.join(base, 'wt');
     copyTask({ rootDir: repo, dir, task: TASK });
     const target = path.join(dir, 'tasks', TASK);
-    expect(fs.readdirSync(target).sort()).toEqual(['plan.md', 'tmp']);
+    expect(fs.readdirSync(target).sort()).toEqual([
+      'plan.md',
+      'scripts',
+      'tmp',
+    ]);
+    expect(fs.existsSync(path.join(target, 'tmp', 'loop'))).toBe(true);
+    expect(fs.existsSync(path.join(target, 'scripts', 'swarm'))).toBe(true);
     expect(readActive(dir)).toBe(TASK);
   });
 

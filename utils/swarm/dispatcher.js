@@ -24,8 +24,11 @@ import { claimStep, idleReason, setStepStatus } from '../task/state.js';
 import {
   appendNotes,
   loadTask,
+  readIfExists,
   tasksRoot,
   updateState,
+  withLock,
+  writeFileAtomic,
 } from '../task/store.js';
 import { summarize } from '../task/verify.js';
 import { gitText } from '../loop/worktree.js';
@@ -38,6 +41,13 @@ import {
   swarmBranch,
   swarmDir,
 } from './git.js';
+
+/**
+ * @param {unknown} error
+ * @returns {string}
+ */
+const errorText = (error) =>
+  error instanceof Error ? error.message : String(error);
 
 /** Owners the swarm gives its workers: `<agent>/swarm-w<n>`. */
 export const SWARM_OWNER_RE = /\/swarm-w\d+$/;
@@ -80,31 +90,35 @@ export const LOCK_FILE = 'swarm.lock';
 
 /**
  * Take the task's swarm lock (one swarm per task). A lock whose process is
- * gone is taken over.
+ * gone is taken over. The check and the write happen under the task's state
+ * lock (`withLock`), so two swarms starting at once cannot both win, and the
+ * pid is written atomically, so a reader never sees a half-written lock.
  *
  * @param {string} taskDir
  * @param {{ pid: number, isAlive: (pid: number) => boolean }} deps
- * @returns {() => void} release
+ * @returns {() => void} release (removes the lock only while it is ours)
  */
 export function acquireSwarmLock(taskDir, { pid, isAlive }) {
   const file = path.join(taskDir, LOCK_FILE);
-  for (;;) {
-    try {
-      fs.writeFileSync(file, `${pid}\n`, { flag: 'wx' });
-      return () => fs.rmSync(file, { force: true });
-    } catch (error) {
-      if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'EEXIST') {
-        throw error;
-      }
-      const holder = Number(fs.readFileSync(file, 'utf-8').trim());
-      if (Number.isInteger(holder) && holder > 0 && isAlive(holder)) {
-        throw new Error(
-          `Another pnpm swarm (pid ${holder}) is running this task.\nFix: wait for it, or stop it; if it is gone, delete ${file}`
-        );
-      }
-      fs.rmSync(file, { force: true });
+  /** @returns {number} */
+  const holder = () => Number(readIfExists(file)?.trim() || 0);
+  withLock(taskDir, () => {
+    const current = holder();
+    if (
+      Number.isInteger(current) &&
+      current > 0 &&
+      current !== pid &&
+      isAlive(current)
+    ) {
+      throw new Error(
+        `Another pnpm swarm (pid ${current}) is running this task.\nFix: wait for it, or stop it; if it is gone, delete ${file}`
+      );
     }
-  }
+    writeFileAtomic(file, `${pid}\n`);
+  });
+  return () => {
+    if (holder() === pid) fs.rmSync(file, { force: true });
+  };
 }
 
 /**
@@ -241,9 +255,39 @@ export async function runSwarm({
       const claimed = /** @type {import('../task/state.js').Step | null} */ (
         step
       );
-      if (!claimed) return false;
+      if (!claimed) return 'none';
       claims.push({ id: claimed.id, worker });
+      try {
+        start(slot, worker, claimed, state);
+        return 'started';
+      } catch (error) {
+        // The step is claimed but has no worker: block it so it is not left
+        // in progress, and keep going with the other steps and workers.
+        safeRecord({
+          ok: false,
+          id: claimed.id,
+          worker,
+          branch: '',
+          dir: '',
+          commit: null,
+          reason: 'error',
+          iterations: 0,
+          failed: null,
+          detail: `could not start the worker: ${errorText(error)}`,
+          logDir: null,
+          durationMs: 0,
+        });
+        return 'failed';
+      }
+    };
 
+    /**
+     * @param {number} slot
+     * @param {string} worker
+     * @param {import('../task/state.js').Step} claimed
+     * @param {import('../task/state.js').TaskState} state
+     */
+    const start = (slot, worker, claimed, state) => {
       const target = freeStepSlot({
         rootDir,
         task: name,
@@ -283,7 +327,6 @@ export async function runSwarm({
           .startWorker(config, path.join(runDir, `${target.slot}.log`))
           .then((result) => ({ slot, result }))
       );
-      return true;
     };
 
     /** @param {StepResult} result */
@@ -317,7 +360,7 @@ export async function runSwarm({
       const failure = `${outcome.reason}${outcome.failed ? ` — \`${outcome.failed}\` fails` : ''}: ${outcome.detail.split('\n')[0]}`;
       const message = outcome.ok
         ? `${note} by ${result.worker}`
-        : `swarm ${result.worker}: ${failure}. Worktree ${result.dir}${result.logDir ? `; logs ${result.logDir}` : ''}`;
+        : `swarm ${result.worker}: ${failure}.${result.dir ? ` Worktree ${result.dir}` : ''}${result.logDir ? `; logs ${result.logDir}` : ''}`;
       updateState(
         rootDir,
         name,
@@ -350,6 +393,22 @@ export async function runSwarm({
       }
     };
 
+    /**
+     * Record a result without ending the run: other workers may still be
+     * running, and an aborted dispatcher would leave their steps unrecorded.
+     *
+     * @param {StepResult} result
+     */
+    const safeRecord = (result) => {
+      try {
+        record(result);
+      } catch (error) {
+        const reason = `could not record the result: ${errorText(error)}`;
+        blocked.push({ id: result.id, reason });
+        deps.log(`✗ ${result.worker} ${result.id}: ${reason}`);
+      }
+    };
+
     for (;;) {
       for (let slot = 1; slot <= workers; slot++) {
         if (running.has(slot)) continue;
@@ -357,12 +416,14 @@ export async function runSwarm({
           timedOut = true;
           break;
         }
-        if (!claimNext(slot)) break;
+        let claimed = claimNext(slot);
+        while (claimed === 'failed') claimed = claimNext(slot);
+        if (claimed === 'none') break;
       }
       if (running.size === 0) break;
       const { slot, result } = await Promise.race(running.values());
       running.delete(slot);
-      record(result);
+      safeRecord(result);
     }
 
     // state.json existed at the start (checked above) and is never deleted.

@@ -112,9 +112,12 @@ export function freeStepSlot({ rootDir, task, id, spawn }) {
 export function copyTask({ rootDir, dir, task }) {
   const target = path.join(tasksRoot(dir), task);
   if (!fs.existsSync(target)) {
-    fs.cpSync(path.join(tasksRoot(rootDir), task), target, {
+    const source = path.join(tasksRoot(rootDir), task);
+    // Run logs of earlier loops and swarms stay behind (top level only).
+    const skip = new Set(['swarm', 'loop'].map((d) => path.join(source, d)));
+    fs.cpSync(source, target, {
       recursive: true,
-      filter: (source) => !/[\\/](swarm|loop)$/.test(source),
+      filter: (file) => !skip.has(file),
     });
   }
   writeActive(dir, task);

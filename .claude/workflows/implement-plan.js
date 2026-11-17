@@ -121,21 +121,33 @@ if (plan.verify.length === 0) {
 const byId = new Map(plan.steps.map((s) => [s.id, s]));
 const isDone = (id) => byId.get(id)?.status === 'done';
 const todo = plan.steps.filter((s) => s.status === 'todo');
-// A todo step can run here only if each dependency is done already or runs here too.
+// A todo step can run here only if each dependency is done already or runs
+// here too. Repeat passes so the order of steps in the plan does not matter;
+// `runnable` ends up in dependency order.
+const inRun = (id) => runnable.some((r) => r.id === id);
 const runnable = [];
-const skipped = [];
-for (const step of todo) {
-  const waiting = step.deps.filter(
-    (d) => !isDone(d) && !runnable.some((r) => r.id === d)
-  );
-  if (waiting.length > 0) {
-    skipped.push({ id: step.id, reason: `waits on ${waiting.join(', ')}` });
-  } else if (runnable.length >= maxSteps) {
-    skipped.push({ id: step.id, reason: `over maxSteps (${maxSteps})` });
-  } else {
-    runnable.push(step);
+let pending = todo;
+for (let changed = true; changed && runnable.length < maxSteps;) {
+  changed = false;
+  for (const step of pending) {
+    if (runnable.length >= maxSteps) break;
+    if (step.deps.every((d) => isDone(d) || inRun(d))) {
+      runnable.push(step);
+      changed = true;
+    }
   }
+  pending = pending.filter((s) => !runnable.includes(s));
 }
+const skipped = pending.map((step) => {
+  const waiting = step.deps.filter((d) => !isDone(d) && !inRun(d));
+  return {
+    id: step.id,
+    reason:
+      waiting.length > 0
+        ? `waits on ${waiting.join(', ')}`
+        : `over maxSteps (${maxSteps})`,
+  };
+});
 for (const s of skipped) log(`skip ${s.id}: ${s.reason}`);
 if (runnable.length === 0) {
   log('No todo step can start.');

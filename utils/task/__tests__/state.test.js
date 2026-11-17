@@ -486,7 +486,10 @@ describe('setStepStatus ownership', () => {
       force: true,
       now: new Date(0),
     });
-    expect(step).toMatchObject({ owner: 'b', claimedAt: NOW.toISOString() });
+    expect(step).toMatchObject({
+      owner: 'b',
+      claimedAt: new Date(0).toISOString(),
+    });
   });
 
   test('should let the owner restart its step', () => {

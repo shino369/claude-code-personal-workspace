@@ -231,6 +231,22 @@ describe('acquireSwarmLock', () => {
     expect(fs.readFileSync(path.join(base, LOCK_FILE), 'utf-8')).toBe('9\n');
   });
 
+  test('should treat an empty lock as free and let its owner re-take it', () => {
+    fs.writeFileSync(path.join(base, LOCK_FILE), '');
+    const isAlive = vi.fn(() => true);
+    acquireSwarmLock(base, { pid: 7, isAlive });
+    acquireSwarmLock(base, { pid: 7, isAlive });
+    expect(isAlive).not.toHaveBeenCalled();
+    expect(fs.readFileSync(path.join(base, LOCK_FILE), 'utf-8')).toBe('7\n');
+  });
+
+  test('should not release a lock another swarm has taken over', () => {
+    const release = acquireSwarmLock(base, { pid: 7, isAlive: () => false });
+    fs.writeFileSync(path.join(base, LOCK_FILE), '8\n');
+    release();
+    expect(fs.readFileSync(path.join(base, LOCK_FILE), 'utf-8')).toBe('8\n');
+  });
+
   test('should rethrow other errors', () => {
     expect(() =>
       acquireSwarmLock(path.join(base, 'missing'), {
@@ -359,6 +375,55 @@ describe('runSwarm', () => {
     );
     expect(notes()).toContain(
       '1 step(s) done (s2), 1 blocked (s1). Final verify on swarm/demo-261117: fail — `node check.mjs`. Left: blocked: s1;'
+    );
+  });
+
+  test('should block a step whose worker cannot start and keep going', async () => {
+    newTask();
+    task(['step', 'add', 'Three']);
+    const working = fakeWorker();
+    const d = deps({
+      startWorker: (config) => {
+        if (config.step.id === 's1') throw new Error('disk full');
+        if (config.step.id === 's3') throw 'no slot'; // eslint-disable-line no-throw-literal
+        return working(config);
+      },
+    });
+    const result = await swarm({ deps: d, install: false });
+    expect(result.blocked).toEqual([
+      { id: 's1', reason: 'error: could not start the worker: disk full' },
+      { id: 's3', reason: 'error: could not start the worker: no slot' },
+    ]);
+    expect(result.done).toEqual(['s2']);
+    expect(state().steps[0]).toMatchObject({
+      status: 'blocked',
+      note: 'swarm claude/swarm-w1: error: could not start the worker: disk full.',
+    });
+  });
+
+  test('should keep running when recording a result fails', async () => {
+    newTask();
+    const working = fakeWorker();
+    const log = vi.fn();
+    const startWorker = vi.fn(async (/** @type {any} */ config) => {
+      const result = await working(config);
+      // A result for a step the task does not have makes the state update throw.
+      return config.step.id === 's1' ? { ...result, id: 's9' } : result;
+    });
+    const result = await swarm({
+      deps: deps({ log, startWorker }),
+      install: false,
+    });
+    expect(result.blocked).toEqual([
+      {
+        id: 's9',
+        reason:
+          'could not record the result: Unknown step "s9" (steps: s1, s2)',
+      },
+    ]);
+    expect(result.done).toEqual(['s2']);
+    expect(log).toHaveBeenCalledWith(
+      '✗ claude/swarm-w1 s9: could not record the result: Unknown step "s9" (steps: s1, s2)'
     );
   });
 

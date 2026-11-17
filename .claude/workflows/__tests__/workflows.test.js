@@ -300,6 +300,27 @@ describe('implement-plan', () => {
     expect(result.verdict.pass).toBe(true);
   });
 
+  test('should run a step after a dependency listed later in the plan', async () => {
+    const plan = {
+      ...PLAN,
+      steps: [
+        { id: 's1', title: 'One', status: 'todo', deps: ['s2'] },
+        { id: 's2', title: 'Two', status: 'todo', deps: [] },
+      ],
+    };
+    const { result, calls } = await runWorkflow('implement-plan', {
+      respond: responder({ plan }),
+    });
+    expect(labels(calls, 'step:').map((c) => c.opts.label)).toEqual([
+      'step:s2',
+      'step:s1',
+    ]);
+    expect(labels(calls, 'step:')[1].prompt).toContain(
+      'git merge --no-edit wf/t-261117--s2`'
+    );
+    expect(result.skipped).toEqual([]);
+  });
+
   test('should be ok when every step, the merge, and the verifier pass', async () => {
     const plan = { ...PLAN, steps: PLAN.steps.slice(0, 4) };
     const { result } = await runWorkflow('implement-plan', {

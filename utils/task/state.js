@@ -475,7 +475,10 @@ export function setStepStatus(
           ? null
           : current.owner,
   };
-  if (status === 'in_progress' && current.status !== 'in_progress') {
+  if (
+    status === 'in_progress' &&
+    (current.status !== 'in_progress' || current.owner !== agent)
+  ) {
     step.claimedAt = now.toISOString();
   } else if (status === 'todo') {
     delete step.claimedAt;
