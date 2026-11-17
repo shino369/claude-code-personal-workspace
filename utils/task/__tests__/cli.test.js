@@ -551,7 +551,9 @@ describe('set', () => {
     newTask(['--verify', 'old']);
     expect(
       run(['set', '--goal', 'New goal', '--verify', 'a', '--verify', 'b']).out
-    ).toBe(`Updated ${NAME}: verify = a && b; fast = (same as verify)`);
+    ).toBe(
+      `Updated ${NAME}: verify = a && b; fast = (same as verify)\nInner loop: off`
+    );
     expect(state()).toMatchObject({ goal: 'New goal', verify: ['a', 'b'] });
   });
 
@@ -570,6 +572,57 @@ describe('set', () => {
 
   test('should require something to set', () => {
     expect(() => run(['set'])).toThrow(/Usage: pnpm task set/);
+  });
+
+  test('should turn the inner loop on with a cap and reset its counters', () => {
+    newTask(['--verify', 'pnpm test']);
+    expect(run(['set', '--loop', 'on', '--loop-max', '3']).out).toContain(
+      'Inner loop: on (max 3) — in Claude Code, each stop re-runs the fast verify until it passes. Turn off: pnpm task set --loop off'
+    );
+    expect(state().loop).toEqual({
+      enabled: true,
+      iteration: 0,
+      max: 3,
+      signature: null,
+      repeats: 0,
+      halted: false,
+    });
+  });
+
+  test('should change only the cap and keep the loop setting', () => {
+    newTask(['--verify', 'pnpm test']);
+    run(['set', '--loop-max', '7']);
+    expect(state().loop).toMatchObject({ enabled: false, max: 7 });
+    run(['set', '--loop', 'on']);
+    run(['set', '--loop', 'off']);
+    expect(state().loop).toMatchObject({ enabled: false, max: 7 });
+  });
+
+  test('should refuse to turn the loop on without verify commands', () => {
+    newTask();
+    expect(() => run(['set', '--loop', 'on'])).toThrow(
+      /no verify commands, so the loop has no finish line\.\nFix: pnpm task set --verify "pnpm check" --loop on/
+    );
+    expect(state().loop.enabled).toBe(false);
+  });
+
+  test('should accept verify and loop on in one call', () => {
+    newTask();
+    run(['set', '--verify', 'pnpm check', '--loop', 'on']);
+    expect(state()).toMatchObject({
+      verify: ['pnpm check'],
+      loop: { enabled: true },
+    });
+  });
+
+  test('should reject a bad --loop or --loop-max value', () => {
+    newTask(['--verify', 'pnpm test']);
+    expect(() => run(['set', '--loop', 'maybe'])).toThrow(
+      '--loop must be on or off (got "maybe")'
+    );
+    expect(() => run(['set', '--loop-max', '0'])).toThrow(
+      /--loop-max must be a whole number/
+    );
   });
 });
 

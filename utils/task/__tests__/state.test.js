@@ -110,6 +110,27 @@ describe('validateState', () => {
     ]);
   });
 
+  test('should accept optional loop signature and repeats, and reject bad ones', () => {
+    const loop = { enabled: true, iteration: 1, max: 5 };
+    expect(
+      validateState({
+        ...makeState(),
+        loop: { ...loop, signature: null, repeats: 0 },
+      })
+    ).toEqual([]);
+    const message =
+      'loop.signature must be a string or null, loop.repeats an int, loop.halted a boolean';
+    expect(
+      validateState({ ...makeState(), loop: { ...loop, signature: 3 } })
+    ).toEqual([message]);
+    expect(
+      validateState({ ...makeState(), loop: { ...loop, repeats: 'x' } })
+    ).toEqual([message]);
+    expect(
+      validateState({ ...makeState(), loop: { ...loop, halted: 'no' } })
+    ).toEqual([message]);
+  });
+
   test('should report invalid steps, duplicate ids, and unknown deps', () => {
     const errors = validateState({
       ...makeState(),

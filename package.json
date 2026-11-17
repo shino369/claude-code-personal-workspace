@@ -25,7 +25,8 @@
     "skills:link": "node utils/skills-link.js",
     "workspace:setup": "node utils/workspace-setup.js",
     "workspace:check": "node utils/workspace-setup.js --check",
-    "task": "node utils/task/cli.js"
+    "task": "node utils/task/cli.js",
+    "loop": "node utils/loop/cli.js"
   },
   "keywords": [],
   "author": "shino369",

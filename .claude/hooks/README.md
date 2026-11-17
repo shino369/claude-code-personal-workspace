@@ -117,6 +117,30 @@ actual window if it differs.
   uncommitted files, last verify result, and `git diff --shortstat`
 - Does nothing when no task is active; never blocks compaction
 
+### 6. Task Loop (`task_loop.js`)
+
+**Event:** Stop (plus `UserPromptSubmit` with `--reset`)
+**Purpose:** The opt-in inner loop: keep working until the task's fast verify passes.
+
+**What it does:**
+
+- Does nothing unless the active task has the loop on (`pnpm task set --loop on [--loop-max N]`);
+  with the loop off it exits without running anything
+- Otherwise runs the task's `verifyFast` commands (else `verify`) with a 240 s timeout, and records
+  `lastVerify` in `state.json`
+- On failure, blocks the stop with the failure summary (`decision: "block"`) and counts the
+  iteration; lets the stop through at `loop.max`, or when the same failure repeats three times in a
+  row (no progress), writes a NOTES entry, and marks the loop `halted`: later stops skip verify
+- The count never resets on a Stop event. Claude Code's own guards (`stop_hook_active`, the
+  consecutive-continuation cap) do not reliably catch this loop, because a continuation that makes
+  tool calls can look like a fresh stop. It resets only on a pass, `pnpm task set --loop on`, or a
+  prompt the user types: the same script runs with `--reset` on `UserPromptSubmit` and ignores
+  `<task-notification>` prompts and missing prompts (fail closed)
+- The block message tells the agent not to retry failures that code cannot fix (git, install, or
+  environment errors), and to tell the user and turn the loop off instead
+- Skips when `TASK_INNER_LOOP=off` (the `pnpm loop` outer loop sets this for its child sessions);
+  fails open on any error
+
 The task logic lives in `utils/task/` (the `pnpm task` CLI), so other harnesses get the same brief
 by running `pnpm task status`.
 
@@ -150,12 +174,28 @@ Hooks are configured in `.claude/settings.json`:
         ]
       }
     ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/task_loop.js",
+            "timeout": 300
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/context_monitor.js",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/task_loop.js --reset",
             "timeout": 5
           }
         ]

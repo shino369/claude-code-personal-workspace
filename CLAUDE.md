@@ -16,6 +16,10 @@ Everything above (AGENTS.md) applies. These notes cover only what is specific to
   injects the `pnpm task status` brief, and the `PreCompact` hook (`pre_compact.js`) appends a
   mechanical checkpoint to the active task's `NOTES.md`. When a `[Task]` brief is in context, do
   not rediscover the task — continue from its `Next step`, after comparing its `Git:` line.
+- **Inner loop:** `pnpm task set --loop on` makes the `Stop` hook (`task_loop.js`) re-run the
+  task's fast verify at every stop and send failures back, up to `--loop-max` (default 5), stopping
+  early on no progress. Stop events never reset the count; only a pass or a prompt you type does.
+  Off by default; turn it off with `pnpm task set --loop off`.
 - **Hooks** (`.claude/settings.json`): `audit_logger.js` appends redacted tool calls to
   `logs/<YYYYMMDD>/logging.jsonl`, and `auto_format.js` runs Prettier after Edit/Write. These run
   only in Claude Code; the git hooks from `pnpm workspace:setup` cover every harness.

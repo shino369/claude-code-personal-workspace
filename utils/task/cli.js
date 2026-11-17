@@ -43,6 +43,7 @@ import {
   updateState,
   writeActive,
 } from './store.js';
+import { FRESH_LOOP, parseMax } from './loop.js';
 import { summarize, tail } from './verify.js';
 
 export const HELP = `Usage: pnpm task <command> [options]
@@ -66,6 +67,9 @@ Work
   verify [--fast]               Run the task's verify commands; exit 1 on failure
   set [--goal "…"] [--verify "cmd"]… [--verify-fast "cmd"]…
                                 Change the goal or replace the verify command lists
+  set --loop on|off [--loop-max N]
+                                Inner loop (Claude Stop hook): keep working until the
+                                fast verify passes, at most N times (default 5)
   template review|study [--name <kebab>]
                                 Copy a REVIEW_/STUDIES_ template into the task
   done [-m "…"] [--force]       Close the task (needs a passing verify unless --force)
@@ -91,6 +95,8 @@ const VALUE_FLAGS = {
   '--agent': 'agent',
   '--task': 'task',
   '--name': 'name',
+  '--loop': 'loop',
+  '--loop-max': 'loopMax',
 };
 const REPEATABLE = new Set(['step', 'verify', 'verifyFast']);
 const BOOLEAN_FLAGS = {
@@ -107,6 +113,7 @@ const BOOLEAN_FLAGS = {
  *   positionals: string[],
  *   goal?: string, acceptance?: string, deps?: string, message?: string,
  *   done?: string, next?: string, open?: string, agent?: string, task?: string, name?: string,
+ *   loop?: string, loopMax?: string,
  *   step: string[], verify: string[], verifyFast: string[],
  *   json: boolean, fast: boolean, all: boolean, force: boolean, help: boolean,
  * }} Options
@@ -618,32 +625,63 @@ export const COMMANDS = {
     if (
       !options.goal &&
       options.verify.length === 0 &&
-      options.verifyFast.length === 0
+      options.verifyFast.length === 0 &&
+      options.loop === undefined &&
+      options.loopMax === undefined
     ) {
       throw new Error(
-        'Usage: pnpm task set [--goal "…"] [--verify "cmd"]… [--verify-fast "cmd"]… (each list replaces the old one)'
+        'Usage: pnpm task set [--goal "…"] [--verify "cmd"]… [--verify-fast "cmd"]… (each list replaces the old one) [--loop on|off] [--loop-max N]'
       );
     }
+    if (options.loop !== undefined && !['on', 'off'].includes(options.loop)) {
+      throw new Error(`--loop must be on or off (got "${options.loop}")`);
+    }
+    const max =
+      options.loopMax === undefined
+        ? undefined
+        : parseMax(options.loopMax, '--loop-max');
     const name = resolveTaskName(deps.rootDir, options.task);
     const state = updateState(
       deps.rootDir,
       name,
-      (current) => ({
-        ...current,
-        goal: options.goal ?? current.goal,
-        verify: options.verify.length > 0 ? options.verify : current.verify,
-        verifyFast:
-          options.verifyFast.length > 0
-            ? options.verifyFast
-            : current.verifyFast,
-      }),
+      (current) => {
+        const verify =
+          options.verify.length > 0 ? options.verify : current.verify;
+        const enabled =
+          options.loop === undefined
+            ? current.loop.enabled
+            : options.loop === 'on';
+        if (enabled && options.loop === 'on' && verify.length === 0) {
+          throw new Error(
+            `${name} has no verify commands, so the loop has no finish line.\nFix: pnpm task set --verify "pnpm check" --loop on`
+          );
+        }
+        return {
+          ...current,
+          goal: options.goal ?? current.goal,
+          verify,
+          verifyFast:
+            options.verifyFast.length > 0
+              ? options.verifyFast
+              : current.verifyFast,
+          loop:
+            options.loop === undefined && max === undefined
+              ? current.loop
+              : { enabled, max: max ?? current.loop.max, ...FRESH_LOOP },
+        };
+      },
       { now: deps.now(), agent: detectAgent(options, deps.env) }
     );
     output(
       deps,
       options,
       { ok: true, task: name, state },
-      `Updated ${name}: verify = ${state.verify.join(' && ') || '(none)'}; fast = ${state.verifyFast.join(' && ') || '(same as verify)'}`
+      [
+        `Updated ${name}: verify = ${state.verify.join(' && ') || '(none)'}; fast = ${state.verifyFast.join(' && ') || '(same as verify)'}`,
+        state.loop.enabled
+          ? `Inner loop: on (max ${state.loop.max}) — in Claude Code, each stop re-runs the fast verify until it passes. Turn off: pnpm task set --loop off`
+          : 'Inner loop: off',
+      ].join('\n')
     );
     return 0;
   },

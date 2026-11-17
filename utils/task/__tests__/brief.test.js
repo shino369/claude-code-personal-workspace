@@ -129,6 +129,15 @@ describe('formatBrief', () => {
     ]);
   });
 
+  test('should show the inner loop only when it is on', () => {
+    const loop = { enabled: true, iteration: 2, max: 5 };
+    expect(brief({ loop })).toContain(
+      'Loop: on — iteration 2/5; each stop re-runs the fast verify (off: pnpm task set --loop off)'
+    );
+    expect(brief({ loop: { ...loop, enabled: false } })).not.toContain('Loop:');
+    expect(brief({ loop: null })).not.toContain('Loop:');
+  });
+
   test('should say the task is done', () => {
     expect(brief({ status: 'done' })).toContain(
       'Next step: none — the task is done'

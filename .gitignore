@@ -30,6 +30,8 @@ node_modules/
 
 # pnpm specific
 .pnpm-debug.log*
+# Local store pnpm creates when a sandboxed agent (codex, dsh workspace-write) cannot reach the global one
+.pnpm-store/
 
 # Yarn (if accidentally used)
 yarn.lock

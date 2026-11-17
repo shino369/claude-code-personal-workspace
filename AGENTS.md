@@ -42,6 +42,7 @@ outputs.
 | Format / check format         | `pnpm format` / `pnpm format:check`                              |
 | Typecheck                     | `pnpm typecheck`                                                 |
 | Task brief / log / help       | `pnpm task status` · `pnpm task note …` · `pnpm task help`       |
+| Fix until verify passes       | `pnpm loop <task> --agent claude\|codex\|dsh` (`--help`)         |
 | Set up / verify the workspace | `pnpm workspace:setup` / `pnpm workspace:check`                  |
 | Third-party skills            | `pnpm skills:install` · `pnpm skills:check` · `pnpm skills:link` |
 | Add a dev dependency          | `pnpm add -D <pkg> --save-catalog-name=dev`                      |
@@ -83,17 +84,18 @@ In `plan.md`, edit the Goal, Acceptance, and Decisions by hand. The Steps block 
 
 ### 4.2 Work and log progress
 
-| When                                 | Run                                                       |
-| ------------------------------------ | --------------------------------------------------------- |
-| Pick up the next step                | `pnpm task next`, then `pnpm task step <id> start`        |
-| A step is finished                   | `pnpm task step <id> done -m "what changed"`              |
-| A step cannot continue               | `pnpm task step <id> blocked -m "why"`                    |
-| New work appears                     | `pnpm task step add "title" [--deps s1,s2]`               |
-| Check the work                       | `pnpm task verify` (`--fast` for the quick subset)        |
-| Change the goal or verify commands   | `pnpm task set --verify "pnpm check" [--verify-fast "…"]` |
-| End of every session (required)      | `pnpm task note --done "…" --next "…" [--open "…"]`       |
-| Write a review or study              | `pnpm task template review` / `pnpm task template study`  |
-| Everything is done and verify passes | `pnpm task done`                                          |
+| When                                 | Run                                                         |
+| ------------------------------------ | ----------------------------------------------------------- |
+| Pick up the next step                | `pnpm task next`, then `pnpm task step <id> start`          |
+| A step is finished                   | `pnpm task step <id> done -m "what changed"`                |
+| A step cannot continue               | `pnpm task step <id> blocked -m "why"`                      |
+| New work appears                     | `pnpm task step add "title" [--deps s1,s2]`                 |
+| Check the work                       | `pnpm task verify` (`--fast` for the quick subset)          |
+| Change the goal or verify commands   | `pnpm task set --verify "pnpm check" [--verify-fast "…"]`   |
+| Keep working until verify passes     | `pnpm task set --loop on [--loop-max N]` (Claude Stop hook) |
+| End of every session (required)      | `pnpm task note --done "…" --next "…" [--open "…"]`         |
+| Write a review or study              | `pnpm task template review` / `pnpm task template study`    |
+| Everything is done and verify passes | `pnpm task done`                                            |
 
 `pnpm task note` appends (never rewrites) this entry to `NOTES.md` and fills in `State:` for you.
 Write the same shape by hand only when the CLI cannot run:
@@ -106,6 +108,12 @@ State: branch <name>; uncommitted <yes/no>; verify <pass/fail/not run>
 Next: <the single next action, concrete enough to start without rereading everything>
 Open: <blockers or decisions waiting on the user>
 ```
+
+Unattended fix-until-green, any harness: `pnpm loop <task> --agent claude|codex|dsh [--max 5]`.
+It runs the agent headless in a git worktree (`../<repo>-wt/<task>`, branch `loop/<task>`; from the
+main checkout it creates it), re-runs the task's `verify` after each try, and stops on a pass, at
+`--max`, after two tries in a row with no progress, or at the wall-clock cap. Uncommitted changes
+are not in a new worktree. Logs: `tasks/<task>/loop/`. Review and commit the result yourself.
 
 ### 4.3 Resume
 

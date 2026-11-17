@@ -1,5 +1,11 @@
 import { vi } from 'vitest';
-import { DEFAULT_TIMEOUT_MS, runCommands, summarize, tail } from '../verify.js';
+import {
+  DEFAULT_TIMEOUT_MS,
+  runCommands,
+  stripAnsi,
+  summarize,
+  tail,
+} from '../verify.js';
 
 describe('tail', () => {
   test('should keep the last non-empty lines', () => {
@@ -39,6 +45,22 @@ describe('runCommands', () => {
       'a',
       expect.objectContaining({ cwd: '/repo', timeout: DEFAULT_TIMEOUT_MS })
     );
+  });
+
+  test('should strip color codes and ask tools not to color', () => {
+    const spawn = vi.fn().mockReturnValue({
+      status: 1,
+      stdout: '\x1b[31m×\x1b[39m adds\x1b[2K',
+    });
+    const [result] = runCommands({ commands: ['t'], cwd: '/', spawn });
+    expect(result.output).toBe('× adds');
+    expect(spawn).toHaveBeenCalledWith(
+      't',
+      expect.objectContaining({
+        env: expect.objectContaining({ FORCE_COLOR: '0', NO_COLOR: '1' }),
+      })
+    );
+    expect(stripAnsi('plain')).toBe('plain');
   });
 
   test('should report a timeout signal and spawn errors', () => {

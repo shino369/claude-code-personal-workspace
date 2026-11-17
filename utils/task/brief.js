@@ -22,6 +22,7 @@ export const LINE_WIDTH = 220;
  *   nextStep: { id: string | null, title: string, status: string, owner: string | null } | null,
  *   next: string | null,
  *   lastVerify: import('./state.js').VerifyResult | null,
+ *   loop: import('./state.js').TaskState['loop'] | null,
  *   verify: string[],
  *   branch: string | null,
  *   git: GitInfo,
@@ -69,6 +70,7 @@ export function summarizeTask(task, git) {
         : null,
       next: state.next ?? lastNext,
       lastVerify: state.lastVerify,
+      loop: state.loop,
       verify: state.verify,
       branch: state.branch,
       git,
@@ -94,6 +96,7 @@ export function summarizeTask(task, git) {
       : null,
     next: lastNext,
     lastVerify: null,
+    loop: null,
     verify: [],
     branch: null,
     git,
@@ -156,6 +159,11 @@ export function formatBrief(summary) {
   lines.push(
     `Last verify: ${formatVerify(summary.lastVerify, summary.verify)}`
   );
+  if (summary.loop?.enabled) {
+    lines.push(
+      `Loop: on — iteration ${summary.loop.iteration}/${summary.loop.max}; each stop re-runs the fast verify (off: pnpm task set --loop off)`
+    );
+  }
   const mismatch =
     summary.branch && git.branch && summary.branch !== git.branch
       ? ` — ! task branch is ${summary.branch}; switch or confirm with the user`

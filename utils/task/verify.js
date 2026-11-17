@@ -22,6 +22,15 @@ const defaultSpawn = (command, options) =>
     spawnSync(command, { ...options, shell: true })
   );
 
+/** ANSI escape sequences (colors, cursor moves) that some tools print even with FORCE_COLOR=0. */
+export const ANSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+
+/**
+ * @param {string} text
+ * @returns {string}
+ */
+export const stripAnsi = (text) => text.replace(ANSI_RE, '');
+
 /**
  * Last `count` non-empty lines of text.
  *
@@ -59,12 +68,14 @@ export function runCommands({
       encoding: 'utf-8',
       timeout: timeoutMs,
       maxBuffer: 64 * 1024 * 1024,
-      env: { ...process.env, FORCE_COLOR: '0' },
+      env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
     });
-    const output = [result.stdout, result.stderr, result.error?.message]
-      .filter(Boolean)
-      .map(String)
-      .join('\n');
+    const output = stripAnsi(
+      [result.stdout, result.stderr, result.error?.message]
+        .filter(Boolean)
+        .map(String)
+        .join('\n')
+    );
     const ok = result.status === 0;
     results.push({
       command,

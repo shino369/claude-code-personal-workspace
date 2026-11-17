@@ -286,6 +286,7 @@ Claude Code hooks do not run in other harnesses. The git hooks in `.githooks/` (
 | -------------------- | ----------------------------- | ------------------------------------------------- |
 | `session_start.js`   | `SessionStart`                | Injects the active task's resume brief.           |
 | `pre_compact.js`     | `PreCompact`                  | Appends a checkpoint to the task's `NOTES.md`.    |
+| `task_loop.js`       | `Stop`, `UserPromptSubmit`    | Opt-in inner loop: blocks until verify passes.    |
 | `context_monitor.js` | `UserPromptSubmit`            | Warns at 20/40/60% of the context window.         |
 | `audit_logger.js`    | `PostToolUse` (`*`)           | Logs tool use to `logs/<YYYYMMDD>/logging.jsonl`. |
 | `auto_format.js`     | `PostToolUse` (`Edit\|Write`) | Runs Prettier on edited files.                    |

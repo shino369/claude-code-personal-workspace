@@ -30,7 +30,7 @@ export const DATE_SUFFIX_RE = /-\d{6}$/;
  *   verify: string[],
  *   verifyFast: string[],
  *   lastVerify: VerifyResult | null,
- *   loop: { enabled: boolean, iteration: number, max: number },
+ *   loop: { enabled: boolean, iteration: number, max: number, signature?: string | null, repeats?: number, halted?: boolean },
  *   createdAt: string,
  *   updatedAt: string,
  *   lastAgent: string | null,
@@ -128,6 +128,14 @@ export function validateState(state) {
     !Number.isInteger(loop.max)
   ) {
     errors.push('loop must be { enabled: boolean, iteration: int, max: int }');
+  } else if (
+    (loop.signature !== undefined && !isNullableString(loop.signature)) ||
+    (loop.repeats !== undefined && !Number.isInteger(loop.repeats)) ||
+    (loop.halted !== undefined && typeof loop.halted !== 'boolean')
+  ) {
+    errors.push(
+      'loop.signature must be a string or null, loop.repeats an int, loop.halted a boolean'
+    );
   }
 
   if (!Array.isArray(s.steps)) {
