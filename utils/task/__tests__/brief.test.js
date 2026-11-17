@@ -47,6 +47,19 @@ describe('summarizeTask', () => {
     });
   });
 
+  test('should treat a state.json written before kinds existed as general', () => {
+    const task = makeTask();
+    const {
+      kind: _k,
+      e2e: _e,
+      ...legacy
+    } = /** @type {import('../state.js').TaskState} */ (task.state);
+    expect(summarizeTask({ ...task, state: legacy }, GIT)).toMatchObject({
+      kind: 'general',
+      e2e: 'no',
+    });
+  });
+
   test('should prefer state.next over the notes', () => {
     const task = makeTask({ notes: notes('## a\n\nNext: from note') });
     /** @type {import('../state.js').TaskState} */ (task.state).next =
@@ -127,6 +140,37 @@ describe('formatBrief', () => {
       'Last note: none yet',
       'Commands: pnpm task step <id> start|done · pnpm task note --done "…" --next "…" · pnpm task verify',
     ]);
+  });
+
+  test('should summarize the quality state of a code task', () => {
+    const task = makeTask();
+    const state = /** @type {import('../state.js').TaskState} */ (task.state);
+    const code = {
+      ...task,
+      state: { ...state, kind: /** @type {const} */ ('code') },
+    };
+    expect(summarizeTask(code, GIT)).toMatchObject({
+      quality: { phase: 'build', reviewRounds: 0 },
+      qualityLine: 'build — review round 0/2; no findings yet',
+    });
+    expect(summarizeTask(task, GIT)).toMatchObject({
+      quality: null,
+      qualityLine: null,
+    });
+  });
+
+  test('should show the quality line only when there is one', () => {
+    expect(brief({ qualityLine: 'build — review round 0/2' })).toContain(
+      'Quality: build — review round 0/2'
+    );
+    expect(brief({ qualityLine: null })).not.toContain('Quality:');
+  });
+
+  test('should show the kind line only for code tasks', () => {
+    expect(brief({ kind: 'code', e2e: 'required' })).toContain(
+      'Kind: code — test-first; pnpm task check runs before verify; e2e required'
+    );
+    expect(brief({ kind: 'general' })).not.toContain('Kind:');
   });
 
   test('should show the inner loop only when it is on', () => {

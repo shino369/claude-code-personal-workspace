@@ -382,3 +382,57 @@ describe('runLoop', () => {
     );
   });
 });
+
+describe('runLoop with pending work', () => {
+  test('should keep iterating on a green verify until nothing is pending', () => {
+    seedTask();
+    const deps = makeDeps({ outcomes: [true] });
+    let open = 2;
+    const result = loop(deps, {
+      label: 'fix-r1',
+      pending: () =>
+        Array.from(
+          { length: open-- > 0 ? open + 1 : 0 },
+          (_, i) => `s${i + 2}. fix: x`
+        ),
+    });
+    expect(result).toMatchObject({ ok: true, reason: 'green', iterations: 2 });
+    expect(result.logDir).toMatch(/run-\d+-fix-r1$/);
+    const prompt = vi.mocked(deps.runAgent).mock.calls[0][0].prompt;
+    expect(prompt).toContain('fix these confirmed review findings test-first');
+    expect(prompt).toContain('  s2. fix: x\n  s3. fix: x');
+    expect(prompt).toContain('Last verify: passed.');
+    expect(
+      fs.readFileSync(path.join(result.logDir, 'iter-1.md'), 'utf-8')
+    ).toContain('Progress: verify passed, 1 step(s) still open');
+    expect(
+      fs.readFileSync(path.join(tasksRoot(root), NAME, 'NOTES.md'), 'utf-8')
+    ).toContain(
+      'pnpm loop --agent codex (fix-r1): verify passed, nothing left open (2 agent iteration(s)).'
+    );
+  });
+
+  test('should stop with no progress when nothing changes and steps stay open', () => {
+    seedTask();
+    const deps = makeDeps({ outcomes: [true], prints: ['same'] });
+    const result = loop(deps, { pending: () => ['s2. fix: x'] });
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'no-progress',
+      iterations: 2,
+    });
+    expect(
+      fs.readFileSync(path.join(result.logDir, 'iter-2.md'), 'utf-8')
+    ).toContain('verify passed, 1 step(s) still open (no file changes; 2/2)');
+  });
+
+  test('should report open steps at the iteration cap', () => {
+    seedTask();
+    const deps = makeDeps({ outcomes: [true] });
+    const result = loop(deps, { max: 1, pending: () => ['s2. fix: x'] });
+    expect(result).toMatchObject({ ok: false, reason: 'max', iterations: 1 });
+    expect(
+      fs.readFileSync(path.join(tasksRoot(root), NAME, 'NOTES.md'), 'utf-8')
+    ).toContain('1 step(s) still open after 1 iteration(s)');
+  });
+});

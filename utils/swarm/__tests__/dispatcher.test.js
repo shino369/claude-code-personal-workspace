@@ -502,6 +502,22 @@ describe('runSwarm', () => {
     );
   });
 
+  test('should refuse a task that keeps code in its task folder', async () => {
+    newTask();
+    for (const file of ['a.js', 'b.js', 'c.js', 'd.js']) {
+      fs.mkdirSync(path.join(taskDir(), 'app'), { recursive: true });
+      fs.writeFileSync(path.join(taskDir(), 'app', file), 'export {};\n');
+    }
+    await expect(swarm()).rejects.toThrow(
+      /keeps code in its task folder \(app\/a\.js, app\/b\.js, app\/c\.js, … 4 files\)\..*\nFix: put the product code in a git-tracked place/s
+    );
+    fs.rmSync(path.join(taskDir(), 'app', 'd.js'));
+    await expect(swarm()).rejects.toThrow(
+      /\(app\/a\.js, app\/b\.js, app\/c\.js\)\. tasks\/ is git-ignored/
+    );
+    expect(fs.existsSync(path.join(taskDir(), LOCK_FILE))).toBe(false);
+  });
+
   test('should be ok with nothing to do when every step is already done', async () => {
     newTask();
     task(['step', 's1', 'done']);

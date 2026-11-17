@@ -101,6 +101,7 @@ const plan = await agent(
     `Run \`pnpm task status${taskArg ? ` ${taskArg}` : ''} --json\` (and \`pnpm task help\` if unsure). The main checkout is the first entry of \`git worktree list\`.`,
     'If the task has no steps at all, plan them first by following .claude/agents/planner.md (record them with pnpm task), then return them.',
     'If there is no such task, it has no verify commands, or it has no state.json, set `problem` to the reason and the Fix: command.',
+    `Then run \`pnpm swarm ${taskArg || '<task>'} --agent claude --dry-run\` (it starts nothing). If it fails because the task keeps code in its task folder, set \`problem\` to its message: tasks/ is git-ignored, so worktrees cannot pass that code between steps either.`,
   ].join('\n'),
   { label: 'plan', phase: 'Plan', schema: PLAN_SCHEMA }
 );

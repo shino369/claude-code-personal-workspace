@@ -11,12 +11,14 @@ import { spawnSync } from 'child_process';
  */
 
 /**
+ * Run git with a fixed argument array; trimmed stdout, or null on failure.
+ *
  * @param {Spawn} spawn
  * @param {string} cwd
  * @param {string[]} args
  * @returns {string | null}
  */
-function git(spawn, cwd, args) {
+export function git(spawn, cwd, args) {
   try {
     const result = spawn('git', args, {
       cwd,

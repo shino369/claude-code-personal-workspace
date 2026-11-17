@@ -20,7 +20,9 @@ import {
   renderTemplate,
 } from './markdown.js';
 import {
+  E2E_MODES,
   STEP_STATUSES,
+  TASK_KINDS,
   addStep,
   claimStep,
   createState,
@@ -45,7 +47,20 @@ import {
   updateState,
   writeActive,
 } from './store.js';
+import { formatCheck, withCheck } from './check.js';
 import { FRESH_LOOP, parseMax } from './loop.js';
+import { countFindings, freshQuality, toFix } from './quality.js';
+import {
+  findingsTemplate,
+  fingerprint,
+  formatReviewBrief,
+  openRound,
+  parseFindings,
+  recordFindings,
+  reviewBase,
+  reviewFiles,
+  reviewScope,
+} from './review.js';
 import { summarize, tail } from './verify.js';
 
 export const HELP = `Usage: pnpm task <command> [options]
@@ -56,7 +71,10 @@ Start / resume
   switch <name>                 Make <name> the active task
   new <name> --goal "…"         Create tasks/<name>-<yymmdd>/ and make it active
       [--acceptance "…"] [--step "…"]… [--verify "cmd"]… [--verify-fast "cmd"]…
-  init [name] [--goal "…"] [--verify "cmd"]…
+      [--kind code|general] [--e2e required|no]
+                                --kind code (the default when --verify is given): the
+                                inner loop starts on and pnpm task check runs before verify
+  init [name] [--goal "…"] [--verify "cmd"]… [--kind …] [--e2e …]
                                 Add state.json to a hand-written task (steps from plan.md)
 
 Work
@@ -69,15 +87,27 @@ Work
                                 claim; --force takes over a step another agent claimed)
   note --done "…" --next "…" [--open "…"] [-m "…"]
                                 Append a NOTES.md entry (State line is filled in for you)
-  verify [--fast]               Run the task's verify commands; exit 1 on failure
+  check [--fix]                 Lint (ESLint), format-check (Prettier), and typecheck (tsc)
+                                the task's code; --fix rewrites what ESLint/Prettier can fix
+  verify [--fast] [--no-check]  Run the task's verify commands; exit 1 on failure. Tasks
+                                with code run pnpm task check first (--no-check skips it)
   set [--goal "…"] [--verify "cmd"]… [--verify-fast "cmd"]…
                                 Change the goal or replace the verify command lists
+  set --kind code|general [--e2e required|no]
+                                Change the task kind (code turns the loop on) or e2e mode
   set --loop on|off [--loop-max N]
                                 Inner loop (Claude Stop hook): keep working until the
                                 fast verify passes, at most N times (default 5)
+  review [--base <ref>] [--force]
+                                Code tasks: open the next review round (max 2) and write the
+                                brief + findings file for clean-context reviewers. Scope: the
+                                task's code, else git changes since --base (default main)
+  review record [file]          Read the triaged findings table; CONFIRMED must-fix/high
+                                findings become fix: steps
   template review|study [--name <kebab>]
                                 Copy a REVIEW_/STUDIES_ template into the task
-  done [-m "…"] [--force]       Close the task (needs a passing verify unless --force)
+  done [-m "…"] [--force]       Close the task (needs a passing verify; code tasks also a
+                                finished review loop; --force overrides)
 
 Options
   --task <name>   Act on <name> instead of the active task
@@ -102,6 +132,9 @@ const VALUE_FLAGS = {
   '--name': 'name',
   '--loop': 'loop',
   '--loop-max': 'loopMax',
+  '--kind': 'kind',
+  '--e2e': 'e2e',
+  '--base': 'base',
 };
 const REPEATABLE = new Set(['step', 'verify', 'verifyFast']);
 const BOOLEAN_FLAGS = {
@@ -109,6 +142,8 @@ const BOOLEAN_FLAGS = {
   '--fast': 'fast',
   '--all': 'all',
   '--force': 'force',
+  '--fix': 'fix',
+  '--no-check': 'noCheck',
   '--help': 'help',
   '-h': 'help',
 };
@@ -118,9 +153,10 @@ const BOOLEAN_FLAGS = {
  *   positionals: string[],
  *   goal?: string, acceptance?: string, deps?: string, message?: string,
  *   done?: string, next?: string, open?: string, agent?: string, task?: string, name?: string,
- *   loop?: string, loopMax?: string,
+ *   loop?: string, loopMax?: string, kind?: string, e2e?: string, base?: string,
  *   step: string[], verify: string[], verifyFast: string[],
  *   json: boolean, fast: boolean, all: boolean, force: boolean, help: boolean,
+ *   fix: boolean, noCheck: boolean,
  * }} Options
  * @typedef {import('./deps.js').Deps} Deps
  */
@@ -141,6 +177,8 @@ export function parseArgs(argv) {
     all: false,
     force: false,
     help: false,
+    fix: false,
+    noCheck: false,
   };
   const record = /** @type {Record<string, unknown>} */ (options);
 
@@ -292,7 +330,135 @@ function output(deps, options, json, text) {
   deps.log(options.json ? JSON.stringify(json, null, 2) : text);
 }
 
-/** @type {Record<string, (options: Options, deps: Deps) => number>} */
+/**
+ * Validate --kind / --e2e values.
+ *
+ * @param {Options} options
+ * @returns {{ kind?: 'code' | 'general', e2e?: 'required' | 'no' }}
+ */
+export function parseKind(options) {
+  if (options.kind !== undefined && !TASK_KINDS.includes(options.kind)) {
+    throw new Error(
+      `--kind must be ${TASK_KINDS.join(' or ')} (got "${options.kind}")`
+    );
+  }
+  if (options.e2e !== undefined && !E2E_MODES.includes(options.e2e)) {
+    throw new Error(
+      `--e2e must be ${E2E_MODES.join(' or ')} (got "${options.e2e}")`
+    );
+  }
+  return /** @type {{ kind?: 'code' | 'general', e2e?: 'required' | 'no' }} */ ({
+    kind: options.kind,
+    e2e: options.e2e,
+  });
+}
+
+/**
+ * Kind and e2e mode for a new task: --kind, else `code` when verify commands
+ * are given. A code task needs verify commands (the loop's finish line).
+ *
+ * @param {Options} options
+ * @returns {{ kind: 'code' | 'general', e2e: 'required' | 'no' }}
+ */
+export function resolveKind(options) {
+  const parsed = parseKind(options);
+  const kind = parsed.kind ?? (options.verify.length > 0 ? 'code' : 'general');
+  if (kind === 'code' && options.verify.length === 0) {
+    throw new Error(
+      'A code task needs a finish line: its test command. pnpm task check (lint, format, types) runs before it automatically.\nFix: add --verify "<test command>" (e.g. pnpm exec vitest run --root tasks/<name>/app), or use --kind general'
+    );
+  }
+  return { kind, e2e: parsed.e2e ?? 'no' };
+}
+
+/** Matches verify commands that run end-to-end tests. */
+export const E2E_COMMAND_RE = /e2e|playwright/i;
+
+/**
+ * What a new or re-kinded code task does, for the CLI output.
+ *
+ * @param {import('./state.js').TaskState} state
+ * @returns {string[]}
+ */
+export function codeTaskLines(state) {
+  if (state.kind !== 'code') return [];
+  const lines = [
+    `Coding task: work test-first (failing test, then code); verify = ${state.verify.join(' && ')}; pnpm task check (lint, format, types) runs before it once the task has code; inner loop ${state.loop.enabled ? `on (max ${state.loop.max})` : 'off'}.`,
+  ];
+  if (
+    state.e2e === 'required' &&
+    !state.verify.some((command) => E2E_COMMAND_RE.test(command))
+  ) {
+    lines.push(
+      'e2e: required, but no verify command runs e2e tests yet. Fix: pnpm task set --verify "<unit tests>" --verify "<e2e tests>" once the e2e suite exists.'
+    );
+  }
+  return lines;
+}
+
+/**
+ * Why a code task cannot be closed yet (empty = it can): the quality loop
+ * (AGENTS.md §4.5) needs at least one review round, no open round, no open
+ * CONFIRMED must-fix/high finding, and an e2e verify command when e2e is
+ * required. General tasks have no such gate.
+ *
+ * @param {import('./state.js').TaskState} state
+ * @returns {string[]} one "problem — Fix: …" line each
+ */
+export function doneBlockers(state) {
+  if (state.kind !== 'code') return [];
+  const quality = state.quality ?? freshQuality();
+  /** @type {string[]} */
+  const blockers = [];
+  if (quality.reviewRounds === 0) {
+    blockers.push(
+      'No review round ran. Fix: pnpm task review, then the reviewer and the triage in clean contexts, then pnpm task review record'
+    );
+  } else if (quality.phase === 'review') {
+    blockers.push(
+      `Review round ${quality.reviewRounds} is open but not recorded. Fix: finish the reviewer and the triage, then pnpm task review record`
+    );
+  }
+  const done = new Set(
+    state.steps.filter((s) => s.status === 'done').map((s) => s.id)
+  );
+  const open = toFix(quality).filter((f) => !f.step || !done.has(f.step));
+  if (open.length > 0) {
+    blockers.push(
+      `${open.length} CONFIRMED must-fix/high finding(s) not fixed: ${open.map((f) => `${f.id}${f.step ? ` (step ${f.step})` : ''}`).join(', ')}. Fix: fix each test-first, then pnpm task step <id> done`
+    );
+  }
+  if (
+    state.e2e === 'required' &&
+    !state.verify.some((command) => E2E_COMMAND_RE.test(command))
+  ) {
+    blockers.push(
+      'e2e: required, but no verify command runs e2e tests. Fix: pnpm task set --verify "<unit tests>" --verify "<e2e tests>", then pnpm task verify'
+    );
+  }
+  return blockers;
+}
+
+/**
+ * The default Acceptance line for a new task.
+ *
+ * @param {Options} options
+ * @param {{ kind: string, e2e: string }} mode
+ * @returns {string}
+ */
+export function defaultAcceptance(options, { kind, e2e }) {
+  const parts = [
+    options.verify.length > 0
+      ? `\`${options.verify.join('` and `')}\` ${options.verify.length === 1 ? 'passes' : 'pass'}`
+      : '`pnpm check` passes',
+  ];
+  if (kind === 'code')
+    parts.push('`pnpm task check` passes (lint, format, types)');
+  if (e2e === 'required') parts.push('e2e tests cover the user-facing flows');
+  return parts.join('; ');
+}
+
+/** @type {Record<string, (options: Options, deps: Deps) => number | Promise<number>>} */
 export const COMMANDS = {
   help(_options, deps) {
     deps.log(HELP);
@@ -308,6 +474,7 @@ export const COMMANDS = {
     const now = deps.now();
     const name = taskDirName(raw, now);
     const agent = detectAgent(options, deps.env);
+    const mode = resolveKind(options);
     const state = createState({
       name,
       goal: options.goal,
@@ -317,16 +484,13 @@ export const COMMANDS = {
       branch: deps.git(deps.rootDir).branch,
       agent,
       now,
+      ...mode,
     });
     const dir = scaffoldTask({
       rootDir: deps.rootDir,
       name,
       state,
-      acceptance:
-        options.acceptance ??
-        (options.verify.length > 0
-          ? `\`${options.verify.join('` and `')}\` ${options.verify.length === 1 ? 'passes' : 'pass'}`
-          : '`pnpm check` passes'),
+      acceptance: options.acceptance ?? defaultAcceptance(options, mode),
       date: formatLocal(now),
       templatesDir: deps.templatesDir,
     });
@@ -337,6 +501,7 @@ export const COMMANDS = {
       { ok: true, name, dir, state },
       [
         `Created ${path.relative(deps.rootDir, dir)}/ (active task).`,
+        ...codeTaskLines(state),
         state.steps.length === 0
           ? 'Next: add steps — pnpm task step add "…"'
           : `Next: pnpm task step ${state.steps[0].id} start`,
@@ -365,13 +530,17 @@ export const COMMANDS = {
       branch: deps.git(deps.rootDir).branch,
       agent: detectAgent(options, deps.env),
       now: deps.now(),
+      ...resolveKind(options),
     });
     saveState(task.dir, state);
     output(
       deps,
       options,
       { ok: true, name, state },
-      `Created ${name}/${STATE_FILE} with ${state.steps.length} step(s) from plan.md. state.json now tracks the steps; plan.md is unchanged.`
+      [
+        `Created ${name}/${STATE_FILE} with ${state.steps.length} step(s) from plan.md. state.json now tracks the steps; plan.md is unchanged.`,
+        ...codeTaskLines(state),
+      ].join('\n')
     );
     return 0;
   },
@@ -616,10 +785,13 @@ export const COMMANDS = {
         `${name} has no ${STATE_FILE}.\nFix: pnpm task init ${name} --verify "pnpm check"`
       );
     }
-    const commands =
+    const listed =
       options.fast && task.state.verifyFast.length > 0
         ? task.state.verifyFast
         : task.state.verify;
+    const commands = options.noCheck
+      ? listed
+      : withCheck(listed, { name, taskDir: task.dir });
     if (commands.length === 0) {
       throw new Error(
         `${name} has no verify commands.\nFix: pnpm task set --verify "pnpm check" (add --verify-fast "…" for a quick subset)`
@@ -665,12 +837,15 @@ export const COMMANDS = {
       options.verify.length === 0 &&
       options.verifyFast.length === 0 &&
       options.loop === undefined &&
-      options.loopMax === undefined
+      options.loopMax === undefined &&
+      options.kind === undefined &&
+      options.e2e === undefined
     ) {
       throw new Error(
-        'Usage: pnpm task set [--goal "…"] [--verify "cmd"]… [--verify-fast "cmd"]… (each list replaces the old one) [--loop on|off] [--loop-max N]'
+        'Usage: pnpm task set [--goal "…"] [--verify "cmd"]… [--verify-fast "cmd"]… (each list replaces the old one) [--loop on|off] [--loop-max N] [--kind code|general] [--e2e required|no]'
       );
     }
+    const mode = parseKind(options);
     if (options.loop !== undefined && !['on', 'off'].includes(options.loop)) {
       throw new Error(`--loop must be on or off (got "${options.loop}")`);
     }
@@ -685,17 +860,26 @@ export const COMMANDS = {
       (current) => {
         const verify =
           options.verify.length > 0 ? options.verify : current.verify;
+        // Becoming a code task turns the loop on unless --loop says otherwise.
+        const becomesCode = mode.kind === 'code' && current.kind !== 'code';
+        const turnsOn =
+          options.loop === 'on' || (options.loop === undefined && becomesCode);
         const enabled =
           options.loop === undefined
-            ? current.loop.enabled
+            ? current.loop.enabled || becomesCode
             : options.loop === 'on';
-        if (enabled && options.loop === 'on' && verify.length === 0) {
+        if (turnsOn && verify.length === 0) {
           throw new Error(
-            `${name} has no verify commands, so the loop has no finish line.\nFix: pnpm task set --verify "pnpm check" --loop on`
+            `${name} has no verify commands, so the loop has no finish line.\nFix: pnpm task set --verify "<test command>" ${becomesCode ? '--kind code' : '--loop on'}`
           );
         }
         return {
           ...current,
+          ...(mode.kind ? { kind: mode.kind } : {}),
+          ...(becomesCode && !current.quality
+            ? { quality: freshQuality() }
+            : {}),
+          ...(mode.e2e ? { e2e: mode.e2e } : {}),
           goal: options.goal ?? current.goal,
           verify,
           verifyFast:
@@ -703,7 +887,7 @@ export const COMMANDS = {
               ? options.verifyFast
               : current.verifyFast,
           loop:
-            options.loop === undefined && max === undefined
+            options.loop === undefined && max === undefined && !becomesCode
               ? current.loop
               : { enabled, max: max ?? current.loop.max, ...FRESH_LOOP },
         };
@@ -719,6 +903,100 @@ export const COMMANDS = {
         state.loop.enabled
           ? `Inner loop: on (max ${state.loop.max}) — in Claude Code, each stop re-runs the fast verify until it passes. Turn off: pnpm task set --loop off`
           : 'Inner loop: off',
+        ...(mode.kind || mode.e2e ? codeTaskLines(state) : []),
+      ].join('\n')
+    );
+    return 0;
+  },
+
+  review(options, deps) {
+    const sub = options.positionals[1];
+    if (sub === 'record') return recordReview(options, deps);
+    if (sub !== undefined) {
+      throw new Error(
+        'Usage: pnpm task review [--base <ref>] [--force] | pnpm task review record [file]'
+      );
+    }
+    const name = resolveTaskName(deps.rootDir, options.task);
+    const task = loadTask(deps.rootDir, name);
+    if (!task.state) {
+      throw new Error(
+        `${name} has no ${STATE_FILE}.\nFix: pnpm task init ${name} --verify "<test command>"`
+      );
+    }
+    const quality = task.state.quality ?? freshQuality();
+    const base = reviewBase({
+      quality,
+      taskDir: task.dir,
+      base: options.base,
+    });
+    const scope = reviewScope({
+      rootDir: deps.rootDir,
+      taskDir: task.dir,
+      base,
+      runGit: deps.runGit,
+    });
+    const print = fingerprint(deps.rootDir, scope.files);
+    const now = deps.now();
+    const agent = detectAgent(options, deps.env);
+    let round = 0;
+    let reopened = false;
+    const state = updateState(
+      deps.rootDir,
+      name,
+      (current) => {
+        const result = openRound(current, {
+          fingerprint: print,
+          base,
+          force: options.force,
+        });
+        round = result.round;
+        reopened = result.reopened;
+        return result.state;
+      },
+      { now, agent }
+    );
+    const taskRel = path
+      .relative(deps.rootDir, task.dir)
+      .split(path.sep)
+      .join('/');
+    const files = reviewFiles(name, round);
+    fs.mkdirSync(path.join(task.dir, 'reviews'), { recursive: true });
+    fs.writeFileSync(
+      path.join(task.dir, files.brief),
+      formatReviewBrief({ state, round, scope, taskRel }),
+      'utf-8'
+    );
+    const findingsPath = path.join(task.dir, files.findings);
+    if (!fs.existsSync(findingsPath)) {
+      fs.writeFileSync(
+        findingsPath,
+        findingsTemplate({ name, round, brief: `${taskRel}/${files.brief}` }),
+        'utf-8'
+      );
+    }
+    if (!reopened) {
+      writeNote(deps, task, {
+        at: now,
+        agent,
+        label: `review r${round} opened`,
+        message: `Review round ${round}/${quality.maxRounds} opened: ${scope.files.length} file(s), fingerprint ${print}.`,
+      });
+    }
+    const brief = `${taskRel}/${files.brief}`;
+    const findings = `${taskRel}/${files.findings}`;
+    output(
+      deps,
+      options,
+      { ok: true, task: name, round, reopened, scope, brief, findings },
+      [
+        `${reopened ? 'Review round still open' : 'Opened review round'} ${round}/${quality.maxRounds} for ${name} (${scope.files.length} file(s)).`,
+        `Brief: ${brief}`,
+        `Findings: ${findings}`,
+        'Run the review and the triage in clean contexts, not yourself (you wrote the code):',
+        `  Claude Code: Agent tool, subagent_type "reviewer", prompt "Follow ${brief}"; then subagent_type "verifier", prompt "Triage ${findings} as step 2 of ${brief} says".`,
+        `  Other harnesses: pnpm agent ask --agent <another agent> - < ${brief}, paste its rows into the findings table, then ask another agent for the triage.`,
+        'Then: pnpm task review record',
       ].join('\n')
     );
     return 0;
@@ -767,6 +1045,18 @@ export const COMMANDS = {
     return 0;
   },
 
+  async check(options, deps) {
+    const name = targetName(options, deps);
+    const task = loadTask(deps.rootDir, name);
+    const result = await deps.runCheck({
+      rootDir: deps.rootDir,
+      taskDir: task.dir,
+      fix: options.fix,
+    });
+    output(deps, options, { task: name, ...result }, formatCheck(result, name));
+    return result.ok ? 0 : 1;
+  },
+
   done(options, deps) {
     const name = targetName(options, deps);
     const task = loadTask(deps.rootDir, name);
@@ -781,6 +1071,20 @@ export const COMMANDS = {
         `The last verify did not pass (${verify ? `\`${verify.failed}\` failed` : 'not run'}).\nFix: pnpm task verify — or, if the user agrees, pnpm task done --force`
       );
     }
+    const blockers = doneBlockers(task.state);
+    if (blockers.length > 0 && !options.force) {
+      throw new Error(
+        [
+          `${name} is a code task and its quality loop is not finished:`,
+          ...blockers.map((b) => `- ${b}`),
+          'Fix: the lines above — or, if the user agrees, pnpm task done --force',
+        ].join('\n')
+      );
+    }
+    const forced =
+      blockers.length > 0
+        ? ` Forced past: ${blockers.map((b) => b.split('. Fix:')[0]).join('; ')}.`
+        : '';
     const now = deps.now();
     const agent = detectAgent(options, deps.env);
     updateState(
@@ -793,7 +1097,7 @@ export const COMMANDS = {
       at: now,
       agent,
       label: 'done',
-      message: `Task closed.${options.message ? ` ${options.message}` : ''}`,
+      message: `Task closed.${options.message ? ` ${options.message}` : ''}${forced}`,
       state: stateLine(deps, task),
     });
     if (readActive(deps.rootDir) === name) writeActive(deps.rootDir, null);
@@ -803,8 +1107,102 @@ export const COMMANDS = {
 };
 
 /**
- * @param {{ argv?: string[], deps?: Partial<Deps> }} [options]
+ * `pnpm task review record [file]`: close the open round with its findings.
+ *
+ * @param {Options} options
+ * @param {Deps} deps
  * @returns {number}
+ */
+function recordReview(options, deps) {
+  const name = resolveTaskName(deps.rootDir, options.task);
+  const task = loadTask(deps.rootDir, name);
+  if (!task.state) {
+    throw new Error(
+      `${name} has no ${STATE_FILE}.\nFix: pnpm task init ${name}`
+    );
+  }
+  const quality = task.state.quality ?? freshQuality();
+  const round = quality.reviewRounds;
+  const given = options.positionals[2];
+  const file = given
+    ? path.resolve(deps.rootDir, given)
+    : path.join(task.dir, reviewFiles(name, round).findings);
+  if (!fs.existsSync(file)) {
+    throw new Error(
+      `No findings file at ${path.relative(deps.rootDir, file)}.\nFix: pnpm task review (opens a round and creates it)`
+    );
+  }
+  const { findings, errors } = parseFindings(fs.readFileSync(file, 'utf-8'), {
+    round,
+    takenIds: new Set(quality.findings.map((f) => f.id)),
+  });
+  if (errors.length > 0) {
+    throw new Error(
+      `${path.relative(deps.rootDir, file)} is not ready:\n${errors.map((e) => `- ${e}`).join('\n')}\nFix the rows above, then re-run: pnpm task review record`
+    );
+  }
+  const now = deps.now();
+  const agent = detectAgent(options, deps.env);
+  /** @type {import('./state.js').Step[]} */
+  let fixSteps = [];
+  const state = updateState(
+    deps.rootDir,
+    name,
+    (current) => {
+      const result = recordFindings(current, findings);
+      fixSteps = result.fixSteps;
+      return result.state;
+    },
+    { now, agent }
+  );
+  const recordedQuality = /** @type {import('./quality.js').Quality} */ (
+    state.quality
+  );
+  const counts = countFindings({ ...recordedQuality, findings }, state.steps);
+  const fixIds = new Set(
+    toFix({ ...recordedQuality, findings }).map((f) => f.id)
+  );
+  const recordedOnly = findings.filter(
+    (f) => f.verdict === 'CONFIRMED' && !fixIds.has(f.id)
+  );
+  const summary = `Round ${round}: ${counts.total} finding(s) — ${counts.confirmed} confirmed, ${counts.refuted} refuted; ${fixSteps.length} fix step(s)${fixSteps.length > 0 ? ` (${fixSteps.map((s) => s.id).join(', ')})` : ''}; ${recordedOnly.length} medium/low recorded.`;
+  writeNote(deps, task, {
+    at: now,
+    agent,
+    label: `review r${round} recorded`,
+    message: summary,
+  });
+  const last = round >= recordedQuality.maxRounds;
+  output(
+    deps,
+    options,
+    {
+      ok: true,
+      task: name,
+      round,
+      findings,
+      fixSteps,
+      quality: recordedQuality,
+    },
+    [
+      summary,
+      ...fixSteps.map((s) => `  ${s.id}. ${s.title}`),
+      ...(recordedOnly.length > 0
+        ? [
+            `Recorded, not fixed (medium/low): ${recordedOnly.map((f) => f.id).join(', ')} — list them under Open in the final note.`,
+          ]
+        : []),
+      fixSteps.length === 0
+        ? 'No must-fix/high findings: the quality loop is complete. When verify passes: pnpm task done'
+        : `Next: pnpm task step ${fixSteps[0].id} start — fix test-first, then pnpm task verify. ${last ? `That was the last review round (${round}/${recordedQuality.maxRounds}): after the fixes, no more reviews.` : 'After all fixes pass verify: pnpm task review (next round).'}`,
+    ].join('\n')
+  );
+  return 0;
+}
+
+/**
+ * @param {{ argv?: string[], deps?: Partial<Deps> }} [options]
+ * @returns {number | Promise<number>}
  */
 export function main({ argv = process.argv.slice(2), deps = {} } = {}) {
   /** @type {Deps} */
@@ -820,10 +1218,10 @@ export function main({ argv = process.argv.slice(2), deps = {} } = {}) {
   return COMMANDS[command](options, resolved);
 }
 
-/* c8 ignore next 8 - CLI entry point */
-runIfMain(import.meta.url, () => {
+/* c8 ignore next 9 - CLI entry point */
+runIfMain(import.meta.url, async () => {
   try {
-    process.exit(main());
+    process.exit(await main());
   } catch (error) {
     console.error('Error:', error instanceof Error ? error.message : error);
     process.exit(1);

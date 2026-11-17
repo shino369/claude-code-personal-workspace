@@ -123,14 +123,15 @@ actual window if it differs.
 ### 6. Task Loop (`task_loop.js`)
 
 **Event:** Stop (plus `UserPromptSubmit` with `--reset`)
-**Purpose:** The opt-in inner loop: keep working until the task's fast verify passes.
+**Purpose:** The inner loop: keep working until the task's fast verify passes; for code tasks, then
+walk through the quality loop (review round → triage → fixes; AGENTS.md §4.5).
 
 **What it does:**
 
-- Does nothing unless the active task has the loop on (`pnpm task set --loop on [--loop-max N]`);
-  with the loop off it exits without running anything
-- Otherwise runs the task's `verifyFast` commands (else `verify`) with a 240 s timeout, and records
-  `lastVerify` in `state.json`
+- Does nothing unless the active task has the loop on (the default for code tasks;
+  `pnpm task set --loop on [--loop-max N]`); with the loop off it exits without running anything
+- Otherwise runs `pnpm task check` (when the task folder has code) and the task's `verifyFast`
+  commands (else `verify`) with a 240 s timeout, and records `lastVerify` in `state.json`
 - On failure, blocks the stop with the failure summary (`decision: "block"`) and counts the
   iteration; lets the stop through at `loop.max`, or when the same failure repeats three times in a
   row (no progress), writes a NOTES entry, and marks the loop `halted`: later stops skip verify
@@ -141,6 +142,12 @@ actual window if it differs.
   `<task-notification>` prompts and missing prompts (fail closed)
 - The block message tells the agent not to retry failures that code cannot fix (git, install, or
   environment errors), and to tell the user and turn the loop off instead
+- Code tasks, once verify passes (`decideQuality` in `utils/task/quality.js`): an open review round
+  or open confirmed `fix:` steps block the stop with what to finish; when every step is done, fewer
+  than 2 rounds ran, and the reviewed code changed since the last round, it blocks with "run
+  `pnpm task review`". Each reminder fires once per situation (`quality.nudged`), so an agent that
+  cannot run reviewers is never blocked forever. Otherwise it marks the loop complete and writes a
+  NOTES entry listing the recorded medium/low findings
 - Skips when `TASK_INNER_LOOP=off` (the `pnpm loop` outer loop sets this for its child sessions);
   fails open on any error
 

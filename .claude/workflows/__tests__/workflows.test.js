@@ -359,6 +359,17 @@ describe('implement-plan', () => {
     });
   });
 
+  test('should have the plan agent check for task-folder code', async () => {
+    const { calls } = await runWorkflow('implement-plan', {
+      args: { task: 'demo' },
+      respond: () => ({ problem: 'keeps code in its task folder' }),
+    });
+    expect(calls[0].prompt).toContain(
+      'pnpm swarm demo --agent claude --dry-run'
+    );
+    expect(calls[0].prompt).toContain('keeps code in its task folder');
+  });
+
   test('should stop without a usable plan', async () => {
     const problem = await runWorkflow('implement-plan', {
       respond: responder({

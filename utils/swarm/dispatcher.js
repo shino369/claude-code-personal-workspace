@@ -14,6 +14,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { listCodeFiles } from '../task/check.js';
 import { formatGit } from '../task/git.js';
 import {
   appendSeparator,
@@ -159,6 +160,26 @@ export function releaseStaleClaims(rootDir, name, now) {
 }
 
 /**
+ * Refuse a task that keeps code in its git-ignored task folder: the swarm
+ * moves work between workers only through git, so that code would never
+ * leave the worker that wrote it (decision 15).
+ *
+ * @param {string} taskDir
+ * @param {string} name
+ */
+export function assertNoTaskCode(taskDir, name) {
+  const code = listCodeFiles(taskDir);
+  if (code.length > 0) {
+    throw new Error(
+      [
+        `${name} keeps code in its task folder (${code.slice(0, 3).join(', ')}${code.length > 3 ? `, … ${code.length} files` : ''}). tasks/ is git-ignored, and the swarm moves work between workers only through git commits and merges, so that code would never reach the other workers or the integration branch.`,
+        'Fix: put the product code in a git-tracked place (its own repository, or a tracked folder on a branch) and run the swarm there — or, for this task, use pnpm loop (one worktree) or pnpm task claim with agents in one checkout.',
+      ].join('\n')
+    );
+  }
+}
+
+/**
  * Run the swarm until no step can be claimed and no worker is running.
  *
  * @param {SwarmOptions} options
@@ -184,6 +205,7 @@ export async function runSwarm({
       `${name} has no verify commands, so swarm steps have no finish line.\nFix: pnpm task set --task ${name} --verify "pnpm check"`
     );
   }
+  assertNoTaskCode(taskDir, name);
   const release = acquireSwarmLock(taskDir, deps);
   try {
     const released = releaseStaleClaims(rootDir, name, deps.date());

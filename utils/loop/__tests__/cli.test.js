@@ -111,6 +111,8 @@ describe('parseArgs', () => {
       task: undefined,
       agent: 'claude',
       bin: undefined,
+      review: false,
+      reviewer: undefined,
       max: 5,
       stall: 2,
       timeoutMin: 60,
@@ -139,11 +141,15 @@ describe('parseArgs', () => {
         '2',
         '--dry-run',
         '-h',
+        '--review',
+        '--reviewer=codex',
       ])
     ).toEqual({
       task: 'demo',
       agent: 'dsh',
       bin: 'npx -y @deepseek-ai/dsh',
+      review: true,
+      reviewer: 'codex',
       max: 3,
       stall: 1,
       timeoutMin: 30,
@@ -245,6 +251,98 @@ describe('main', () => {
     expect(
       run(['--agent', 'dsh', '--dry-run', '--bin', 'mydsh']).out
     ).toContain('Agent: mydsh --profile headless');
+  });
+
+  describe('--review', () => {
+    /** @param {string} root */
+    const seedCode = (root) => {
+      const dir = path.join(tasksRoot(root), NAME);
+      fs.mkdirSync(path.join(dir, 'app'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'app', 'a.js'), 'export {};\n');
+      saveState(
+        dir,
+        createState({
+          name: NAME,
+          goal: 'G',
+          verify: ['pnpm test'],
+          kind: 'code',
+          now: NOW,
+        })
+      );
+      writeActive(root, NAME);
+    };
+
+    test('should need a code task and --review for --reviewer', () => {
+      seedTask(repo);
+      expect(() => run([NAME, '--agent', 'codex', '--review'])).toThrow(
+        `--review needs a code task (${NAME} is not one).\nFix: pnpm task set --task ${NAME} --kind code`
+      );
+      expect(() =>
+        run([NAME, '--agent', 'codex', '--reviewer', 'claude'])
+      ).toThrow(
+        /--reviewer only applies with --review\.\nFix: .*--review --reviewer claude/
+      );
+    });
+
+    test('should show the read-only reviewer on a dry run', () => {
+      seedCode(repo);
+      const { out } = run([
+        '--agent',
+        'codex',
+        '--review',
+        '--reviewer',
+        'claude',
+        '--dry-run',
+      ]);
+      expect(out).toContain(
+        'Review: reviewer + triage: claude -p --permission-mode plan'
+      );
+      expect(
+        run(['--agent', 'dsh', '--review', '--bin', 'mydsh', '--dry-run']).out
+      ).toContain(
+        'reviewer + triage: mydsh --profile headless --permission-mode read-only'
+      );
+    });
+
+    test('should run the quality loop and report it', () => {
+      const linked = path.join(base, 'linked');
+      git(repo, ['worktree', 'add', '-q', '-b', 'x', linked]);
+      seedCode(linked);
+      const runAgent = vi.fn(() => ({
+        code: 0,
+        signal: null,
+        output: 'BEGIN FINDINGS\nEND FINDINGS',
+        stdout: 'BEGIN FINDINGS\nEND FINDINGS',
+        durationMs: 1,
+      }));
+
+      const { code, out } = run([NAME, '--agent', 'codex', '--review'], {
+        rootDir: linked,
+        install: undefined,
+        runAgent,
+        runCommands: verifySequence([true]),
+      });
+
+      expect(code).toBe(0);
+      expect(out).toContain(
+        `✓ ${NAME}: quality loop complete — nothing changed since the last review.`
+      );
+      expect(out).toContain('(findings: reviews/, summary: NOTES.md)');
+      expect(runAgent).toHaveBeenCalledTimes(1);
+    });
+
+    test('should exit 1 when the quality loop stops', () => {
+      const linked = path.join(base, 'linked');
+      git(repo, ['worktree', 'add', '-q', '-b', 'y', linked]);
+      seedCode(linked);
+      const { code, out } = run([NAME, '--agent', 'codex', '--review'], {
+        rootDir: linked,
+        install: undefined,
+        runCommands: verifySequence([true]),
+      });
+      expect(code).toBe(1);
+      expect(out).toContain('quality loop stopped (reviewer)');
+    });
   });
 
   test('should run in place inside a linked worktree', () => {

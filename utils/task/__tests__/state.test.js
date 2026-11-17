@@ -134,6 +134,29 @@ describe('validateState', () => {
     ).toEqual([message]);
   });
 
+  test('should accept a known kind and e2e mode, or neither', () => {
+    expect(
+      validateState({ ...makeState(), kind: 'code', e2e: 'required' })
+    ).toEqual([]);
+    const { kind: _k, e2e: _e, ...legacy } = makeState();
+    expect(validateState(legacy)).toEqual([]);
+  });
+
+  test('should validate quality when present', () => {
+    const code = createState({ name: 'n', goal: 'g', kind: 'code', now: NOW });
+    expect(validateState(code)).toEqual([]);
+    expect(
+      validateState({ ...code, quality: { ...code.quality, phase: 'x' } })
+    ).toEqual(['quality.phase must be one of build, review, fix, complete']);
+  });
+
+  test('should reject an unknown kind or e2e mode', () => {
+    expect(validateState({ ...makeState(), kind: 'app', e2e: 'yes' })).toEqual([
+      'kind must be one of code, general',
+      'e2e must be one of required, no',
+    ]);
+  });
+
   test('should report invalid steps, duplicate ids, and unknown deps', () => {
     const errors = validateState({
       ...makeState(),
@@ -216,6 +239,29 @@ describe('createState', () => {
       createdAt: NOW.toISOString(),
       updatedAt: NOW.toISOString(),
     });
+  });
+
+  test('should default to a general task with the loop off', () => {
+    expect(createState({ name: 'n', goal: 'g' })).toMatchObject({
+      kind: 'general',
+      e2e: 'no',
+      loop: { enabled: false },
+    });
+  });
+
+  test('should start a code task with the loop on and a fresh quality state', () => {
+    expect(
+      createState({ name: 'n', goal: 'g', kind: 'code', e2e: 'required' })
+    ).toMatchObject({
+      kind: 'code',
+      e2e: 'required',
+      loop: { enabled: true },
+      quality: { phase: 'build', reviewRounds: 0, maxRounds: 2 },
+    });
+  });
+
+  test('should give a general task no quality state', () => {
+    expect(createState({ name: 'n', goal: 'g' }).quality).toBeUndefined();
   });
 
   test('should default the timestamp to now', () => {

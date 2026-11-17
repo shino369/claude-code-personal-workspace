@@ -10,6 +10,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { formatBrief, summarizeTask } from '../task/brief.js';
+import { withCheck } from '../task/check.js';
 import { formatGit } from '../task/git.js';
 import { INNER_LOOP_ENV, failureSignature } from '../task/loop.js';
 import {
@@ -70,9 +71,10 @@ export function fingerprint(cwd, spawn) {
 }
 
 /**
- * The prompt for one iteration.
+ * The prompt for one iteration. `pending` lists work besides a green verify
+ * (the open `fix:` steps of a review round), one line each.
  *
- * @param {{ name: string, iteration: number, max: number, verify: string[], lastVerify: VerifyResult, brief: string }} input
+ * @param {{ name: string, iteration: number, max: number, verify: string[], lastVerify: VerifyResult, brief: string, pending?: string[] }} input
  * @returns {string}
  */
 export function buildPrompt({
@@ -82,17 +84,31 @@ export function buildPrompt({
   verify,
   lastVerify,
   brief,
+  pending = [],
 }) {
   return [
     `You are running unattended: iteration ${iteration} of ${max} of \`pnpm loop\` for task ${name}.`,
     '',
-    'Your goal: make these verify commands pass (run from the repository root):',
+    ...(pending.length > 0
+      ? [
+          'Your goal: fix these confirmed review findings test-first (first a failing test that shows the problem, then the fix), and mark each step done once it is fixed:',
+          ...pending.map((line) => `  ${line}`),
+          '',
+          'Fix only these; the other findings were recorded and are out of scope. Then make these verify commands pass (run from the repository root):',
+        ]
+      : [
+          'Your goal: make these verify commands pass (run from the repository root):',
+        ]),
     ...verify.map((command) => `  ${command}`),
     '',
-    `Last verify: \`${lastVerify.failed}\` failed. Output tail:`,
-    '```',
-    lastVerify.summary,
-    '```',
+    ...(lastVerify.ok
+      ? ['Last verify: passed.']
+      : [
+          `Last verify: \`${lastVerify.failed}\` failed. Output tail:`,
+          '```',
+          lastVerify.summary,
+          '```',
+        ]),
     '',
     'Task brief:',
     brief,
@@ -148,7 +164,10 @@ export function formatIterationLog({
 /**
  * Run the outer loop for one task in `rootDir` (already a worktree).
  *
- * @param {{ rootDir: string, name: string, command: AgentCommand, max: number, stall: number, timeoutMs: number, iterationTimeoutMs: number, deps: LoopDeps }} options
+ * The loop is done when verify passes and `pending(state)` (default: none)
+ * lists nothing; `label` names the phase in the log folder and the note.
+ *
+ * @param {{ rootDir: string, name: string, command: AgentCommand, max: number, stall: number, timeoutMs: number, iterationTimeoutMs: number, deps: LoopDeps, pending?: (state: import('../task/state.js').TaskState) => string[], label?: string }} options
  * @returns {LoopResult}
  */
 export function runLoop({
@@ -160,6 +179,8 @@ export function runLoop({
   timeoutMs,
   iterationTimeoutMs,
   deps,
+  pending = () => [],
+  label,
 }) {
   const started = deps.clock();
   const startedAt = deps.date();
@@ -167,7 +188,7 @@ export function runLoop({
   const logDir = path.join(
     taskDir,
     'loop',
-    `run-${formatLocal(startedAt, { withTime: true }).replace(/[^0-9]/g, '')}`
+    `run-${formatLocal(startedAt, { withTime: true }).replace(/[^0-9]/g, '')}${label ? `-${label}` : ''}`
   );
   const initial = loadTask(rootDir, name).state;
   if (!initial || initial.verify.length === 0) {
@@ -175,7 +196,7 @@ export function runLoop({
       `${name} has no verify commands, so the loop has no finish line.\nFix: pnpm task set --task ${name} --verify "pnpm check"`
     );
   }
-  const { verify } = initial;
+  const verify = withCheck(initial.verify, { name, taskDir });
 
   /** @returns {VerifyResult} */
   const check = () => {
@@ -192,13 +213,22 @@ export function runLoop({
 
   deps.log(`▶ baseline verify: ${verify.join(' && ')}`);
   let lastVerify = check();
+  /** @returns {string[]} */
+  const open = () =>
+    pending(
+      /** @type {import('../task/state.js').TaskState} */ (
+        loadTask(rootDir, name).state
+      )
+    );
+  let todo = open();
+  const finished = () => lastVerify.ok && todo.length === 0;
   /** @type {StopReason} */
-  let reason = lastVerify.ok ? 'green' : 'max';
+  let reason = finished() ? 'green' : 'max';
   let iterations = 0;
   let previous = failureSignature(lastVerify);
   let stalls = 0;
 
-  while (!lastVerify.ok && iterations < max) {
+  while (!finished() && iterations < max) {
     const remaining = timeoutMs - (deps.clock() - started);
     if (remaining <= 0) {
       reason = 'timeout';
@@ -220,24 +250,28 @@ export function runLoop({
         verify,
         lastVerify,
         brief,
+        pending: todo,
       }),
       timeoutMs: Math.min(remaining, iterationTimeoutMs),
       env: { ...deps.env, [INNER_LOOP_ENV]: 'off', TASK_AGENT: command.agent },
     });
     const after = deps.fingerprint(rootDir);
     lastVerify = check();
+    todo = open();
 
     const signature = failureSignature(lastVerify);
     const unchanged = before !== null && before === after;
     const repeated = signature !== null && signature === previous;
-    stalls = !lastVerify.ok && (unchanged || repeated) ? stalls + 1 : 0;
+    stalls = !finished() && (unchanged || repeated) ? stalls + 1 : 0;
     previous = signature;
 
-    const progress = lastVerify.ok
+    const progress = finished()
       ? 'verify passed'
-      : unchanged || repeated
-        ? `none (${[unchanged && 'no file changes', repeated && 'same failure'].filter(Boolean).join(', ')}; ${stalls}/${stall})`
-        : 'new failure';
+      : lastVerify.ok
+        ? `verify passed, ${todo.length} step(s) still open${unchanged ? ` (no file changes; ${stalls}/${stall})` : ''}`
+        : unchanged || repeated
+          ? `none (${[unchanged && 'no file changes', repeated && 'same failure'].filter(Boolean).join(', ')}; ${stalls}/${stall})`
+          : 'new failure';
     fs.mkdirSync(logDir, { recursive: true });
     fs.writeFileSync(
       path.join(logDir, `iter-${iterations}.md`),
@@ -256,7 +290,7 @@ export function runLoop({
       `  ${lastVerify.ok ? '✓ verify passed' : `✗ \`${lastVerify.failed}\` failed`} — progress: ${progress}`
     );
 
-    if (lastVerify.ok) {
+    if (finished()) {
       reason = 'green';
     } else if (stalls >= stall) {
       reason = 'no-progress';
@@ -269,8 +303,10 @@ export function runLoop({
 
   /** @type {Record<StopReason, string>} */
   const outcome = {
-    green: 'verify passed',
-    max: `verify still fails after ${max} iteration(s)`,
+    green: label ? 'verify passed, nothing left open' : 'verify passed',
+    max: lastVerify.ok
+      ? `${todo.length} step(s) still open after ${max} iteration(s)`
+      : `verify still fails after ${max} iteration(s)`,
     'no-progress': `stopped: no progress in ${stall} iteration(s) in a row`,
     timeout: `stopped: wall-clock cap (${Math.round(timeoutMs / 60000)} min)`,
   };
@@ -281,11 +317,11 @@ export function runLoop({
       at: deps.date(),
       agent: command.agent,
       label: 'auto: outer loop',
-      message: `pnpm loop --agent ${command.agent}: ${outcome[reason]} (${iterations} agent iteration(s)).${iterations > 0 ? ` Logs: ${relativeLogs}/` : ''}${lastVerify.ok ? '' : ` Last failure: \`${lastVerify.failed}\`.`}`,
+      message: `pnpm loop --agent ${command.agent}${label ? ` (${label})` : ''}: ${outcome[reason]} (${iterations} agent iteration(s)).${iterations > 0 ? ` Logs: ${relativeLogs}/` : ''}${lastVerify.ok ? '' : ` Last failure: \`${lastVerify.failed}\`.`}`,
       state: `${formatGit(deps.git(rootDir))}; verify ${lastVerify.ok ? 'pass' : 'fail'}`,
     }),
     appendSeparator
   );
 
-  return { ok: lastVerify.ok, reason, iterations, lastVerify, logDir };
+  return { ok: finished(), reason, iterations, lastVerify, logDir };
 }

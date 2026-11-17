@@ -212,6 +212,74 @@ describe('new', () => {
     expect(read('plan.md')).toContain(expected);
   });
 
+  test('should make a task with verify commands a code task with the loop on', () => {
+    const { out } = newTask(['--verify', 'pnpm test']);
+    expect(state()).toMatchObject({
+      kind: 'code',
+      e2e: 'no',
+      loop: { enabled: true },
+    });
+    expect(out).toContain(
+      'Coding task: work test-first (failing test, then code); verify = pnpm test; pnpm task check (lint, format, types) runs before it once the task has code; inner loop on (max 5).'
+    );
+    expect(read('plan.md')).toContain(
+      'Acceptance: `pnpm test` passes; `pnpm task check` passes (lint, format, types)'
+    );
+  });
+
+  test('should keep a task without verify commands general', () => {
+    const { out } = newTask();
+    expect(state()).toMatchObject({
+      kind: 'general',
+      loop: { enabled: false },
+    });
+    expect(out).not.toContain('Coding task');
+  });
+
+  test('should require verify commands for --kind code', () => {
+    expect(() => newTask(['--kind', 'code'])).toThrow(
+      /A code task needs a finish line[^]*Fix: add --verify "<test command>"/
+    );
+  });
+
+  test('should allow a general task with verify commands', () => {
+    newTask(['--verify', 'pnpm check', '--kind', 'general']);
+    expect(state()).toMatchObject({
+      kind: 'general',
+      loop: { enabled: false },
+    });
+  });
+
+  test('should warn when e2e is required but no verify command runs it', () => {
+    const { out } = newTask(['--verify', 'pnpm test', '--e2e', 'required']);
+    expect(out).toContain(
+      'e2e: required, but no verify command runs e2e tests yet.'
+    );
+    expect(read('plan.md')).toContain(
+      '; e2e tests cover the user-facing flows'
+    );
+  });
+
+  test('should not warn when a verify command runs e2e tests', () => {
+    const { out } = newTask([
+      '--verify',
+      'pnpm test',
+      '--verify',
+      'pnpm exec playwright test',
+      '--e2e',
+      'required',
+    ]);
+    expect(state().e2e).toBe('required');
+    expect(out).not.toContain('e2e: required, but');
+  });
+
+  test.each([
+    [['--kind', 'app'], /--kind must be code or general \(got "app"\)/],
+    [['--e2e', 'yes'], /--e2e must be required or no \(got "yes"\)/],
+  ])('should reject %j', (extra, error) => {
+    expect(() => newTask(extra)).toThrow(error);
+  });
+
   test('should print JSON', () => {
     expect(JSON.parse(newTask(['--json']).out)).toMatchObject({
       ok: true,
@@ -246,6 +314,16 @@ describe('init', () => {
     fs.rmSync(path.join(tasksRoot(root), 'bare-251101', 'plan.md'));
     const { out } = run(['init', 'bare', '--goal', 'Given', '--json']);
     expect(JSON.parse(out).state.goal).toBe('Given');
+  });
+
+  test('should make the adopted task a code task when verify is given', () => {
+    legacyTask();
+    const { out } = run(['init', 'old', '--verify', 'pnpm test']);
+    expect(loadTask(root, 'old-251101').state).toMatchObject({
+      kind: 'code',
+      loop: { enabled: true },
+    });
+    expect(out).toContain('Coding task:');
   });
 
   test('should refuse a plan with no goal', () => {
@@ -544,11 +622,257 @@ describe('verify', () => {
       /no verify commands\.\nFix: pnpm task set/
     );
   });
+
+  test('should run pnpm task check first when the task has code', () => {
+    newTask(['--verify', 'pnpm test']);
+    fs.mkdirSync(path.join(tasksRoot(root), NAME, 'scripts'), {
+      recursive: true,
+    });
+    fs.writeFileSync(path.join(tasksRoot(root), NAME, 'scripts', 'a.js'), '');
+    const runCommands = fakeRunner([{ ok: true }, { ok: true }]);
+    run(['verify'], { runCommands });
+    expect(runCommands.mock.calls[0][0].commands).toEqual([
+      `pnpm task check --task ${NAME}`,
+      'pnpm test',
+    ]);
+
+    const skipped = fakeRunner([{ ok: true }]);
+    run(['verify', '--no-check'], { runCommands: skipped });
+    expect(skipped.mock.calls[0][0].commands).toEqual(['pnpm test']);
+  });
+});
+
+describe('check', () => {
+  const result = (/** @type {boolean} */ ok) => ({
+    ok,
+    skipped: false,
+    parts: [{ name: /** @type {const} */ ('eslint'), ok, output: 'out' }],
+  });
+
+  test('should report a pass and pass --fix through', async () => {
+    newTask();
+    const runCheck = vi.fn(async () => result(true));
+    const { code } = run(['check', '--fix'], { runCheck });
+    expect(await code).toBe(0);
+    expect(logs.join('\n')).toContain('✓ check passed');
+    expect(runCheck).toHaveBeenCalledWith({
+      rootDir: root,
+      taskDir: path.join(tasksRoot(root), NAME),
+      fix: true,
+    });
+  });
+
+  test('should exit 1 on failure and print JSON with --json', async () => {
+    newTask();
+    const runCheck = vi.fn(async () => result(false));
+    const { code } = run(['check', '--json'], { runCheck });
+    expect(await code).toBe(1);
+    expect(JSON.parse(logs.join('\n'))).toMatchObject({
+      ok: false,
+      task: NAME,
+      parts: [{ name: 'eslint' }],
+    });
+  });
+});
+
+describe('review', () => {
+  const finishSteps = () => {
+    run(['step', 's1', 'done']);
+    run(['step', 's2', 'done']);
+  };
+  const taskDir = () => path.join(tasksRoot(root), NAME);
+  const findingsFile = (/** @type {number} */ n) =>
+    path.join(taskDir(), 'reviews', `REVIEW_${NAME}-r${n}.md`);
+  /** A code task with one code file and a green verify. */
+  const greenCodeTask = () => {
+    newTask(['--verify', 'pnpm test']);
+    finishSteps();
+    fs.mkdirSync(path.join(taskDir(), 'app'), { recursive: true });
+    fs.writeFileSync(path.join(taskDir(), 'app', 'a.js'), 'export {};\n');
+    run(['verify'], { runCommands: fakeRunner([{ ok: true }, { ok: true }]) });
+  };
+  const addRows = (/** @type {number} */ n, /** @type {string[]} */ rows) =>
+    fs.appendFileSync(findingsFile(n), `${rows.join('\n')}\n`);
+  const HIGH =
+    '| | app/a.js:1 | high | Leaks handle | open twice → EMFILE | CONFIRMED | no close |';
+  const LOW =
+    '| | app/a.js | low | Odd name | reading it | CONFIRMED | agreed |';
+
+  test('should open round 1, write the brief and findings files, and log it', () => {
+    greenCodeTask();
+    const { code, out } = run(['review']);
+    expect(code).toBe(0);
+    expect(out).toContain(`Opened review round 1/2 for ${NAME} (1 file(s)).`);
+    expect(out).toContain(`Brief: tasks/${NAME}/reviews/BRIEF_${NAME}-r1.md`);
+    expect(out).toContain('subagent_type "reviewer"');
+    expect(out).toContain('Then: pnpm task review record');
+    expect(state().quality).toMatchObject({
+      phase: 'review',
+      reviewRounds: 1,
+      base: null,
+    });
+    expect(read(`reviews/BRIEF_${NAME}-r1.md`)).toContain(
+      `- tasks/${NAME}/app/a.js`
+    );
+    expect(read('NOTES.md')).toContain('Review round 1/2 opened: 1 file(s)');
+  });
+
+  test('should reprint an open round without touching the findings file', () => {
+    greenCodeTask();
+    run(['review']);
+    addRows(1, [HIGH]);
+    const notes = read('NOTES.md');
+    const { out } = run(['review', '--json']);
+    expect(JSON.parse(out)).toMatchObject({ round: 1, reopened: true });
+    expect(fs.readFileSync(findingsFile(1), 'utf-8')).toContain('Leaks handle');
+    expect(read('NOTES.md')).toBe(notes);
+    expect(run(['review']).out).toContain('Review round still open 1/2');
+  });
+
+  test('should review git changes since main when the task has no code', () => {
+    newTask(['--verify', 'pnpm test']);
+    finishSteps();
+    run(['verify']);
+    /** @type {import('../review.js').RunGit} */
+    const runGit = (args) =>
+      args[0] === 'merge-base' ? 'abc' : args[0] === 'diff' ? 'utils/x.js' : '';
+    const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
+    expect(parsed.scope).toEqual({
+      base: 'main',
+      mergeBase: 'abc',
+      files: ['utils/x.js'],
+    });
+    expect(state().quality?.base).toBe('main');
+  });
+
+  test('should take --base and --force', () => {
+    newTask(['--verify', 'pnpm test']);
+    finishSteps();
+    const runGit = vi.fn(() => 'abc');
+    run(['review', '--base', 'dev', '--force'], { runGit });
+    expect(runGit).toHaveBeenCalledWith(['merge-base', 'HEAD', 'dev'], root);
+  });
+
+  test('should explain a missing state.json and an unknown subcommand', () => {
+    legacyTask();
+    expect(() => run(['review', '--task', 'old'])).toThrow(
+      /pnpm task init old-251101/
+    );
+    expect(() => run(['review', 'record', '--task', 'old'])).toThrow(
+      /pnpm task init old-251101/
+    );
+    expect(() => run(['review', 'later'])).toThrow(/Usage: pnpm task review/);
+  });
+
+  test('should record fixes, then run round 2 and complete the loop', () => {
+    greenCodeTask();
+    run(['review']);
+    addRows(1, [HIGH, LOW]);
+
+    const first = run(['review', 'record']).out;
+    expect(first).toContain(
+      'Round 1: 2 finding(s) — 2 confirmed, 0 refuted; 1 fix step(s) (s3); 1 medium/low recorded.'
+    );
+    expect(first).toContain('  s3. fix: Leaks handle (app/a.js:1; r1-1)');
+    expect(first).toContain('Recorded, not fixed (medium/low): r1-2');
+    expect(first).toContain(
+      'After all fixes pass verify: pnpm task review (next round).'
+    );
+    expect(state().quality?.phase).toBe('fix');
+    expect(() => run(['review'])).toThrow(/before the next review: s3/);
+
+    run(['step', 's3', 'done']);
+    const second = run(['review']).out;
+    expect(second).toContain('Opened review round 2/2');
+    expect(read(`reviews/BRIEF_${NAME}-r2.md`)).toContain('- fixed r1-1');
+
+    const last = run(['review', 'record']).out;
+    expect(last).toContain('Round 2: 0 finding(s)');
+    expect(last).toContain('the quality loop is complete');
+    expect(state().quality).toMatchObject({
+      phase: 'complete',
+      reviewRounds: 2,
+    });
+    expect(() => run(['review'])).toThrow(/2\/2 review rounds \(the limit\)/);
+  });
+
+  test('should say when the last round still has fixes', () => {
+    greenCodeTask();
+    const quality = { ...state().quality, reviewRounds: 1, phase: 'complete' };
+    fs.writeFileSync(
+      path.join(taskDir(), 'state.json'),
+      JSON.stringify({ ...state(), quality })
+    );
+    run(['review']);
+    addRows(2, [HIGH]);
+    const { out } = run(['review', 'record']);
+    expect(out).toContain(
+      'That was the last review round (2/2): after the fixes, no more reviews.'
+    );
+    expect(state().quality?.phase).toBe('fix');
+  });
+
+  test('should print the recorded round as JSON', () => {
+    greenCodeTask();
+    run(['review']);
+    addRows(1, [HIGH]);
+    const parsed = JSON.parse(run(['review', 'record', '--json']).out);
+    expect(parsed).toMatchObject({
+      ok: true,
+      round: 1,
+      fixSteps: [{ id: 's3' }],
+    });
+  });
+
+  test('should refuse rows that have not been triaged and name the file', () => {
+    greenCodeTask();
+    run(['review']);
+    addRows(1, ['| | app/a.js | high | c | s |  |  |']);
+    expect(() => run(['review', 'record'])).toThrow(
+      new RegExp(
+        `REVIEW_${NAME}-r1\\.md is not ready:\\n- row 1: no verdict yet`
+      )
+    );
+  });
+
+  test('should read a findings file given on the command line', () => {
+    greenCodeTask();
+    run(['review']);
+    const other = path.join(root, 'elsewhere.md');
+    fs.writeFileSync(
+      other,
+      fs.readFileSync(findingsFile(1), 'utf-8') + `${LOW}\n`
+    );
+    expect(run(['review', 'record', 'elsewhere.md']).out).toContain(
+      'Round 1: 1 finding(s)'
+    );
+  });
+
+  test('should handle a code task written before quality existed', () => {
+    greenCodeTask();
+    const { quality: _q, ...legacy } = state();
+    const file = path.join(taskDir(), 'state.json');
+    fs.writeFileSync(file, JSON.stringify(legacy));
+    expect(() => run(['review', 'record'])).toThrow(
+      /REVIEW_demo-261117-r0\.md/
+    );
+    fs.writeFileSync(file, JSON.stringify(legacy));
+    expect(run(['review']).out).toContain('Opened review round 1/2');
+  });
+
+  test('should explain a missing findings file', () => {
+    greenCodeTask();
+    expect(() => run(['review', 'record'])).toThrow(
+      new RegExp(
+        `No findings file at tasks/${NAME}/reviews/REVIEW_${NAME}-r0\\.md`
+      )
+    );
+  });
 });
 
 describe('set', () => {
   test('should replace the goal and verify lists', () => {
-    newTask(['--verify', 'old']);
+    newTask(['--verify', 'old', '--kind', 'general']);
     expect(
       run(['set', '--goal', 'New goal', '--verify', 'a', '--verify', 'b']).out
     ).toBe(
@@ -590,7 +914,7 @@ describe('set', () => {
   });
 
   test('should change only the cap and keep the loop setting', () => {
-    newTask(['--verify', 'pnpm test']);
+    newTask(['--verify', 'pnpm test', '--kind', 'general']);
     run(['set', '--loop-max', '7']);
     expect(state().loop).toMatchObject({ enabled: false, max: 7 });
     run(['set', '--loop', 'on']);
@@ -601,9 +925,65 @@ describe('set', () => {
   test('should refuse to turn the loop on without verify commands', () => {
     newTask();
     expect(() => run(['set', '--loop', 'on'])).toThrow(
-      /no verify commands, so the loop has no finish line\.\nFix: pnpm task set --verify "pnpm check" --loop on/
+      /no verify commands, so the loop has no finish line\.\nFix: pnpm task set --verify "<test command>" --loop on/
     );
     expect(state().loop.enabled).toBe(false);
+  });
+
+  test('should turn the loop on when a task becomes a code task', () => {
+    newTask(['--verify', 'pnpm test', '--kind', 'general']);
+    const { out } = run(['set', '--kind', 'code', '--e2e', 'required']);
+    expect(state()).toMatchObject({
+      kind: 'code',
+      e2e: 'required',
+      loop: { enabled: true, iteration: 0 },
+    });
+    expect(out).toContain('Inner loop: on (max 5)');
+    expect(out).toContain('Coding task:');
+    expect(state().quality).toMatchObject({ phase: 'build', reviewRounds: 0 });
+  });
+
+  test('should keep the quality state when a task becomes a code task again', () => {
+    newTask(['--verify', 'pnpm test']);
+    const quality = { ...state().quality, reviewRounds: 1, phase: 'fix' };
+    fs.writeFileSync(
+      path.join(tasksRoot(root), NAME, 'state.json'),
+      JSON.stringify({ ...state(), kind: 'general', quality })
+    );
+    run(['set', '--kind', 'code']);
+    expect(state().quality).toMatchObject({ reviewRounds: 1, phase: 'fix' });
+  });
+
+  test('should respect --loop off when a task becomes a code task', () => {
+    newTask(['--verify', 'pnpm test', '--kind', 'general']);
+    run(['set', '--kind', 'code', '--loop', 'off']);
+    expect(state()).toMatchObject({ kind: 'code', loop: { enabled: false } });
+  });
+
+  test('should keep the loop as is when an existing code task changes e2e', () => {
+    newTask(['--verify', 'pnpm test']);
+    run(['set', '--loop', 'off']);
+    run(['set', '--kind', 'code', '--e2e', 'no']);
+    expect(state()).toMatchObject({ e2e: 'no', loop: { enabled: false } });
+  });
+
+  test('should keep the kind of a task when only e2e changes', () => {
+    newTask(['--verify', 'pnpm test', '--kind', 'general']);
+    const { out } = run(['set', '--e2e', 'required']);
+    expect(state()).toMatchObject({ kind: 'general', e2e: 'required' });
+    expect(out).not.toContain('Coding task:');
+  });
+
+  test('should refuse to make a task without verify commands a code task', () => {
+    newTask();
+    expect(() => run(['set', '--kind', 'code'])).toThrow(
+      /Fix: pnpm task set --verify "<test command>" --kind code/
+    );
+  });
+
+  test('should reject an unknown kind', () => {
+    newTask();
+    expect(() => run(['set', '--kind', 'app'])).toThrow(/--kind must be/);
   });
 
   test('should accept verify and loop on in one call', () => {
@@ -681,7 +1061,7 @@ describe('done', () => {
   });
 
   test('should close a passing non-active task and keep the pointer', () => {
-    newTask(['--verify', 'a']);
+    newTask(['--verify', 'a', '--kind', 'general']);
     run(['verify']);
     legacyTask();
     run(['switch', 'old']);
@@ -694,11 +1074,113 @@ describe('done', () => {
     legacyTask();
     expect(() => run(['done', 'old'])).toThrow(/pnpm task init old-251101/);
   });
+
+  describe('code tasks', () => {
+    const statePath = () => path.join(tasksRoot(root), NAME, 'state.json');
+    /** @param {(s: any) => void} edit */
+    const patch = (edit) => {
+      const s = JSON.parse(fs.readFileSync(statePath(), 'utf-8'));
+      edit(s);
+      fs.writeFileSync(statePath(), JSON.stringify(s, null, 2));
+    };
+    const finding = (/** @type {object} */ fields) => ({
+      id: 'r1-1',
+      round: 1,
+      file: 'app/a.js',
+      line: 1,
+      severity: 'high',
+      claim: 'Leaks handle',
+      scenario: 'open twice',
+      verdict: 'CONFIRMED',
+      reason: 'no close',
+      step: null,
+      ...fields,
+    });
+    const greenCode = () => {
+      newTask(['--verify', 'pnpm test']);
+      run(['verify']);
+    };
+
+    test('should refuse a code task that never had a review round', () => {
+      greenCode();
+      expect(() => run(['done'])).toThrow(
+        /code task and its quality loop is not finished:\n- No review round ran\. Fix: pnpm task review/
+      );
+      expect(state().status).not.toBe('done');
+    });
+
+    test('should refuse an open round and unfixed confirmed findings', () => {
+      greenCode();
+      run(['step', 'add', 'fix: Leaks handle']);
+      patch((s) => {
+        s.quality.phase = 'review';
+        s.quality.reviewRounds = 2;
+        s.quality.findings = [
+          finding({ step: 's3' }),
+          finding({ id: 'r1-2', severity: 'must-fix' }),
+          finding({ id: 'r1-3', severity: 'low' }),
+          finding({ id: 'r1-4', verdict: 'REFUTED' }),
+        ];
+      });
+      let message = '';
+      try {
+        run(['done']);
+      } catch (error) {
+        message = /** @type {Error} */ (error).message;
+      }
+      expect(message).toContain('Review round 2 is open but not recorded.');
+      expect(message).toContain(
+        '2 CONFIRMED must-fix/high finding(s) not fixed: r1-1 (step s3), r1-2.'
+      );
+      expect(message).not.toContain('No review round ran');
+      expect(message).toContain('pnpm task done --force');
+    });
+
+    test('should refuse e2e: required without an e2e verify command', () => {
+      greenCode();
+      run(['set', '--e2e', 'required']);
+      patch((s) => {
+        s.quality.reviewRounds = 1;
+        s.quality.phase = 'complete';
+      });
+      expect(() => run(['done'])).toThrow(/e2e: required, but no verify/);
+      run(['set', '--verify', 'pnpm test', '--verify', 'pnpm test:e2e']);
+      run(['verify'], {
+        runCommands: fakeRunner([{ ok: true }, { ok: true }]),
+      });
+      expect(run(['done']).out).toBe(`Closed ${NAME}.`);
+    });
+
+    test('should close once a round is recorded and the fixes are done', () => {
+      greenCode();
+      run(['step', 'add', 'fix: Leaks handle']);
+      patch((s) => {
+        s.quality.reviewRounds = 1;
+        s.quality.phase = 'complete';
+        s.quality.findings = [finding({ step: 's3' })];
+        s.steps[2].status = 'done';
+      });
+      expect(run(['done']).out).toBe(`Closed ${NAME}.`);
+      expect(read('NOTES.md')).not.toContain('Forced past');
+    });
+
+    test('should close with --force and log what it skipped', () => {
+      greenCode();
+      patch((s) => {
+        delete s.quality;
+      });
+      expect(run(['done', '--force']).out).toBe(`Closed ${NAME}.`);
+      expect(read('NOTES.md')).toContain(
+        'Task closed. Forced past: No review round ran.'
+      );
+    });
+  });
 });
 
 test('COMMANDS should list every documented command', () => {
   expect(Object.keys(COMMANDS).sort()).toEqual(
     [
+      'check',
       'claim',
       'done',
       'help',
@@ -706,6 +1188,7 @@ test('COMMANDS should list every documented command', () => {
       'list',
       'new',
       'next',
+      'review',
       'note',
       'set',
       'status',

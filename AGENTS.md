@@ -1,7 +1,8 @@
 # AGENTS.md
 
 Instructions for every coding agent in this workspace (Claude Code, Codex, DeepSeek harnesses,
-and others). Read this whole file before acting. Claude-Code-only extras live in `CLAUDE.md`.
+and others). Read this whole file before acting. Claude-Code-only extras live in `CLAUDE.md`; how
+the harness fits together, with examples: `docs/harness.md`.
 
 This is a personal workspace for programming, documentation, research, translation, and
 generative-AI work. It has no app to build: the deliverables are scripts, skills, docs, and task
@@ -47,6 +48,7 @@ outputs.
 | Tools on this machine         | `pnpm tools list` · `pnpm tools show <name>` · `pnpm tools scan` |
 | Ask another agent (read-only) | `pnpm agent ask --agent claude\|codex\|dsh "…"`                  |
 | Fix until verify passes       | `pnpm loop <task> --agent claude\|codex\|dsh` (`--help`)         |
+| Review round (code task)      | `pnpm task review` · `pnpm task review record` (§4.5)            |
 | Run a plan with N workers     | `pnpm swarm <task> --agent claude\|codex\|dsh --workers 2`       |
 | Set up / verify the workspace | `pnpm workspace:setup` / `pnpm workspace:check`                  |
 | Third-party skills            | `pnpm skills:install` · `pnpm skills:check` · `pnpm skills:link` |
@@ -149,6 +151,58 @@ run `pnpm task init <name>` to track their steps with the CLI.
 - Name files for their purpose: `REVIEW_<task-name>.md`, `STUDIES_<task-name>.md`, descriptive
   script names.
 
+### 4.5 Coding tasks: the quality loop
+
+A task that writes code is a **code task**: `pnpm task new <name> --verify "<tests>"` (or
+`--kind code`; existing task: `pnpm task set --kind code`). Code tasks start with the inner loop on,
+and once the task folder has code, `pnpm task verify` runs `pnpm task check` (ESLint, Prettier,
+`tsc` for the task's own code, which the workspace configs skip) before the verify commands. Work in
+this order:
+
+1. **Plan.** Goal, acceptance, steps in `plan.md`; `--e2e required` when there is a UI, a browser,
+   or an integration to test end to end.
+2. **Build test-first.** For each step: a failing test, then the code, then `pnpm task verify`
+   green, then `pnpm task step <id> done`.
+3. **E2E** when the plan says so: add the e2e command to verify
+   (`pnpm task set --verify "<unit>" --verify "<e2e>"`).
+4. **Review in a clean context.** When every step is done and verify is green (`pnpm task review`
+   refuses otherwise; `--force` for an early review), run
+   `pnpm task review`. It writes `reviews/BRIEF_<task>-r<N>.md` and an empty findings table
+   `reviews/REVIEW_<task>-r<N>.md`. A **different, fresh** agent reviews from the brief only (role:
+   `.claude/agents/reviewer.md`; in Claude Code the `reviewer` subagent, elsewhere
+   `pnpm agent ask --agent <other> "…"`). Never review your own code yourself: you know why you
+   wrote it, so you miss what is wrong with it.
+5. **Triage.** Another fresh agent tries to refute each finding (the "Triage mode" of
+   `.claude/agents/verifier.md`) and marks it CONFIRMED or REFUTED; unsure means REFUTED.
+6. **Record and fix.** `pnpm task review record` turns each CONFIRMED must-fix or high finding into
+   a `fix:` step. Fix each test-first, verify green, mark the step done. Medium and low findings are
+   recorded only: list them under `--open` in your last note.
+7. **At most 2 review rounds.** After the fixes, run the next round (step 4). After round 2's fixes,
+   or when a round confirms nothing to fix, the loop is complete. `pnpm task done` refuses a code task
+   until at least one round is recorded, no round is open, every confirmed must-fix/high is fixed, and
+   (with `e2e: required`) a verify command mentions `e2e` or `playwright` (a name match, not proof that
+   it runs e2e tests). `--force` only when the user agrees.
+
+Severity rubric (the reviewer picks it; the triage may lower it, never raise it — `pnpm loop --review`
+rejects a raised severity, and by hand it is the verifier role's rule):
+
+| Severity | Meaning                                                                      | Fixed? |
+| -------- | ---------------------------------------------------------------------------- | ------ |
+| must-fix | Wrong behavior, data loss, a security hole, or an acceptance criterion unmet | yes    |
+| high     | A design or architecture problem that will cause bugs or blocks the goal     | yes    |
+| medium   | A real but local problem                                                     | no     |
+| low      | Cleanup, naming, style                                                       | no     |
+
+Unattended, any harness: `pnpm loop <task> --agent <a> --review [--reviewer <b>]` runs steps 4–7
+headless: verify to green, then each round with a read-only reviewer and triage (fresh agents), and
+the fixes by `<a>`. It reviews only once every step is done (otherwise it stops with `steps-open`).
+In Claude Code the `Stop` hook reminds you of the next step of the loop once per situation.
+
+`pnpm swarm` (and the `implement-plan` workflow) refuses a task that keeps code in its task
+folder: `tasks/` is git-ignored, and the swarm passes work between workers only through git. Put
+product code that needs parallel workers in a git-tracked place (its own repository, or a tracked
+folder on a branch); for task-folder code use `pnpm loop`.
+
 ## 5. Git conventions
 
 The `commit-msg` hook enforces the header; `pnpm workspace:setup` enables it.
@@ -242,6 +296,7 @@ and follow it as a checklist.
 | -------------------------- | ------------------------------------------------------------- |
 | `planner.md`               | Goal → small, verifiable steps with deps (`pnpm task`)        |
 | `verifier.md`              | Independent PASS/FAIL: verify, acceptance, weakened tests     |
+| `reviewer.md`              | Clean-context review round: findings with failure scenarios   |
 | `security-reviewer.md`     | Security review: auth, injection, data exposure, dependencies |
 | `test-runner.md`           | Run tests and report failures and coverage                    |
 | `trilingual-translator.md` | EN/JA/zh-TW translation: initial, proofread, refine           |

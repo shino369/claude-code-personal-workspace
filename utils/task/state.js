@@ -6,10 +6,15 @@
  * validated on read and before every write.
  */
 
+import { freshQuality, validateQuality } from './quality.js';
+
 export const STATE_VERSION = 1;
 
 export const TASK_STATUSES = ['active', 'blocked', 'done'];
 export const STEP_STATUSES = ['todo', 'in_progress', 'blocked', 'done'];
+/** `code` tasks run the inner loop by default and get `pnpm task check`. */
+export const TASK_KINDS = ['code', 'general'];
+export const E2E_MODES = ['required', 'no'];
 
 /** Kebab-case task name, optionally already suffixed with -yymmdd. */
 export const TASK_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -34,6 +39,9 @@ export const DATE_SUFFIX_RE = /-\d{6}$/;
  *   createdAt: string,
  *   updatedAt: string,
  *   lastAgent: string | null,
+ *   kind?: 'code' | 'general',
+ *   e2e?: 'required' | 'no',
+ *   quality?: import('./quality.js').Quality,
  * }} TaskState
  */
 
@@ -105,6 +113,18 @@ export function validateState(state) {
   }
   for (const key of ['verify', 'verifyFast']) {
     if (!isStringArray(s[key])) errors.push(`${key} must be a string array`);
+  }
+  if (
+    s.kind !== undefined &&
+    !TASK_KINDS.includes(/** @type {string} */ (s.kind))
+  ) {
+    errors.push(`kind must be one of ${TASK_KINDS.join(', ')}`);
+  }
+  if (
+    s.e2e !== undefined &&
+    !E2E_MODES.includes(/** @type {string} */ (s.e2e))
+  ) {
+    errors.push(`e2e must be one of ${E2E_MODES.join(', ')}`);
   }
 
   if (s.lastVerify !== null) {
@@ -180,6 +200,12 @@ export function validateState(state) {
     }
   }
 
+  if (s.quality !== undefined) {
+    errors.push(
+      ...validateQuality(s.quality, /** @type {Set<string>} */ (ids))
+    );
+  }
+
   return errors;
 }
 
@@ -219,9 +245,9 @@ export function makeSteps(items) {
 }
 
 /**
- * Create a fresh state object.
+ * Create a fresh state object. `code` tasks start with the inner loop on.
  *
- * @param {{ name: string, goal: string, steps?: Step[], verify?: string[], verifyFast?: string[], branch?: string | null, agent?: string | null, now?: Date }} options
+ * @param {{ name: string, goal: string, steps?: Step[], verify?: string[], verifyFast?: string[], branch?: string | null, agent?: string | null, now?: Date, kind?: 'code' | 'general', e2e?: 'required' | 'no' }} options
  * @returns {TaskState}
  */
 export function createState({
@@ -233,6 +259,8 @@ export function createState({
   branch = null,
   agent = null,
   now = new Date(),
+  kind = 'general',
+  e2e = 'no',
 }) {
   const at = now.toISOString();
   return {
@@ -246,7 +274,10 @@ export function createState({
     verify,
     verifyFast,
     lastVerify: null,
-    loop: { enabled: false, iteration: 0, max: 5 },
+    loop: { enabled: kind === 'code', iteration: 0, max: 5 },
+    kind,
+    e2e,
+    ...(kind === 'code' ? { quality: freshQuality() } : {}),
     createdAt: at,
     updatedAt: at,
     lastAgent: agent,

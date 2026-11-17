@@ -89,6 +89,7 @@ pnpm check
 │   ├── skills/              # Links into .agents/skills (generated, ignored)
 │   └── workflows/           # Saved Claude Code workflows (review, implement-plan, research)
 ├── .githooks/               # pre-commit + commit-msg (all harnesses)
+├── docs/harness.md          # How the harness works (tasks, loops, review), with examples
 ├── docs/testing/            # Deep testing guides
 ├── e2e/                     # Playwright e2e tests
 ├── tasks/                   # Generated task outputs (git-ignored)
@@ -129,7 +130,8 @@ tasks/some-task-260101/
 
 `tasks/.active` names the active task. In Claude Code, the `SessionStart` hook injects the brief
 after startup, `/clear`, and `/compact`; other harnesses run `pnpm task status` (AGENTS.md §2).
-The full procedure is in `AGENTS.md` §4; `pnpm task help` lists every command. `tasks/` and
+The full procedure is in `AGENTS.md` §4; `pnpm task help` lists every command. How the pieces fit
+together, with a worked example: `docs/harness.md`. `tasks/` and
 `logs/` are git-ignored — tasks are personal to each machine.
 
 ## Skills
@@ -256,6 +258,7 @@ Browser skills that attach to local Chrome need its CDP endpoint. Either enable
 | ----------------------- | --------------------------------------------------------------------- |
 | `planner`               | Turns a goal into small, verifiable steps with deps (`pnpm task`).    |
 | `verifier`              | Independent PASS/FAIL: runs verify, checks acceptance and tests.      |
+| `reviewer`              | Clean-context review round from a brief; findings for triage.         |
 | `security-reviewer`     | Security-focused review: auth, injection, XSS, secrets, dependencies. |
 | `test-runner`           | Runs tests and reports failures and coverage.                         |
 | `trilingual-translator` | EN/JA/ZH translation in initial, proofread, and refine roles.         |
@@ -297,6 +300,7 @@ pnpm tools list --all                                   # what is here, and how 
 pnpm tools add dsh --kind agent --command "npx -y @deepseek-ai/dsh"
 pnpm agent ask --agent codex "Review utils/task/loop.js for edge cases"   # read-only second opinion
 pnpm loop my-task --agent codex --max 3                 # unattended fix-until-green, in a worktree
+pnpm loop my-task --agent codex --review --reviewer claude   # + review rounds and fixes (code tasks)
 pnpm swarm my-task --agent claude --workers 2           # parallel workers, one worktree per step
 ```
 
@@ -306,7 +310,7 @@ pnpm swarm my-task --agent claude --workers 2           # parallel workers, one 
 | -------------------- | ----------------------------- | ------------------------------------------------- |
 | `session_start.js`   | `SessionStart`                | Injects the active task's resume brief.           |
 | `pre_compact.js`     | `PreCompact`                  | Appends a checkpoint to the task's `NOTES.md`.    |
-| `task_loop.js`       | `Stop`, `UserPromptSubmit`    | Opt-in inner loop: blocks until verify passes.    |
+| `task_loop.js`       | `Stop`, `UserPromptSubmit`    | Inner loop: verify, then the review loop (code).  |
 | `context_monitor.js` | `UserPromptSubmit`            | Warns at 20/40/60% of the context window.         |
 | `audit_logger.js`    | `PostToolUse` (`*`)           | Logs tool use to `logs/<YYYYMMDD>/logging.jsonl`. |
 | `auto_format.js`     | `PostToolUse` (`Edit\|Write`) | Runs Prettier on edited files.                    |
