@@ -263,6 +263,14 @@ describe('main', () => {
     ).toContain('Ready now: none');
   });
 
+  test('should refuse task-folder code even on a dry run', async () => {
+    task(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'v']);
+    fs.writeFileSync(path.join(repo, 'tasks', TASK, 'app.js'), 'export {};\n');
+    await expect(
+      run(['demo', '--agent', 'codex', '--dry-run'])
+    ).rejects.toThrow(/keeps code in its task folder \(app\.js\)/);
+  });
+
   test('should run the swarm and exit 0 when everything passes', async () => {
     task(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'v']);
     const { code, out } = await run(['demo', '--agent', 'claude']);

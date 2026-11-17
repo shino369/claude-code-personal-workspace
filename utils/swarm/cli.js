@@ -16,7 +16,7 @@ import { loadTask, resolveTaskName } from '../task/store.js';
 import { runCommands } from '../task/verify.js';
 import { commandFor } from '../tools/registry.js';
 import { ROOT_DIR } from '../workspace-config.js';
-import { runSwarm } from './dispatcher.js';
+import { assertNoTaskCode, runSwarm } from './dispatcher.js';
 import { swarmBranch, swarmDir } from './git.js';
 
 export const MAX_WORKERS = 8;
@@ -33,6 +33,8 @@ branch swarm/<task>, and must leave the task's verify passing. The swarm
 commits each finished step on its step branch and merges it into
 swarm/<task>; at the end it runs verify there. Review and merge swarm/<task>
 yourself. Failed steps are marked blocked (their dependents wait).
+Only git-tracked code moves between workers: a task that keeps code in its
+(git-ignored) task folder is refused — use pnpm loop for it instead.
 
 Options
   --agent <name>              ${AGENTS.join(' | ')} (required)
@@ -318,7 +320,7 @@ export async function main({ argv = process.argv.slice(2), deps = {} } = {}) {
     maxBudgetUsd: options.maxBudgetUsd,
   });
   const name = resolveTaskName(d.rootDir, options.task);
-  const { state } = loadTask(d.rootDir, name);
+  const { state, dir } = loadTask(d.rootDir, name);
   if (!state) {
     throw new Error(
       `${name} has no state.json, so the swarm has no steps to share.\nFix: pnpm task init ${name} --verify "pnpm check"`
@@ -330,6 +332,7 @@ export async function main({ argv = process.argv.slice(2), deps = {} } = {}) {
     );
   }
 
+  assertNoTaskCode(dir, name);
   if (options.dryRun) {
     const ready = readySteps(state);
     d.log(
