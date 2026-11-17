@@ -5,7 +5,7 @@ vi.mock('node:child_process', () => ({
   execFileSync: vi.fn(),
 }));
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync as realExecFileSync } from 'node:child_process';
 import {
   MIN_AGE_MINUTES,
   getErrorMessage,
@@ -21,6 +21,17 @@ import {
   main,
 } from '../check_release_age.mjs';
 
+/** @typedef {import('vitest').Mock} Mock */
+
+const execFileSync = /** @type {Mock} */ (
+  /** @type {unknown} */ (realExecFileSync)
+);
+
+/** @returns {Mock} */
+function fetchMock() {
+  return /** @type {Mock} */ (/** @type {unknown} */ (global.fetch));
+}
+
 function registryMock() {
   execFileSync.mockImplementation((_command, args) => {
     const key = args?.[2];
@@ -33,8 +44,9 @@ function packageData(time = {}, distTags = {}) {
   return { time, 'dist-tags': distTags };
 }
 
+/** @param {unknown} data */
 function fetchData(data) {
-  global.fetch.mockResolvedValue({
+  fetchMock().mockResolvedValue({
     ok: true,
     json: async () => data,
   });
@@ -134,7 +146,7 @@ describe('check_release_age', () => {
 
     test('wraps HTTP errors', async () => {
       registryMock();
-      global.fetch.mockResolvedValue({
+      fetchMock().mockResolvedValue({
         ok: false,
         status: 404,
         statusText: 'Not Found',
@@ -147,7 +159,7 @@ describe('check_release_age', () => {
 
     test('wraps network errors', async () => {
       registryMock();
-      global.fetch.mockRejectedValue(new Error('network down'));
+      fetchMock().mockRejectedValue(new Error('network down'));
 
       await expect(fetchPackageData('lodash')).rejects.toThrow('network down');
     });
@@ -285,7 +297,7 @@ describe('check_release_age', () => {
 
     test('reports errors and returns 2', async () => {
       registryMock();
-      global.fetch.mockRejectedValue(new Error('network down'));
+      fetchMock().mockRejectedValue(new Error('network down'));
       const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       await expect(main(['pkg', '1.0.0'])).resolves.toBe(2);

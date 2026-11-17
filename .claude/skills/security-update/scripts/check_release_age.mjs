@@ -78,8 +78,13 @@ export function buildPackageUrl(registry, packageName) {
 }
 
 /**
+ * Registry packument fields this script reads.
+ * @typedef {{ 'dist-tags'?: Record<string, string>, time?: Record<string, string> }} PackageData
+ */
+
+/**
  * @param {string} packageName
- * @returns {Promise<{ registry: string, data: object }>}
+ * @returns {Promise<{ registry: string, data: PackageData }>}
  */
 export async function fetchPackageData(packageName) {
   const registry = getRegistry(packageName);
@@ -96,17 +101,17 @@ export async function fetchPackageData(packageName) {
 
     return {
       registry,
-      data: await response.json(),
+      data: /** @type {PackageData} */ (await response.json()),
     };
   } catch (error) {
     throw new Error(
-      `Could not fetch package data for ${packageName} from ${registry}: ${getErrorMessage(error)}`,
+      `Could not fetch package data for ${packageName} from ${registry}: ${getErrorMessage(error)}`
     );
   }
 }
 
 /**
- * @param {object} packageData
+ * @param {PackageData} packageData
  * @param {string} version
  * @param {(...args: unknown[]) => void} [log]
  * @returns {string}
@@ -124,7 +129,7 @@ export function resolveVersion(packageData, version, log = console.log) {
 }
 
 /**
- * @param {object} packageData
+ * @param {PackageData} packageData
  * @param {string} packageName
  * @param {string} version
  * @returns {string}
@@ -136,7 +141,7 @@ export function extractPublishedDate(packageData, packageName, version) {
   if (!published) {
     const versions = Object.keys(timeMap).slice(-10).join(', ');
     throw new Error(
-      `Version ${version} not found in registry time map for ${packageName}. Available versions (latest 10): ${versions}`,
+      `Version ${version} not found in registry time map for ${packageName}. Available versions (latest 10): ${versions}`
     );
   }
 
@@ -152,7 +157,7 @@ export function extractPublishedDate(packageData, packageName, version) {
 export async function checkReleaseAge(
   packageName,
   requestedVersion,
-  { now = Date.now, log = console.log } = {},
+  { now = Date.now, log = console.log } = {}
 ) {
   const { registry, data } = await fetchPackageData(packageName);
   const version = resolveVersion(data, requestedVersion, log);
@@ -161,7 +166,7 @@ export async function checkReleaseAge(
 
   if (Number.isNaN(publishedDate.getTime())) {
     throw new Error(
-      `Invalid publish timestamp for ${packageName}@${version}: ${published}`,
+      `Invalid publish timestamp for ${packageName}@${version}: ${published}`
     );
   }
 
@@ -172,11 +177,9 @@ export async function checkReleaseAge(
   log(`Registry: ${registry}`);
   log(`Published: ${published}`);
   log(
-    `Age      : ${ageMinutes.toLocaleString('en-US')} minutes (${ageDays.toFixed(1)} days)`,
+    `Age      : ${ageMinutes.toLocaleString('en-US')} minutes (${ageDays.toFixed(1)} days)`
   );
-  log(
-    `Minimum  : ${MIN_AGE_MINUTES.toLocaleString('en-US')} minutes (7 days)`,
-  );
+  log(`Minimum  : ${MIN_AGE_MINUTES.toLocaleString('en-US')} minutes (7 days)`);
 
   if (ageMinutes >= MIN_AGE_MINUTES) {
     log(`Result   : SAFE - version is ${ageDays.toFixed(1)} days old`);
@@ -185,7 +188,7 @@ export async function checkReleaseAge(
 
   const remaining = MIN_AGE_MINUTES - ageMinutes;
   log(
-    `Result   : TOO NEW - ${remaining.toLocaleString('en-US')} minutes (${(remaining / 60).toFixed(1)} hours) until safe`,
+    `Result   : TOO NEW - ${remaining.toLocaleString('en-US')} minutes (${(remaining / 60).toFixed(1)} hours) until safe`
   );
   log('           Do not use this version. Choose an older safe release.');
   return 1;
@@ -213,11 +216,11 @@ export async function main(argv = process.argv.slice(2), options = {}) {
 /* istanbul ignore next - CLI entry point, exercises the tested main() */
 runIfMain(import.meta.url, () => {
   main()
-    .then(code => {
+    .then((code) => {
       // Let stdout flush naturally; process.exit() can truncate piped output.
       process.exitCode = code;
     })
-    .catch(error => {
+    .catch((error) => {
       console.error(`ERROR: ${getErrorMessage(error)}`);
       process.exitCode = 2;
     });

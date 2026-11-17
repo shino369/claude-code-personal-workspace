@@ -11,7 +11,10 @@ vi.mock('child_process', () => ({
 }));
 
 // Import after mocking
-const { spawnSync } = await import('child_process');
+const childProcess = await import('child_process');
+const spawnSync = /** @type {import('vitest').Mock} */ (
+  /** @type {unknown} */ (childProcess.spawnSync)
+);
 const { processHookInput, runPrettier } = await import('../auto_format.js');
 
 describe('auto_format', () => {

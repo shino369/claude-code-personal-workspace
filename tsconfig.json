@@ -15,7 +15,14 @@
     "isolatedModules": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["**/*.js", "**/*.mjs", "**/*.ts"],
+  "include": [
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.ts",
+    ".claude/**/*.js",
+    ".claude/**/*.mjs",
+    ".claude/**/*.ts"
+  ],
   "exclude": [
     "node_modules",
     "coverage",

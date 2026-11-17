@@ -18,7 +18,12 @@ export function ensureLogDirectory() {
   return path.join(logDir, 'logging.json');
 }
 
+/**
+ * @param {string} logFile
+ * @param {unknown} entry
+ */
 export function appendLogEntry(logFile, entry) {
+  /** @type {unknown[]} */
   let logs = [];
 
   // Read existing logs
@@ -42,8 +47,14 @@ export function appendLogEntry(logFile, entry) {
   fs.writeFileSync(logFile, JSON.stringify(logs, null, 2), 'utf-8');
 }
 
+/**
+ * @param {unknown} data
+ * @param {number} [maxContentLength]
+ * @returns {unknown}
+ */
 export function sanitizeForLogging(data, maxContentLength = 500) {
   if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+    /** @type {Record<string, unknown>} */
     const sanitized = {};
     for (const [key, value] of Object.entries(data)) {
       if (
@@ -68,11 +79,26 @@ export function sanitizeForLogging(data, maxContentLength = 500) {
   }
 }
 
+/**
+ * @typedef {object} HookInput
+ * @property {string} [session_id]
+ * @property {string} [hook_event_name]
+ * @property {string} [tool_name]
+ * @property {unknown} [tool_input]
+ * @property {unknown} [tool_response]
+ * @property {string} [cwd]
+ * @property {string} [permission_mode]
+ */
+
+/**
+ * @param {HookInput} input
+ */
 export function processHookInput(input) {
   // Get log file path
   const logFile = ensureLogDirectory();
 
   // Create log entry
+  /** @type {Record<string, unknown>} */
   const logEntry = {
     timestamp: new Date().toISOString(),
     session_id: input.session_id,
@@ -119,12 +145,16 @@ function main() {
         processHookInput(input);
         process.exit(0);
       } catch (err) {
-        console.error(`Audit logging error: ${err.message}`);
+        console.error(
+          `Audit logging error: ${err instanceof Error ? err.message : String(err)}`
+        );
         process.exit(0); // Exit 0 to not block the operation
       }
     });
   } catch (err) {
-    console.error(`Audit logging error: ${err.message}`);
+    console.error(
+      `Audit logging error: ${err instanceof Error ? err.message : String(err)}`
+    );
     process.exit(0); // Exit 0 to not block the operation
   }
 }

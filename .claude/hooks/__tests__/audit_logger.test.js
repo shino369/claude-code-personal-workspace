@@ -201,7 +201,9 @@ describe('audit_logger', () => {
         other: 'short',
       };
 
-      const sanitized = sanitizeForLogging(data, 100);
+      const sanitized = /** @type {Record<string, any>} */ (
+        sanitizeForLogging(data, 100)
+      );
 
       expect(sanitized.content).toMatch(/^a{100}\.\.\./);
       expect(sanitized.content).toContain('total length: 1000');
@@ -214,7 +216,9 @@ describe('audit_logger', () => {
         file_path: 'test.js',
       };
 
-      const sanitized = sanitizeForLogging(data, 500);
+      const sanitized = /** @type {Record<string, any>} */ (
+        sanitizeForLogging(data, 500)
+      );
 
       expect(sanitized.new_source).toMatch(/^b{500}\.\.\./);
       expect(sanitized.new_source).toContain('total length: 600');
@@ -231,7 +235,9 @@ describe('audit_logger', () => {
         },
       };
 
-      const sanitized = sanitizeForLogging(data, 500);
+      const sanitized = /** @type {Record<string, any>} */ (
+        sanitizeForLogging(data, 500)
+      );
 
       expect(sanitized.tool_input.content).toMatch(/^c{500}\.\.\./);
       expect(sanitized.tool_input.nested.new_source).toMatch(/^d{500}\.\.\./);
@@ -240,7 +246,9 @@ describe('audit_logger', () => {
     test('should handle arrays', () => {
       const data = [{ content: 'e'.repeat(600) }, { content: 'short' }];
 
-      const sanitized = sanitizeForLogging(data, 500);
+      const sanitized = /** @type {Record<string, any>} */ (
+        sanitizeForLogging(data, 500)
+      );
 
       expect(sanitized[0].content).toMatch(/^e{500}\.\.\./);
       expect(sanitized[1].content).toBe('short');
@@ -252,7 +260,9 @@ describe('audit_logger', () => {
         new_source: 'also short',
       };
 
-      const sanitized = sanitizeForLogging(data, 500);
+      const sanitized = /** @type {Record<string, any>} */ (
+        sanitizeForLogging(data, 500)
+      );
 
       expect(sanitized.content).toBe('short content');
       expect(sanitized.new_source).toBe('also short');

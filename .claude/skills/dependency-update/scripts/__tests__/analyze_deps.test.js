@@ -40,6 +40,20 @@ const NOW = new Date();
 const RECENT = NOW.toISOString();
 const OLD = '2020-01-01T00:00:00.000Z';
 
+/** @typedef {import('vitest').Mock} Mock */
+
+// `node:child_process` is mocked above; view it as an untyped Mock for stubbing.
+const execFileSyncMock = /** @type {Mock} */ (
+  /** @type {unknown} */ (execFileSync)
+);
+// `global.fetch` is replaced with vi.fn() in beforeEach.
+const mockedFetch = () =>
+  /** @type {Mock} */ (/** @type {unknown} */ (global.fetch));
+
+/**
+ * @param {string} workspaceYaml
+ * @param {object} [manifest]
+ */
 function makeProject(workspaceYaml, manifest = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'analyze-deps-'));
   const workspace = path.join(dir, 'pnpm-workspace.yaml');
@@ -49,13 +63,18 @@ function makeProject(workspaceYaml, manifest = {}) {
   return { dir, workspace, manifest: manifestPath };
 }
 
+/**
+ * @param {{ versions?: string[], latest?: string, times?: Record<string, string>, deprecated?: string }} [options]
+ */
 function packageData({
   versions = ['1.2.3'],
   latest = versions[versions.length - 1],
   times = {},
   deprecated,
 } = {}) {
+  /** @type {Record<string, { version?: string, deprecated?: string }>} */
   const versionMap = {};
+  /** @type {Record<string, string>} */
   const timeMap = {};
   for (const version of versions) {
     versionMap[version] = { version };
@@ -71,15 +90,16 @@ function packageData({
 }
 
 function registryMock() {
-  execFileSync.mockImplementation((_command, args) => {
+  execFileSyncMock.mockImplementation((_command, args) => {
     const key = args?.[2];
     if (key === 'registry') return 'https://registry.test/\n';
     return 'undefined\n';
   });
 }
 
+/** @param {Record<string, unknown>} dataByName */
 function fetchMock(dataByName) {
-  global.fetch.mockImplementation(async (url) => {
+  mockedFetch().mockImplementation(async (/** @type {URL} */ url) => {
     const name = decodeURIComponent(url.pathname.slice(1));
     const data = dataByName[name];
     if (!data) {
@@ -93,7 +113,7 @@ function captureStdout() {
   let output = '';
   const spy = vi
     .spyOn(process.stdout, 'write')
-    .mockImplementation((chunk, callback) => {
+    .mockImplementation((chunk, /** @type {unknown} */ callback) => {
       output += chunk;
       if (typeof callback === 'function') callback();
       return true;
@@ -108,11 +128,12 @@ function captureStdout() {
 }
 
 describe('analyze_deps', () => {
+  /** @type {string[]} */
   const tempDirs = [];
   const originalFetch = global.fetch;
 
   beforeEach(() => {
-    execFileSync.mockReset();
+    execFileSyncMock.mockReset();
     global.fetch = vi.fn();
   });
 
@@ -120,10 +141,17 @@ describe('analyze_deps', () => {
     global.fetch = originalFetch;
     vi.restoreAllMocks();
     while (tempDirs.length) {
-      fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+      fs.rmSync(/** @type {string} */ (tempDirs.pop()), {
+        recursive: true,
+        force: true,
+      });
     }
   });
 
+  /**
+   * @param {string} yaml
+   * @param {object} [manifest]
+   */
   function project(yaml, manifest) {
     const result = makeProject(yaml, manifest);
     tempDirs.push(result.dir);
@@ -473,15 +501,15 @@ describe('analyze_deps', () => {
 
   describe('registry helpers', () => {
     test('readPnpmConfig trims output and fails open', () => {
-      execFileSync.mockReturnValue('  value \n');
+      execFileSyncMock.mockReturnValue('  value \n');
       expect(readPnpmConfig('registry')).toBe('value');
 
-      execFileSync.mockImplementation(() => {
+      execFileSyncMock.mockImplementation(() => {
         throw new Error('pnpm missing');
       });
       expect(readPnpmConfig('registry')).toBe('');
 
-      execFileSync.mockReturnValue(undefined);
+      execFileSyncMock.mockReturnValue(undefined);
       expect(readPnpmConfig('registry')).toBe('');
     });
 
@@ -498,7 +526,7 @@ describe('analyze_deps', () => {
       registryMock();
       expect(getRegistry('plain', new Map())).toBe('https://registry.test/');
 
-      execFileSync.mockImplementation((_command, args) => {
+      execFileSyncMock.mockImplementation((_command, args) => {
         const key = args?.[2];
         if (key === '@scope:registry') return 'https://scope.example/\n';
         return 'undefined\n';
@@ -507,7 +535,7 @@ describe('analyze_deps', () => {
         'https://scope.example/'
       );
 
-      execFileSync.mockReturnValue('undefined\n');
+      execFileSyncMock.mockReturnValue('undefined\n');
       expect(getRegistry('plain', new Map())).toBe(DEFAULT_REGISTRY);
     });
 
@@ -515,7 +543,7 @@ describe('analyze_deps', () => {
       const cached = new Map([['https://cached/', 'Bearer cached']]);
       expect(getAuthHeader('https://cached/', cached)).toBe('Bearer cached');
 
-      execFileSync.mockImplementation((_command, args) => {
+      execFileSyncMock.mockImplementation((_command, args) => {
         const key = args?.[2];
         if (key === '//registry.test/:_authToken') return 'token\n';
         return 'undefined\n';
@@ -524,7 +552,7 @@ describe('analyze_deps', () => {
         'Bearer token'
       );
 
-      execFileSync.mockImplementation((_command, args) => {
+      execFileSyncMock.mockImplementation((_command, args) => {
         const key = args?.[2];
         if (key === '//registry.test/:_auth') return 'basic\n';
         return 'undefined\n';
@@ -533,12 +561,12 @@ describe('analyze_deps', () => {
         'Basic basic'
       );
 
-      execFileSync.mockReturnValue('undefined\n');
+      execFileSyncMock.mockReturnValue('undefined\n');
       expect(getAuthHeader('https://registry.test/', new Map())).toBeNull();
     });
 
     test('adds a trailing slash to a registry without one', () => {
-      execFileSync.mockImplementation((_command, args) => {
+      execFileSyncMock.mockImplementation((_command, args) => {
         const key = args?.[2];
         if (key === '//registry.test/:_authToken') return 'token\n';
         return 'undefined\n';
@@ -551,13 +579,13 @@ describe('analyze_deps', () => {
 
     test('fetchPackageData returns data and includes auth', async () => {
       registryMock();
-      execFileSync.mockImplementation((_command, args) => {
+      execFileSyncMock.mockImplementation((_command, args) => {
         const key = args?.[2];
         if (key === 'registry') return 'https://registry.test/\n';
         if (key === '//registry.test/:_authToken') return 'token\n';
         return 'undefined\n';
       });
-      global.fetch.mockResolvedValue({
+      mockedFetch().mockResolvedValue({
         ok: true,
         json: async () => ({ name: 'lodash' }),
       });
@@ -574,24 +602,24 @@ describe('analyze_deps', () => {
     });
 
     test('fetchPackageData adds a trailing slash to the registry', async () => {
-      execFileSync.mockImplementation((_command, args) =>
+      execFileSyncMock.mockImplementation((_command, args) =>
         args?.[2] === 'registry' ? 'https://registry.test\n' : 'undefined\n'
       );
-      global.fetch.mockResolvedValue({
+      mockedFetch().mockResolvedValue({
         ok: true,
         json: async () => ({ name: 'lodash' }),
       });
 
       await fetchPackageData('lodash', new Map(), new Map());
 
-      expect(String(global.fetch.mock.calls[0][0])).toBe(
+      expect(String(mockedFetch().mock.calls[0][0])).toBe(
         'https://registry.test/lodash'
       );
     });
 
     test('fetchPackageData wraps HTTP errors', async () => {
       registryMock();
-      global.fetch.mockResolvedValue({
+      mockedFetch().mockResolvedValue({
         ok: false,
         status: 404,
         statusText: 'Not Found',
@@ -977,7 +1005,10 @@ describe('analyze_deps', () => {
         ]);
 
         expect(code).toBe(0);
-        const parsed = JSON.parse(stdout.output);
+        const parsed =
+          /** @type {{ rows: import('../analyze_deps.mjs').Row[] }} */ (
+            JSON.parse(stdout.output)
+          );
         expect(parsed.rows.map((row) => row.name)).toEqual(['express']);
       } finally {
         stdout.restore();
@@ -989,7 +1020,7 @@ describe('analyze_deps', () => {
         devDependencies: { lodash: 'catalog:dev' },
       });
       registryMock();
-      global.fetch.mockRejectedValue(new Error('network down'));
+      mockedFetch().mockRejectedValue(new Error('network down'));
       const stdout = captureStdout();
 
       try {
@@ -1046,12 +1077,15 @@ describe('analyze_deps', () => {
         ]);
 
         expect(code).toBe(0);
-        const parsed = JSON.parse(stdout.output);
+        const parsed =
+          /** @type {{ rows: import('../analyze_deps.mjs').Row[] }} */ (
+            JSON.parse(stdout.output)
+          );
         expect(
-          parsed.rows.find((row) => row.name === 'lodash').belowCooldown
+          parsed.rows.find((row) => row.name === 'lodash')?.belowCooldown
         ).toBeNull();
         expect(
-          parsed.rows.find((row) => row.name === '@types/node').belowCooldown
+          parsed.rows.find((row) => row.name === '@types/node')?.belowCooldown
         ).toBeNull();
       } finally {
         stdout.restore();

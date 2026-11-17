@@ -14,6 +14,7 @@ import {
   processHookInput,
 } from '../context_monitor.js';
 
+/** @param {unknown[]} entries */
 function writeTranscript(entries) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'context-monitor-'));
   const file = path.join(dir, 'transcript.jsonl');
@@ -26,14 +27,19 @@ function writeTranscript(entries) {
 }
 
 describe('context_monitor', () => {
+  /** @type {string[]} */
   const tempDirs = [];
 
   afterEach(() => {
     while (tempDirs.length) {
-      fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+      fs.rmSync(/** @type {string} */ (tempDirs.pop()), {
+        recursive: true,
+        force: true,
+      });
     }
   });
 
+  /** @param {unknown[]} entries */
   function transcript(entries) {
     const result = writeTranscript(entries);
     tempDirs.push(result.dir);
@@ -214,11 +220,11 @@ describe('context_monitor', () => {
 
       const output = processHookInput({ transcript_path: file }, {});
 
-      expect(output.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
-      expect(output.hookSpecificOutput.additionalContext).toContain(
+      expect(output?.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
+      expect(output?.hookSpecificOutput.additionalContext).toContain(
         '[Context Monitor]'
       );
-      expect(output.systemMessage).toBeUndefined();
+      expect(output?.systemMessage).toBeUndefined();
     });
 
     test('also sets systemMessage at the warning level', () => {
@@ -231,7 +237,7 @@ describe('context_monitor', () => {
 
       const output = processHookInput({ transcript_path: file }, {});
 
-      expect(output.systemMessage).toContain('[Context Monitor][WARNING]');
+      expect(output?.systemMessage).toContain('[Context Monitor][WARNING]');
     });
 
     test('respects CLAUDE_CONTEXT_WINDOW', () => {
@@ -247,7 +253,7 @@ describe('context_monitor', () => {
         { CLAUDE_CONTEXT_WINDOW: '1000' }
       );
 
-      expect(output.systemMessage).toContain('[Context Monitor][WARNING]');
+      expect(output?.systemMessage).toContain('[Context Monitor][WARNING]');
     });
   });
 });

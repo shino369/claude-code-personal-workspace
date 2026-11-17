@@ -129,11 +129,15 @@ export function buildMessage(usagePct, contextWindow = DEFAULT_CONTEXT_WINDOW) {
 }
 
 /**
+ * @typedef {{ hookSpecificOutput: { hookEventName: string, additionalContext: string }, systemMessage?: string }} HookOutput
+ */
+
+/**
  * Convert hook input into hook output, or null when no warning is needed.
  *
- * @param {{ transcript_path?: string }} input
+ * @param {{ transcript_path?: string }} [input]
  * @param {NodeJS.ProcessEnv} [env]
- * @returns {object | null}
+ * @returns {HookOutput | null}
  */
 export function processHookInput(input, env = process.env) {
   const usage = getUsageFromTranscript(input?.transcript_path);
@@ -144,6 +148,7 @@ export function processHookInput(input, env = process.env) {
   const message = buildMessage(usagePct, contextWindow);
   if (!message) return null;
 
+  /** @type {HookOutput} */
   const output = {
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
