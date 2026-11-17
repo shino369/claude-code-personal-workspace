@@ -21,6 +21,7 @@ import fs from 'fs';
 import { createRequire } from 'module';
 import path from 'path';
 import globals from 'globals';
+import { relPosix } from '../paths.js';
 
 /** Folders skipped at the task's top level: notes, outputs, and scratch. */
 export const TOP_LEVEL_SKIP = new Set([
@@ -318,7 +319,7 @@ export async function runPrettier({ files, rootDir, fix = false }) {
   /** @type {string[]} */
   const failures = [];
   for (const file of files) {
-    const rel = path.relative(rootDir, file);
+    const rel = relPosix(rootDir, file);
     try {
       const source = fs.readFileSync(file, 'utf-8');
       const options = {
@@ -498,7 +499,7 @@ export async function runTaskCheck({
   tools = DEFAULT_TOOLS,
 }) {
   const code = collectTaskCode(taskDir);
-  const prefix = path.relative(rootDir, taskDir).split(path.sep).join('/');
+  const prefix = relPosix(rootDir, taskDir);
   /** @param {string} file */
   const fromRoot = (file) => `${prefix}/${file}`;
   /** @type {CheckPart[]} */

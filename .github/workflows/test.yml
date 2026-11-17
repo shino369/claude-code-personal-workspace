@@ -15,11 +15,14 @@ permissions:
 
 jobs:
   test:
-    name: Test on Node.js ${{ matrix.node-version }}
-    runs-on: ubuntu-latest
+    name: Test on ${{ matrix.os }}, Node.js ${{ matrix.node-version }}
+    runs-on: ${{ matrix.os }}
 
     strategy:
+      # Report every OS even when one fails: the harness runs on Windows too.
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         node-version: [24.x]
 
     steps:
@@ -37,6 +40,7 @@ jobs:
 
       - name: Get pnpm store directory
         id: pnpm-cache
+        shell: bash
         run: echo "path=$(pnpm store path)" >> $GITHUB_OUTPUT
 
       - name: Cache pnpm store
@@ -63,7 +67,7 @@ jobs:
         run: pnpm test:coverage
 
       - name: Upload coverage to Codecov
-        if: matrix.node-version == '24.x'
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '24.x'
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

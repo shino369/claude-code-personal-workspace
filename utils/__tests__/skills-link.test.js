@@ -10,6 +10,10 @@ import {
   main,
   parseArgs,
 } from '../skills-link.js';
+import { LINK_KINDS, linkDir } from './support/links.js';
+
+/** @param {string} text */
+const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** @type {string} */
 let root;
@@ -64,10 +68,16 @@ describe('createLink', () => {
 
     const kind = createLink(path.join(skillsDir(), 'alpha'), link);
 
-    expect(kind).toBe('symlink');
-    expect(fs.readlinkSync(link)).toBe(
-      path.join('..', '..', '.agents', 'skills', 'alpha')
+    // Windows without Developer Mode falls back to a junction (absolute target).
+    expect(LINK_KINDS).toContain(kind);
+    expect(fs.realpathSync(link)).toBe(
+      fs.realpathSync(path.join(skillsDir(), 'alpha'))
     );
+    if (kind === 'symlink') {
+      expect(fs.readlinkSync(link)).toBe(
+        path.join('..', '..', '.agents', 'skills', 'alpha')
+      );
+    }
   });
 
   test('should fall back to a junction on Windows when symlinks are not permitted', () => {
@@ -204,10 +214,9 @@ describe('linkSkills', () => {
     makeSkill(skillsDir(), 'alpha');
     makeSkill(path.join(root, 'elsewhere'), 'alpha');
     fs.mkdirSync(claudeDir(), { recursive: true });
-    fs.symlinkSync(
+    linkDir(
       path.join(root, 'elsewhere', 'alpha'),
-      path.join(claudeDir(), 'alpha'),
-      'dir'
+      path.join(claudeDir(), 'alpha')
     );
 
     expect(statusOf(linkSkills({ rootDir: root }))).toEqual({
@@ -218,11 +227,7 @@ describe('linkSkills', () => {
   test('should treat a dangling same-named link as unmanaged', () => {
     makeSkill(skillsDir(), 'alpha');
     fs.mkdirSync(claudeDir(), { recursive: true });
-    fs.symlinkSync(
-      path.join(root, 'gone'),
-      path.join(claudeDir(), 'alpha'),
-      'dir'
-    );
+    linkDir(path.join(root, 'gone'), path.join(claudeDir(), 'alpha'));
 
     expect(statusOf(linkSkills({ rootDir: root }))).toEqual({
       alpha: 'unmanaged',
@@ -253,10 +258,9 @@ describe('linkSkills', () => {
   test('should treat a link to the skills directory itself as stale', () => {
     fs.mkdirSync(skillsDir(), { recursive: true });
     fs.mkdirSync(claudeDir(), { recursive: true });
-    fs.symlinkSync(
+    linkDir(
       path.join('..', '..', '.agents', 'skills'),
-      path.join(claudeDir(), 'weird'),
-      'dir'
+      path.join(claudeDir(), 'weird')
     );
 
     expect(statusOf(linkSkills({ rootDir: root }))).toEqual({
@@ -267,10 +271,9 @@ describe('linkSkills', () => {
   test('should report extra links outside the skills directory as unmanaged', () => {
     fs.mkdirSync(path.join(root, 'node_modules', 'pkg'), { recursive: true });
     fs.mkdirSync(claudeDir(), { recursive: true });
-    fs.symlinkSync(
+    linkDir(
       path.join(root, 'node_modules', 'pkg'),
-      path.join(claudeDir(), 'pkg-skill'),
-      'dir'
+      path.join(claudeDir(), 'pkg-skill')
     );
 
     expect(statusOf(linkSkills({ rootDir: root }))).toEqual({
@@ -397,7 +400,11 @@ describe('main', () => {
 
     expect(code).toBe(0);
     expect(lines).toEqual([
-      `✓ ${path.join('.claude', 'skills', 'beta')} linked — symlink`,
+      expect.stringMatching(
+        new RegExp(
+          `^✓ ${escape(path.join('.claude', 'skills', 'beta'))} linked — (${LINK_KINDS.join('|')})$`
+        )
+      ),
       'Skills linked: 1 changed, 1 already ok.',
     ]);
   });

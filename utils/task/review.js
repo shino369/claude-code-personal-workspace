@@ -16,6 +16,7 @@ import { hasTaskCode, listCodeFiles } from './check.js';
 import { git } from './git.js';
 import { SEVERITIES, VERDICTS, freshQuality, toFix } from './quality.js';
 import { addStep } from './state.js';
+import { relPosix } from '../paths.js';
 
 export const DEFAULT_BASE = 'main';
 export const STANDARDS = [
@@ -93,7 +94,7 @@ export function reviewScope({
   runGit = defaultRunGit,
 }) {
   if (base === null) {
-    const prefix = path.relative(rootDir, taskDir).split(path.sep).join('/');
+    const prefix = relPosix(rootDir, taskDir);
     return {
       base: null,
       mergeBase: null,

@@ -16,12 +16,13 @@
     "types": ["node", "vitest/globals"]
   },
   "include": [
-    "**/*.js",
-    "**/*.mjs",
-    "**/*.ts",
-    ".claude/**/*.js",
-    ".claude/**/*.mjs",
-    ".claude/**/*.ts",
+    "*.js",
+    "*.mjs",
+    "*.ts",
+    "utils/**/*",
+    "e2e/**/*",
+    ".claude/hooks/**/*",
+    ".claude/workflows/__tests__/**/*",
     ".agents/skills/context-manager/**/*",
     ".agents/skills/dependency-update/**/*",
     ".agents/skills/document-writing/**/*",
@@ -31,15 +32,5 @@
     ".agents/skills/web-browsing/**/*",
     ".agents/skills/workspace-setup/**/*"
   ],
-  "exclude": [
-    "node_modules",
-    "coverage",
-    "dist",
-    "build",
-    "tasks",
-    "logs",
-    ".claude/skills",
-    ".claude/workflows/*.js",
-    ".github/skills"
-  ]
+  "exclude": ["node_modules", "**/node_modules", "coverage", "dist", "build"]
 }

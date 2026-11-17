@@ -42,6 +42,7 @@ import {
   swarmBranch,
   swarmDir,
 } from './git.js';
+import { relPosix } from '../paths.js';
 
 /**
  * @param {unknown} error
@@ -484,7 +485,7 @@ export async function runSwarm({
             ? `Final verify on ${branch}: ${finalVerify.ok ? 'pass' : `fail — \`${finalVerify.failed}\``}.`
             : 'No step merged, so no final verify.',
           allDone ? '' : `Left: ${remaining}.`,
-          `Review: git log --oneline HEAD..${branch} (worktree ${dir}); merge it yourself. Logs: ${path.relative(rootDir, runDir)}/`,
+          `Review: git log --oneline HEAD..${branch} (worktree ${dir}); merge it yourself. Logs: ${relPosix(rootDir, runDir)}/`,
         ]
           .filter(Boolean)
           .join(' '),

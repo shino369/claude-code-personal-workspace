@@ -62,6 +62,7 @@ import {
   reviewScope,
 } from './review.js';
 import { summarize, tail } from './verify.js';
+import { relPosix } from '../paths.js';
 
 export const HELP = `Usage: pnpm task <command> [options]
 
@@ -500,7 +501,7 @@ export const COMMANDS = {
       options,
       { ok: true, name, dir, state },
       [
-        `Created ${path.relative(deps.rootDir, dir)}/ (active task).`,
+        `Created ${relPosix(deps.rootDir, dir)}/ (active task).`,
         ...codeTaskLines(state),
         state.steps.length === 0
           ? 'Next: add steps — pnpm task step add "…"'
@@ -1027,7 +1028,7 @@ export const COMMANDS = {
       `${prefix}${label}.md`
     );
     if (fs.existsSync(target)) {
-      throw new Error(`${path.relative(deps.rootDir, target)} already exists.`);
+      throw new Error(`${relPosix(deps.rootDir, target)} already exists.`);
     }
     const content = renderTemplate(
       fs.readFileSync(path.join(deps.templatesDir, file), 'utf-8'),
@@ -1035,7 +1036,7 @@ export const COMMANDS = {
     );
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, content, 'utf-8');
-    const relative = path.relative(deps.rootDir, target);
+    const relative = relPosix(deps.rootDir, target);
     output(
       deps,
       options,
@@ -1129,7 +1130,7 @@ function recordReview(options, deps) {
     : path.join(task.dir, reviewFiles(name, round).findings);
   if (!fs.existsSync(file)) {
     throw new Error(
-      `No findings file at ${path.relative(deps.rootDir, file)}.\nFix: pnpm task review (opens a round and creates it)`
+      `No findings file at ${relPosix(deps.rootDir, file)}.\nFix: pnpm task review (opens a round and creates it)`
     );
   }
   const { findings, errors } = parseFindings(fs.readFileSync(file, 'utf-8'), {
@@ -1138,7 +1139,7 @@ function recordReview(options, deps) {
   });
   if (errors.length > 0) {
     throw new Error(
-      `${path.relative(deps.rootDir, file)} is not ready:\n${errors.map((e) => `- ${e}`).join('\n')}\nFix the rows above, then re-run: pnpm task review record`
+      `${relPosix(deps.rootDir, file)} is not ready:\n${errors.map((e) => `- ${e}`).join('\n')}\nFix the rows above, then re-run: pnpm task review record`
     );
   }
   const now = deps.now();

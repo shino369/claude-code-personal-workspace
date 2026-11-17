@@ -38,6 +38,7 @@ import {
   updateState,
 } from '../task/store.js';
 import { runLoop } from './driver.js';
+import { relPosix } from '../paths.js';
 
 export const BEGIN = 'BEGIN FINDINGS';
 export const END = 'END FINDINGS';
@@ -349,7 +350,7 @@ export function runReviewLoop({
         at: deps.date(),
         agent: command.agent,
         label: 'auto: review loop',
-        message: `pnpm loop --review --agent ${command.agent} (reviewer ${reviewer.agent}): ${ok ? 'complete' : `stopped (${reason})`} — ${detail} ${rounds} round(s) this run.${extra ? ` ${extra}` : ''}${fs.existsSync(logDir) ? ` Logs: ${path.relative(rootDir, logDir)}/` : ''}`,
+        message: `pnpm loop --review --agent ${command.agent} (reviewer ${reviewer.agent}): ${ok ? 'complete' : `stopped (${reason})`} — ${detail} ${rounds} round(s) this run.${extra ? ` ${extra}` : ''}${fs.existsSync(logDir) ? ` Logs: ${relPosix(rootDir, logDir)}/` : ''}`,
         state: `${formatGit(deps.git(rootDir))}; verify ${state.lastVerify?.ok ? 'pass' : 'fail'}`,
       }),
       appendSeparator

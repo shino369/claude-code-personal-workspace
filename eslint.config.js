@@ -5,7 +5,7 @@
 
 import globals from 'globals';
 import prettier from 'eslint-config-prettier';
-import { vendoredGlobs } from './utils/workspace-config.js';
+import { localGlobs, vendoredGlobs } from './utils/workspace-config.js';
 
 export default [
   {
@@ -19,6 +19,8 @@ export default [
       '**/logs/**',
       // Third-party skills and the .claude/skills link mirror
       ...vendoredGlobs(),
+      // Local-only folders git ignores (resources/, …); ESLint does not read .gitignore
+      ...localGlobs(),
       // Workflow scripts run in the Workflow tool's runtime (top-level return,
       // agent()/pipeline() globals); tested by .claude/workflows/__tests__/
       '.claude/workflows/*.js',

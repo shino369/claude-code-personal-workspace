@@ -19,6 +19,7 @@ import { formatLocal } from '../task/markdown.js';
 import { readActive, resolveTaskName, tasksRoot } from '../task/store.js';
 import { commandFor } from '../tools/registry.js';
 import { ROOT_DIR } from '../workspace-config.js';
+import { relPosix } from '../paths.js';
 
 export const DEFAULT_TIMEOUT_MIN = 10;
 
@@ -319,7 +320,7 @@ function ask(options, d) {
   );
 
   const code = result.code === null ? 1 : result.code;
-  const record = path.relative(d.rootDir, file);
+  const record = relPosix(d.rootDir, file);
   if (options.json) {
     d.log(
       JSON.stringify(
