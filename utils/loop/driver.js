@@ -10,6 +10,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { formatBrief, summarizeTask } from '../task/brief.js';
+import { withCheck } from '../task/check.js';
 import { formatGit } from '../task/git.js';
 import { INNER_LOOP_ENV, failureSignature } from '../task/loop.js';
 import {
@@ -175,7 +176,7 @@ export function runLoop({
       `${name} has no verify commands, so the loop has no finish line.\nFix: pnpm task set --task ${name} --verify "pnpm check"`
     );
   }
-  const { verify } = initial;
+  const verify = withCheck(initial.verify, { name, taskDir });
 
   /** @returns {VerifyResult} */
   const check = () => {

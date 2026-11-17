@@ -7,6 +7,7 @@
  * NOTES.md) so the hook stays a thin stdin/stdout wrapper.
  */
 import crypto from 'crypto';
+import { withCheck } from './check.js';
 import { formatGit } from './git.js';
 import { appendSeparator, formatNoteEntry } from './markdown.js';
 import { appendNotes, loadTask, readActive, updateState } from './store.js';
@@ -195,7 +196,7 @@ export function runInnerLoop({ deps }) {
   if (!active || active.state.loop.halted) return { action: 'skip' };
   const { name, task, state } = active;
 
-  const commands = innerCommands(state);
+  const commands = withCheck(innerCommands(state), { name, taskDir: task.dir });
   if (commands.length === 0) {
     return {
       action: 'allow',

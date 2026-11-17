@@ -544,6 +544,57 @@ describe('verify', () => {
       /no verify commands\.\nFix: pnpm task set/
     );
   });
+
+  test('should run pnpm task check first when the task has code', () => {
+    newTask(['--verify', 'pnpm test']);
+    fs.mkdirSync(path.join(tasksRoot(root), NAME, 'scripts'), {
+      recursive: true,
+    });
+    fs.writeFileSync(path.join(tasksRoot(root), NAME, 'scripts', 'a.js'), '');
+    const runCommands = fakeRunner([{ ok: true }, { ok: true }]);
+    run(['verify'], { runCommands });
+    expect(runCommands.mock.calls[0][0].commands).toEqual([
+      `pnpm task check --task ${NAME}`,
+      'pnpm test',
+    ]);
+
+    const skipped = fakeRunner([{ ok: true }]);
+    run(['verify', '--no-check'], { runCommands: skipped });
+    expect(skipped.mock.calls[0][0].commands).toEqual(['pnpm test']);
+  });
+});
+
+describe('check', () => {
+  const result = (/** @type {boolean} */ ok) => ({
+    ok,
+    skipped: false,
+    parts: [{ name: /** @type {const} */ ('eslint'), ok, output: 'out' }],
+  });
+
+  test('should report a pass and pass --fix through', async () => {
+    newTask();
+    const runCheck = vi.fn(async () => result(true));
+    const { code } = run(['check', '--fix'], { runCheck });
+    expect(await code).toBe(0);
+    expect(logs.join('\n')).toContain('✓ check passed');
+    expect(runCheck).toHaveBeenCalledWith({
+      rootDir: root,
+      taskDir: path.join(tasksRoot(root), NAME),
+      fix: true,
+    });
+  });
+
+  test('should exit 1 on failure and print JSON with --json', async () => {
+    newTask();
+    const runCheck = vi.fn(async () => result(false));
+    const { code } = run(['check', '--json'], { runCheck });
+    expect(await code).toBe(1);
+    expect(JSON.parse(logs.join('\n'))).toMatchObject({
+      ok: false,
+      task: NAME,
+      parts: [{ name: 'eslint' }],
+    });
+  });
 });
 
 describe('set', () => {
@@ -699,6 +750,7 @@ describe('done', () => {
 test('COMMANDS should list every documented command', () => {
   expect(Object.keys(COMMANDS).sort()).toEqual(
     [
+      'check',
       'claim',
       'done',
       'help',

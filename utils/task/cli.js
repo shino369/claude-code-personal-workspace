@@ -45,6 +45,7 @@ import {
   updateState,
   writeActive,
 } from './store.js';
+import { formatCheck, withCheck } from './check.js';
 import { FRESH_LOOP, parseMax } from './loop.js';
 import { summarize, tail } from './verify.js';
 
@@ -69,7 +70,10 @@ Work
                                 claim; --force takes over a step another agent claimed)
   note --done "…" --next "…" [--open "…"] [-m "…"]
                                 Append a NOTES.md entry (State line is filled in for you)
-  verify [--fast]               Run the task's verify commands; exit 1 on failure
+  check [--fix]                 Lint (ESLint), format-check (Prettier), and typecheck (tsc)
+                                the task's code; --fix rewrites what ESLint/Prettier can fix
+  verify [--fast] [--no-check]  Run the task's verify commands; exit 1 on failure. Tasks
+                                with code run pnpm task check first (--no-check skips it)
   set [--goal "…"] [--verify "cmd"]… [--verify-fast "cmd"]…
                                 Change the goal or replace the verify command lists
   set --loop on|off [--loop-max N]
@@ -109,6 +113,8 @@ const BOOLEAN_FLAGS = {
   '--fast': 'fast',
   '--all': 'all',
   '--force': 'force',
+  '--fix': 'fix',
+  '--no-check': 'noCheck',
   '--help': 'help',
   '-h': 'help',
 };
@@ -121,6 +127,7 @@ const BOOLEAN_FLAGS = {
  *   loop?: string, loopMax?: string,
  *   step: string[], verify: string[], verifyFast: string[],
  *   json: boolean, fast: boolean, all: boolean, force: boolean, help: boolean,
+ *   fix: boolean, noCheck: boolean,
  * }} Options
  * @typedef {import('./deps.js').Deps} Deps
  */
@@ -141,6 +148,8 @@ export function parseArgs(argv) {
     all: false,
     force: false,
     help: false,
+    fix: false,
+    noCheck: false,
   };
   const record = /** @type {Record<string, unknown>} */ (options);
 
@@ -292,7 +301,7 @@ function output(deps, options, json, text) {
   deps.log(options.json ? JSON.stringify(json, null, 2) : text);
 }
 
-/** @type {Record<string, (options: Options, deps: Deps) => number>} */
+/** @type {Record<string, (options: Options, deps: Deps) => number | Promise<number>>} */
 export const COMMANDS = {
   help(_options, deps) {
     deps.log(HELP);
@@ -616,10 +625,13 @@ export const COMMANDS = {
         `${name} has no ${STATE_FILE}.\nFix: pnpm task init ${name} --verify "pnpm check"`
       );
     }
-    const commands =
+    const listed =
       options.fast && task.state.verifyFast.length > 0
         ? task.state.verifyFast
         : task.state.verify;
+    const commands = options.noCheck
+      ? listed
+      : withCheck(listed, { name, taskDir: task.dir });
     if (commands.length === 0) {
       throw new Error(
         `${name} has no verify commands.\nFix: pnpm task set --verify "pnpm check" (add --verify-fast "…" for a quick subset)`
@@ -767,6 +779,18 @@ export const COMMANDS = {
     return 0;
   },
 
+  async check(options, deps) {
+    const name = targetName(options, deps);
+    const task = loadTask(deps.rootDir, name);
+    const result = await deps.runCheck({
+      rootDir: deps.rootDir,
+      taskDir: task.dir,
+      fix: options.fix,
+    });
+    output(deps, options, { task: name, ...result }, formatCheck(result, name));
+    return result.ok ? 0 : 1;
+  },
+
   done(options, deps) {
     const name = targetName(options, deps);
     const task = loadTask(deps.rootDir, name);
@@ -804,7 +828,7 @@ export const COMMANDS = {
 
 /**
  * @param {{ argv?: string[], deps?: Partial<Deps> }} [options]
- * @returns {number}
+ * @returns {number | Promise<number>}
  */
 export function main({ argv = process.argv.slice(2), deps = {} } = {}) {
   /** @type {Deps} */
@@ -820,10 +844,10 @@ export function main({ argv = process.argv.slice(2), deps = {} } = {}) {
   return COMMANDS[command](options, resolved);
 }
 
-/* c8 ignore next 8 - CLI entry point */
-runIfMain(import.meta.url, () => {
+/* c8 ignore next 9 - CLI entry point */
+runIfMain(import.meta.url, async () => {
   try {
-    process.exit(main());
+    process.exit(await main());
   } catch (error) {
     console.error('Error:', error instanceof Error ? error.message : error);
     process.exit(1);
