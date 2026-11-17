@@ -16,6 +16,7 @@ import {
   parseMax,
   resetInnerLoop,
   runInnerLoop,
+  scopeFingerprint,
 } from '../loop.js';
 import { createState } from '../state.js';
 import { TEMPLATES_DIR, loadTask, writeActive } from '../store.js';
@@ -265,6 +266,113 @@ describe('runInnerLoop', () => {
   test('should skip when no task is active', () => {
     expect(runInnerLoop({ deps: deps() })).toEqual({
       action: 'skip',
+    });
+  });
+
+  describe('quality loop (code tasks)', () => {
+    const passing = () =>
+      vi.fn(({ commands }) =>
+        commands.map((/** @type {string} */ command) => ({
+          command,
+          ok: true,
+          code: 0,
+          durationMs: 1,
+          output: '',
+        }))
+      );
+    /** A git scope with one changed file whose content the test controls. */
+    const runGit = vi.fn((/** @type {string[]} */ args) =>
+      args[0] === 'merge-base' ? 'abc' : args[0] === 'diff' ? 'lib.js' : ''
+    );
+    const stop = () =>
+      runInnerLoop({ deps: deps({ runCommands: passing(), runGit }) });
+    const quality = () => loadTask(root, NAME).state?.quality;
+
+    test('should block once to ask for a review, then let the stop through', () => {
+      cli(['new', 'demo', '--goal', 'G', '--verify', 'pnpm test']);
+      fs.writeFileSync(path.join(root, 'lib.js'), 'v1');
+
+      const first = stop();
+      expect(first.action).toBe('block');
+      expect(first.reason).toContain('run review round 1/2');
+      expect(quality()?.nudged).toMatch(/^review round 1:r0:[0-9a-f]{16}:$/);
+      expect(loadTask(root, NAME).state?.lastVerify?.ok).toBe(true);
+
+      expect(stop()).toMatchObject({
+        action: 'allow',
+        message: expect.stringContaining('reminded once already'),
+      });
+
+      fs.writeFileSync(path.join(root, 'lib.js'), 'v2');
+      expect(stop().action).toBe('block');
+    });
+
+    test('should complete the loop and write a NOTES entry', () => {
+      cli(['new', 'demo', '--goal', 'G', '--verify', 'pnpm test']);
+      fs.writeFileSync(path.join(root, 'lib.js'), 'v1');
+      const state = /** @type {import('../state.js').TaskState} */ (
+        loadTask(root, NAME).state
+      );
+      const file = path.join(root, 'tasks', NAME, 'state.json');
+      fs.writeFileSync(
+        file,
+        JSON.stringify({
+          ...state,
+          quality: { ...state.quality, phase: 'fix', reviewRounds: 2 },
+        })
+      );
+
+      expect(stop()).toMatchObject({
+        action: 'allow',
+        message: `✓ quality loop complete for ${NAME} (2 review round(s)).`,
+      });
+      expect(quality()?.phase).toBe('complete');
+      const notes = fs.readFileSync(
+        path.join(root, 'tasks', NAME, 'NOTES.md'),
+        'utf-8'
+      );
+      expect(notes).toContain('auto: quality loop');
+      expect(notes).toContain('verify pass');
+    });
+
+    test('should let the stop through when git cannot give a merge base', () => {
+      cli(['new', 'demo', '--goal', 'G', '--verify', 'pnpm test']);
+      const result = runInnerLoop({
+        deps: deps({ runCommands: passing(), runGit: () => null }),
+      });
+      expect(result).toMatchObject({ action: 'allow' });
+      expect(quality()?.phase).toBe('build');
+    });
+
+    test('should fingerprint a code state that has no quality yet', () => {
+      fs.writeFileSync(path.join(root, 'lib.js'), 'v1');
+      const { quality: _q, ...state } = createState({
+        name: NAME,
+        goal: 'G',
+        kind: 'code',
+      });
+      expect(
+        scopeFingerprint(deps({ runGit }), path.join(root, 'none'), state)
+      ).toMatch(/^[0-9a-f]{16}$/);
+    });
+
+    test('should leave general tasks to the plain inner loop', () => {
+      cli([
+        'new',
+        'demo',
+        '--goal',
+        'G',
+        '--verify',
+        'pnpm test',
+        '--kind',
+        'general',
+      ]);
+      cli(['set', '--loop', 'on']);
+      expect(stop()).toMatchObject({
+        action: 'allow',
+        message: `✓ task verify passed (${NAME})`,
+      });
+      expect(quality()).toBeUndefined();
     });
   });
 

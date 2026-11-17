@@ -12,7 +12,7 @@ import crypto from 'crypto';
 import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { listCodeFiles } from './check.js';
+import { hasTaskCode, listCodeFiles } from './check.js';
 import { git } from './git.js';
 import { SEVERITIES, VERDICTS, freshQuality, toFix } from './quality.js';
 import { addStep } from './state.js';
@@ -63,6 +63,19 @@ export const reviewFiles = (name, round) => ({
   brief: path.posix.join('reviews', `BRIEF_${name}-r${round}.md`),
   findings: path.posix.join('reviews', `REVIEW_${name}-r${round}.md`),
 });
+
+/**
+ * The base a round reviews against: an open round keeps its own; otherwise
+ * `--base`, else none for a task with code (its folder is the scope), else
+ * `main` (the task changes the workspace).
+ *
+ * @param {{ quality: import('./quality.js').Quality, taskDir: string, base?: string }} options
+ * @returns {string | null}
+ */
+export function reviewBase({ quality, taskDir, base }) {
+  if (quality.phase === 'review') return quality.base ?? null;
+  return base ?? (hasTaskCode(taskDir) ? null : DEFAULT_BASE);
+}
 
 /**
  * The files a review round covers, as sorted root-relative POSIX paths.

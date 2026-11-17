@@ -10,6 +10,8 @@ import crypto from 'crypto';
 import { withCheck } from './check.js';
 import { formatGit } from './git.js';
 import { appendSeparator, formatNoteEntry } from './markdown.js';
+import { decideQuality, freshQuality } from './quality.js';
+import { fingerprint, reviewBase, reviewScope } from './review.js';
 import { appendNotes, loadTask, readActive, updateState } from './store.js';
 import { stripAnsi, summarize } from './verify.js';
 
@@ -184,6 +186,33 @@ function activeLoop(deps) {
 }
 
 /**
+ * Fingerprint of the task's review scope now, or null when git cannot say
+ * (no merge base): the quality loop then lets the stop through.
+ *
+ * @param {import('./deps.js').Deps} deps
+ * @param {string} taskDir
+ * @param {TaskState} state
+ * @returns {string | null}
+ */
+export function scopeFingerprint(deps, taskDir, state) {
+  try {
+    const base = reviewBase({
+      quality: state.quality ?? freshQuality(),
+      taskDir,
+    });
+    const scope = reviewScope({
+      rootDir: deps.rootDir,
+      taskDir,
+      base,
+      runGit: deps.runGit,
+    });
+    return fingerprint(deps.rootDir, scope.files);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Run the inner loop for the active task: verify, record the result, and
  * return the decision. Returns `{ action: 'skip' }` when the loop is off or
  * halted.
@@ -213,7 +242,25 @@ export function runInnerLoop({ deps }) {
     }),
     now
   );
-  const decision = decideInner({ state, verify });
+  const inner = decideInner({ state, verify });
+  const quality =
+    verify.ok && state.kind === 'code'
+      ? decideQuality({
+          state: { ...state, lastVerify: verify },
+          fingerprint: scopeFingerprint(deps, task.dir, state),
+        })
+      : null;
+  /** @type {InnerDecision} */
+  const decision = !quality
+    ? inner
+    : quality.action === 'block'
+      ? {
+          ...inner,
+          action: 'block',
+          reason: quality.reason,
+          message: undefined,
+        }
+      : { ...inner, message: quality.message ?? inner.message };
   const agent = deps.env.TASK_AGENT ?? 'claude';
   updateState(
     deps.rootDir,
@@ -222,9 +269,23 @@ export function runInnerLoop({ deps }) {
       ...current,
       lastVerify: verify,
       loop: /** @type {TaskState['loop']} */ (decision.loop),
+      ...(quality ? { quality: quality.quality } : {}),
     }),
     { now, agent }
   );
+  if (quality?.note) {
+    appendNotes(
+      task.dir,
+      formatNoteEntry({
+        at: now,
+        agent,
+        label: 'auto: quality loop',
+        message: quality.note,
+        state: `${formatGit(deps.git(deps.rootDir))}; verify pass`,
+      }),
+      appendSeparator
+    );
+  }
   if (decision.note) {
     appendNotes(
       task.dir,

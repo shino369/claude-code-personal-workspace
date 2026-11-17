@@ -42,6 +42,7 @@ export const DEFAULT_MAX_ROUNDS = 2;
  *   maxRounds: number,
  *   reviewedDiff: string | null,
  *   base?: string | null,
+ *   nudged?: string | null,
  *   findings: Finding[],
  * }} Quality
  */
@@ -127,6 +128,9 @@ export function validateQuality(quality, stepIds) {
   if (q.base !== undefined && q.base !== null && !isString(q.base)) {
     errors.push('quality.base must be a git ref or null');
   }
+  if (q.nudged !== undefined && q.nudged !== null && !isString(q.nudged)) {
+    errors.push('quality.nudged must be a string or null');
+  }
   if (!Array.isArray(q.findings)) {
     errors.push('quality.findings must be an array');
     return errors;
@@ -201,4 +205,102 @@ export function formatQuality(quality, steps) {
       ? 'no findings yet'
       : `${c.total} finding(s): ${c.confirmed} confirmed, ${c.refuted} refuted; ${c.openFixes} of ${c.toFix} must-fix/high open; ${c.recordedOnly} medium/low recorded`;
   return `${quality.phase} — ${rounds}; ${findings}`;
+}
+
+/**
+ * @typedef {{
+ *   action: 'block' | 'allow',
+ *   reason?: string,
+ *   message?: string,
+ *   quality: Quality,
+ *   note?: string,
+ * }} QualityDecision
+ */
+
+/**
+ * What the Stop hook does about the quality loop once verify passes.
+ *
+ * Each reminder is given once per situation (phase, round, reviewed code,
+ * open fixes): stopping again without changing anything is allowed, so an
+ * agent that cannot run reviewers is never blocked forever.
+ *
+ * @param {{ state: import('./state.js').TaskState, fingerprint: string | null }} input
+ *   fingerprint of the review scope now (null when it cannot be computed)
+ * @returns {QualityDecision}
+ */
+export function decideQuality({ state, fingerprint }) {
+  const quality = state.quality ?? freshQuality();
+  const { phase, reviewRounds: rounds, maxRounds: max } = quality;
+  const done = new Set(
+    state.steps.filter((s) => s.status === 'done').map((s) => s.id)
+  );
+  const openFixes = toFix(quality).filter((f) => !f.step || !done.has(f.step));
+  const allow = () => ({ action: /** @type {const} */ ('allow'), quality });
+  /**
+   * @param {string} situation
+   * @param {string[]} lines
+   * @returns {QualityDecision}
+   */
+  const nudge = (situation, lines) => {
+    const key = `${situation}:r${rounds}:${fingerprint ?? '-'}:${openFixes.map((f) => f.id).join(',')}`;
+    if (quality.nudged === key) {
+      return {
+        action: 'allow',
+        message: `Quality loop for ${state.name}: ${situation} is still pending (reminded once already).`,
+        quality,
+      };
+    }
+    return {
+      action: 'block',
+      reason: [
+        ...lines,
+        'If that cannot be done here (no subagents, or it needs the user), say so and stop; this reminder is not repeated.',
+      ].join('\n'),
+      quality: { ...quality, nudged: key },
+    };
+  };
+
+  if (state.steps.some((s) => s.status === 'blocked')) return allow();
+  if (phase === 'review') {
+    return nudge('the open review round', [
+      `Review round ${rounds}/${max} for ${state.name} is open but not recorded.`,
+      'Finish it before stopping: the reviewer and then the triage, in clean contexts, as `pnpm task review` printed (run it again to see the brief), then: pnpm task review record',
+    ]);
+  }
+  if (openFixes.length > 0) {
+    const steps = state.steps.filter((s) =>
+      openFixes.some((f) => f.step === s.id)
+    );
+    return nudge('the confirmed fixes', [
+      `Review round ${rounds} confirmed ${openFixes.length} must-fix/high finding(s) that are not fixed yet:`,
+      ...steps.map((s) => `- ${s.id}. ${s.title}`),
+      'Fix each test-first, run pnpm task verify, and mark the step done (pnpm task step <id> done).',
+    ]);
+  }
+  if (state.steps.some((s) => s.status !== 'done')) return allow();
+  if (fingerprint === null) return allow();
+  if (rounds < max && fingerprint !== quality.reviewedDiff) {
+    return nudge(`review round ${rounds + 1}`, [
+      `Verify passes and every step of ${state.name} is done. Before stopping, run review round ${rounds + 1}/${max} in clean contexts:`,
+      '1. pnpm task review — writes the brief and the findings file',
+      '2. the reviewer, then the triage, as its output says (not yourself: you wrote the code)',
+      '3. pnpm task review record — confirmed must-fix/high findings become fix: steps',
+    ]);
+  }
+  if (phase === 'complete') return allow();
+  const c = countFindings(quality, state.steps);
+  const recorded = quality.findings.filter(
+    (f) => f.verdict === 'CONFIRMED' && !FIX_SEVERITIES.includes(f.severity)
+  );
+  return {
+    action: 'allow',
+    message: `✓ quality loop complete for ${state.name} (${rounds} review round(s)).`,
+    quality: { ...quality, phase: 'complete', nudged: null },
+    note: [
+      `Quality loop complete after ${rounds}/${max} review round(s): ${c.total} finding(s), ${c.toFix} must-fix/high fixed, ${c.refuted} refuted.`,
+      recorded.length > 0
+        ? `Recorded, not fixed (list under Open): ${recorded.map((f) => `${f.id} ${f.severity} ${f.file}${f.line ? `:${f.line}` : ''} — ${f.claim}`).join('; ')}.`
+        : 'Nothing recorded for later.',
+    ].join(' '),
+  };
 }

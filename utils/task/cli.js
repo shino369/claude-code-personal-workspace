@@ -47,17 +47,17 @@ import {
   updateState,
   writeActive,
 } from './store.js';
-import { formatCheck, hasTaskCode, withCheck } from './check.js';
+import { formatCheck, withCheck } from './check.js';
 import { FRESH_LOOP, parseMax } from './loop.js';
 import { countFindings, freshQuality, toFix } from './quality.js';
 import {
-  DEFAULT_BASE,
   findingsTemplate,
   fingerprint,
   formatReviewBrief,
   openRound,
   parseFindings,
   recordFindings,
+  reviewBase,
   reviewFiles,
   reviewScope,
 } from './review.js';
@@ -881,10 +881,11 @@ export const COMMANDS = {
       );
     }
     const quality = task.state.quality ?? freshQuality();
-    const base =
-      quality.phase === 'review'
-        ? (quality.base ?? null)
-        : (options.base ?? (hasTaskCode(task.dir) ? null : DEFAULT_BASE));
+    const base = reviewBase({
+      quality,
+      taskDir: task.dir,
+      base: options.base,
+    });
     const scope = reviewScope({
       rootDir: deps.rootDir,
       taskDir: task.dir,

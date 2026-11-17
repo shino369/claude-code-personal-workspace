@@ -1,11 +1,13 @@
 import {
   DEFAULT_MAX_ROUNDS,
   countFindings,
+  decideQuality,
   formatQuality,
   freshQuality,
   toFix,
   validateQuality,
 } from '../quality.js';
+import { createState } from '../state.js';
 
 /**
  * @param {Partial<import('../quality.js').Finding>} [overrides]
@@ -79,6 +81,7 @@ describe('validateQuality', () => {
           maxRounds: 0,
           reviewedDiff: 3,
           base: 4,
+          nudged: 5,
           findings: {},
         },
         STEPS
@@ -89,6 +92,7 @@ describe('validateQuality', () => {
       'quality.maxRounds must be an int ≥ 1',
       'quality.reviewedDiff must be a string or null',
       'quality.base must be a git ref or null',
+      'quality.nudged must be a string or null',
       'quality.findings must be an array',
     ]);
   });
@@ -183,5 +187,157 @@ describe('toFix and countFindings', () => {
     expect(formatQuality(freshQuality(), [])).toBe(
       'build — review round 0/2; no findings yet'
     );
+  });
+});
+
+describe('decideQuality', () => {
+  /**
+   * @param {Partial<import('../quality.js').Quality>} [q]
+   * @param {Array<{ id: string, status: import('../state.js').StepStatus }>} [steps]
+   * @returns {import('../state.js').TaskState}
+   */
+  const code = (q = {}, steps = [{ id: 's1', status: 'done' }]) => ({
+    ...createState({ name: 'demo', goal: 'G', verify: ['t'], kind: 'code' }),
+    steps: steps.map((s) => ({
+      ...s,
+      title: `${s.id} title`,
+      deps: [],
+      owner: null,
+    })),
+    quality: { ...freshQuality(), ...q },
+  });
+  const decide = (
+    /** @type {import('../state.js').TaskState} */ state,
+    fingerprint = /** @type {string | null} */ ('fp2')
+  ) => decideQuality({ state, fingerprint });
+
+  test('should ask for the first review once every step is done', () => {
+    const result = decide(code());
+    expect(result.action).toBe('block');
+    expect(result.reason).toContain('run review round 1/2 in clean contexts');
+    expect(result.reason).toContain('1. pnpm task review');
+    expect(result.reason).toContain('this reminder is not repeated');
+    expect(result.quality.nudged).toBe('review round 1:r0:fp2:');
+  });
+
+  test('should remind only once per situation', () => {
+    const first = decide(code());
+    const again = decide({ ...code(), quality: first.quality });
+    expect(again).toEqual({
+      action: 'allow',
+      message:
+        'Quality loop for demo: review round 1 is still pending (reminded once already).',
+      quality: first.quality,
+    });
+    expect(decide({ ...code(), quality: first.quality }, 'fp3').action).toBe(
+      'block'
+    );
+  });
+
+  test('should allow a stop while a step is blocked or work is open', () => {
+    expect(decide(code({}, [{ id: 's1', status: 'blocked' }])).action).toBe(
+      'allow'
+    );
+    expect(decide(code({}, [{ id: 's1', status: 'in_progress' }]))).toEqual({
+      action: 'allow',
+      quality: code().quality,
+    });
+  });
+
+  test('should ask to finish an open round', () => {
+    const result = decide(code({ phase: 'review', reviewRounds: 1 }));
+    expect(result.action).toBe('block');
+    expect(result.reason).toContain(
+      'Review round 1/2 for demo is open but not recorded.'
+    );
+  });
+
+  test('should still remind about an open round when there is no fingerprint', () => {
+    const result = decide(code({ phase: 'review', reviewRounds: 1 }), null);
+    expect(result.quality.nudged).toBe('the open review round:r1:-:');
+  });
+
+  test('should ask to finish confirmed fixes and list their steps', () => {
+    const result = decide(
+      code(
+        {
+          phase: 'fix',
+          reviewRounds: 1,
+          findings: [finding({ step: 's2' }), finding({ id: 'b', step: null })],
+        },
+        [
+          { id: 's1', status: 'done' },
+          { id: 's2', status: 'todo' },
+        ]
+      )
+    );
+    expect(result.action).toBe('block');
+    expect(result.reason).toContain(
+      'Review round 1 confirmed 2 must-fix/high finding(s) that are not fixed yet:\n- s2. s2 title'
+    );
+  });
+
+  test('should ask for round 2 after the fixes changed the code', () => {
+    const result = decide(
+      code({
+        phase: 'fix',
+        reviewRounds: 1,
+        reviewedDiff: 'fp1',
+        findings: [finding({ step: 's1' })],
+      })
+    );
+    expect(result.reason).toContain('run review round 2/2');
+  });
+
+  test('should let the stop through when the scope cannot be fingerprinted', () => {
+    expect(decide(code(), null)).toEqual({
+      action: 'allow',
+      quality: code().quality,
+    });
+  });
+
+  test('should allow quietly once complete and nothing changed', () => {
+    const state = code({
+      phase: 'complete',
+      reviewRounds: 1,
+      reviewedDiff: 'fp2',
+    });
+    expect(decide(state)).toEqual({ action: 'allow', quality: state.quality });
+  });
+
+  test('should complete the loop after the last round and note what is left', () => {
+    const result = decide(
+      code({
+        phase: 'fix',
+        reviewRounds: 2,
+        nudged: 'x',
+        findings: [
+          finding({ step: 's1' }),
+          finding({ id: 'm', severity: 'medium' }),
+          finding({ id: 'l', severity: 'low', line: null }),
+          finding({ id: 'r', verdict: 'REFUTED' }),
+        ],
+      })
+    );
+    expect(result).toMatchObject({
+      action: 'allow',
+      message: '✓ quality loop complete for demo (2 review round(s)).',
+      quality: { phase: 'complete', nudged: null },
+    });
+    expect(result.note).toBe(
+      'Quality loop complete after 2/2 review round(s): 4 finding(s), 1 must-fix/high fixed, 1 refuted. Recorded, not fixed (list under Open): m medium app/src/a.js:12 — Race between save and load; l low app/src/a.js — Race between save and load.'
+    );
+  });
+
+  test('should complete without leftovers when the code is unchanged since review', () => {
+    const result = decide(
+      code({ phase: 'build', reviewRounds: 1, reviewedDiff: 'fp2' })
+    );
+    expect(result.note).toContain('Nothing recorded for later.');
+  });
+
+  test('should treat a code state without quality as fresh', () => {
+    const { quality: _q, ...state } = code();
+    expect(decide(state).action).toBe('block');
   });
 });
