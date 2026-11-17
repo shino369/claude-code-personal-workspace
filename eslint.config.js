@@ -5,6 +5,7 @@
 
 import globals from 'globals';
 import prettier from 'eslint-config-prettier';
+import { vendoredGlobs } from './utils/workspace-config.js';
 
 export default [
   {
@@ -16,16 +17,8 @@ export default [
       '**/build/**',
       '**/tasks/**',
       '**/logs/**',
-      '**/.agents/**',
-      '**/.github/skills/**',
-      '**/.claude/skills/agent-browser/**',
-      '**/.claude/skills/browser-use/**',
-      '**/.claude/skills/code-review/**',
-      '**/.claude/skills/diagnosing-bugs/**',
-      '**/.claude/skills/i-have-adhd/**',
-      '**/.claude/skills/playwright-cli/**',
-      '**/.claude/skills/skill-creator/**',
-      '**/.claude/skills/tdd/**',
+      // Third-party skills and the .claude/skills link mirror
+      ...vendoredGlobs(),
       '**/*.min.js',
       'pnpm-lock.yaml',
       'package-lock.json',

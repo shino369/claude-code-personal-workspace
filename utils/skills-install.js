@@ -1,15 +1,25 @@
 #!/usr/bin/env node
 /**
- * Install third-party skills from skills-lock.json into .claude/skills.
+ * Install third-party skills from skills-lock.json with skills.sh.
  *
- * Uses --copy --agent claude-code so the skills work on a fresh Windows clone
- * where core.symlinks=false. Installed skills are git-ignored.
+ * skills.sh's default layout puts the canonical copy in .agents/skills/<name>
+ * (read directly by Codex and other agents) and links it into each agent's
+ * directory (.claude/skills/<name> for Claude Code). Installed third-party
+ * skills are git-ignored. utils/skills-link.js repairs links afterwards,
+ * including a junction fallback on Windows.
  */
 import { spawnSync } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { runIfMain } from './module-runner.js';
 import { readSkillsLock } from './skills-lock.js';
+
+/** skills.sh agent ids to install for. Codex reads .agents/skills directly. */
+export const INSTALL_AGENTS = ['claude-code', 'codex'];
+
+/** Lock values reach a shell on Windows, so only plain identifiers pass. */
+export const SAFE_SOURCE = /^[A-Za-z0-9][A-Za-z0-9._/:@-]*$/;
+export const SAFE_NAME = /^[a-z0-9][a-z0-9._-]*$/;
 
 export const ROOT_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -29,9 +39,8 @@ export function buildInstallArgs(entry, name) {
     entry.source ?? '',
     '--skill',
     name,
-    '--copy',
     '--agent',
-    'claude-code',
+    ...INSTALL_AGENTS,
     '-y',
   ];
 }
@@ -64,7 +73,7 @@ export function parseArgs(argv) {
 }
 
 /**
- * @param {{ rootDir?: string, lockPath?: string, skip?: string[], only?: string[], spawn?: Function, log?: (message: string) => void }} [options]
+ * @param {{ rootDir?: string, lockPath?: string, skip?: string[], only?: string[], spawn?: Function, log?: (message: string) => void, platform?: string }} [options]
  * @returns {Promise<number>}
  */
 export async function installSkills({
@@ -74,6 +83,7 @@ export async function installSkills({
   only = [],
   spawn = spawnSync,
   log = console.log,
+  platform = process.platform,
 } = {}) {
   const lock = await readSkillsLock(lockPath);
   const names = Object.keys(lock.skills).filter((name) => {
@@ -96,11 +106,19 @@ export async function installSkills({
       continue;
     }
 
+    if (!SAFE_SOURCE.test(entry.source) || !SAFE_NAME.test(name)) {
+      log(`✗ ${name} (unsafe source or name in skills-lock.json; refusing)`);
+      failures++;
+      continue;
+    }
+
     log(`Installing ${name}...`);
+    // pnpm is a .cmd shim on Windows, which Node only runs through a shell;
+    // the values above are validated, so no shell is used elsewhere.
     const result = spawn('pnpm', buildInstallArgs(entry, name), {
       cwd: rootDir,
       stdio: 'inherit',
-      shell: true,
+      shell: platform === 'win32',
     });
 
     if (result.status !== 0) {

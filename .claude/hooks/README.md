@@ -11,33 +11,42 @@ This directory contains hook scripts for Claude Code that automatically execute 
 
 **What it does:**
 
-- Logs all tool usage to `logs/<YYYYMMDD>/logging.json`
-- Creates a new log file for each day
+- Appends one JSON line per tool call to `<project>/logs/<YYYYMMDD>/logging.jsonl`. The project
+  root is `$CLAUDE_PROJECT_DIR`, else the hook input's `cwd`, else the process cwd
+- Append-only JSONL is safe when hooks run concurrently (parallel tool calls, subagents); a
+  read-modify-write JSON array would lose entries
 - Records timestamps, tool names, inputs, outputs, and session information
-- Truncates large content (>500 chars) to keep log files manageable
+- Redacts secrets in every string before logging: AWS keys, GitHub tokens, `sk-…` API keys,
+  Slack tokens, JWTs, `Bearer` tokens, PEM private keys, `*_TOKEN=` / `*_PASSWORD=` / `*API_KEY=`
+  style assignments, and string values under secret-named keys
+- Truncates large `content` / `new_source` fields (>500 chars) after redaction
+
+Redaction is pattern-based and best-effort; treat `logs/` as sensitive and keep it git-ignored.
 
 **Log Structure:**
 
 ```
 logs/
 └── 20260110/
-    └── logging.json
+    └── logging.jsonl
 ```
 
-**Log Entry Format:**
+**Log Entry Format** (one object per line):
 
 ```json
 {
   "timestamp": "2026-01-10T10:30:45.123Z",
   "session_id": "abc123...",
   "hook_event": "PostToolUse",
-  "tool_name": "Edit",
-  "tool_input": { "file_path": "...", "old_string": "..." },
-  "tool_response": { "success": true },
-  "cwd": "C:\\Users\\...",
+  "tool_name": "Bash",
+  "tool_input": { "command": "GH_TOKEN=[REDACTED] gh pr list" },
+  "tool_response": { "stdout": "..." },
+  "cwd": "/path/to/project",
   "permission_mode": "default"
 }
 ```
+
+Read a day's log with `jq . logs/<YYYYMMDD>/logging.jsonl`.
 
 ### 2. Auto Formatter (`auto_format.js`)
 

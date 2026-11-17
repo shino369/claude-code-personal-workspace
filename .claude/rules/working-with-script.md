@@ -42,7 +42,7 @@ your-script-dir/
 
 **100% coverage REQUIRED for:**
 
-- All scripts in `.claude/hooks/`, `.claude/skills/`, `utils/`
+- All scripts in `.claude/hooks/`, project-owned `.agents/skills/`, `utils/`
 - Business logic, data processing, API interaction scripts
 
 **Tests optional for:**

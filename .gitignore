@@ -202,22 +202,27 @@ pip-log.txt
 # Local MCP configuration (copy .mcp.json.example to .mcp.json)
 /.mcp.json
 
-# Local skills CLI cache
-/.agents/
-
 # Local aliases for GitHub agent discovery
 /.github/skills
 
 # Local resources
 /resources
 
-# Project-owned skills are tracked in .claude/skills/; third-party skills are
-# installed locally and remain untracked.
-/.claude/skills/*
-!/.claude/skills/context-manager/
-!/.claude/skills/dependency-update/
-!/.claude/skills/document-writing/
-!/.claude/skills/engineering-terminology/
-!/.claude/skills/security-update/
-!/.claude/skills/translation-expertise/
-!/.claude/skills/web-browsing/
+# Skills live in .agents/skills/ (the skills.sh layout, read directly by Codex
+# and other agents). Project-owned skills are tracked; third-party skills from
+# skills.sh stay local. Keep this list in sync with OWNED_SKILLS in
+# utils/workspace-config.js.
+/.agents/*
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/context-manager/
+!/.agents/skills/dependency-update/
+!/.agents/skills/document-writing/
+!/.agents/skills/engineering-terminology/
+!/.agents/skills/security-update/
+!/.agents/skills/translation-expertise/
+!/.agents/skills/web-browsing/
+!/.agents/skills/workspace-setup/
+
+# .claude/skills/ only holds links into .agents/skills/ (pnpm workspace:setup)
+/.claude/skills/

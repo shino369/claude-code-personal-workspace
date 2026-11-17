@@ -18,7 +18,7 @@ async function makeTempDir() {
  * @param {string | null} [frontmatterName]
  */
 async function writeSkill(root, name, frontmatterName = name) {
-  const dir = path.join(root, '.claude', 'skills', name);
+  const dir = path.join(root, '.agents', 'skills', name);
   await mkdir(dir, { recursive: true });
   const body =
     frontmatterName === null
@@ -134,7 +134,7 @@ describe('checkSkills', () => {
 
   test('reports a frontmatter block without a name', async () => {
     const root = await makeTempDir();
-    const skillDir = path.join(root, '.claude', 'skills', 'alpha');
+    const skillDir = path.join(root, '.agents', 'skills', 'alpha');
     await mkdir(skillDir, { recursive: true });
     await writeFile(
       path.join(skillDir, 'SKILL.md'),
@@ -156,7 +156,7 @@ describe('checkSkills', () => {
 
   test('rethrows unexpected filesystem errors', async () => {
     const root = await makeTempDir();
-    await mkdir(path.join(root, '.claude', 'skills', 'alpha', 'SKILL.md'), {
+    await mkdir(path.join(root, '.agents', 'skills', 'alpha', 'SKILL.md'), {
       recursive: true,
     });
     const lockPath = await writeLock(root, {

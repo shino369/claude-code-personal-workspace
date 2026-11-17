@@ -1,5 +1,5 @@
 /**
- * Verify that skills-lock.json entries are installed under .claude/skills.
+ * Verify that skills-lock.json entries are installed under .agents/skills.
  *
  * The lock's `computedHash` is a source snapshot hash produced during download;
  * it is not reproducible from the installed copy. This module therefore checks
@@ -7,6 +7,7 @@
  */
 import { readFile } from 'fs/promises';
 import path from 'path';
+import { SKILLS_DIR } from './workspace-config.js';
 
 /**
  * @typedef {{ name: string, ok: boolean, missing?: boolean, nameMismatch?: boolean, actualName?: string | null }} SkillCheckResult
@@ -45,7 +46,7 @@ async function readSkillName(skillPath) {
 }
 
 /**
- * Verify every lock entry has a .claude/skills/<name>/SKILL.md whose
+ * Verify every lock entry has a .agents/skills/<name>/SKILL.md whose
  * frontmatter name matches the lock key.
  *
  * @param {{ rootDir: string, lockPath: string }} options
@@ -57,7 +58,7 @@ export async function checkSkills({ rootDir, lockPath }) {
   const results = [];
 
   for (const name of Object.keys(lock.skills)) {
-    const skillPath = path.join(rootDir, '.claude', 'skills', name, 'SKILL.md');
+    const skillPath = path.join(rootDir, SKILLS_DIR, name, 'SKILL.md');
 
     try {
       const actualName = await readSkillName(skillPath);

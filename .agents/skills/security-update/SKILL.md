@@ -22,7 +22,7 @@ Before applying any fix, verify the target version was published > 10,080 minute
 > **Two enforcement layers exist.** `pnpm-workspace.yaml` already sets `minimumReleaseAge: 10080`, so `pnpm install` itself refuses to resolve any package version younger than 7 days. The script below is a complementary _pre-check_ that gives a human-readable age report **before** you write anything to the workspace file. Keep both: the script stops you writing a too-new version; the workspace setting stops you installing one. Note that `pnpm audit --fix` (Step 4a) can punch a hole in this by appending to `minimumReleaseAgeExclude` — see Step 4a.
 
 ```bash
-node .claude/skills/security-update/scripts/check_release_age.mjs <package-name> <target-version>
+node .agents/skills/security-update/scripts/check_release_age.mjs <package-name> <target-version>
 ```
 
 **Do not proceed** if the version is younger than 10,080 minutes. Pick the next older safe version that still resolves the vulnerability.
@@ -46,7 +46,7 @@ pnpm outdated <parent-package>
 c. Choose the target parent version and verify its age **before** editing the catalog:
 
 ```bash
-node .claude/skills/security-update/scripts/check_release_age.mjs <parent-package> <target-parent-version>
+node .agents/skills/security-update/scripts/check_release_age.mjs <parent-package> <target-parent-version>
 ```
 
 Do not update the catalog if the parent version is younger than 10,080 minutes. Pick an older safe parent version, or use Step 4 if no aged parent version resolves the vulnerability.

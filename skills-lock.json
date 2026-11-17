@@ -5,50 +5,43 @@
       "source": "vercel-labs/agent-browser",
       "sourceType": "github",
       "skillPath": "skills/agent-browser/SKILL.md",
-      "computedHash": "13d4c36e4147478e4749ece397f7a37c7ed04cd2697d81f37ba3c241431e085f",
-      "installMode": "copy"
+      "computedHash": "13d4c36e4147478e4749ece397f7a37c7ed04cd2697d81f37ba3c241431e085f"
     },
     "browser-use": {
       "source": "browser-use/browser-use",
       "sourceType": "github",
       "skillPath": "skills/browser-use/SKILL.md",
-      "computedHash": "8f89a82942b9fe3eebfd33a094c8e5a846faf038b9ae14e06467f1d6ca563b40",
-      "installMode": "copy"
+      "computedHash": "8f89a82942b9fe3eebfd33a094c8e5a846faf038b9ae14e06467f1d6ca563b40"
     },
     "code-review": {
       "source": "mattpocock/skills",
       "sourceType": "github",
       "skillPath": "skills/engineering/code-review/SKILL.md",
-      "computedHash": "c2745e2be960b82b9fddd82cf45265f42431e7b045c403f297b25f0f311e9210",
-      "installMode": "copy"
+      "computedHash": "c2745e2be960b82b9fddd82cf45265f42431e7b045c403f297b25f0f311e9210"
     },
     "diagnosing-bugs": {
       "source": "mattpocock/skills",
       "sourceType": "github",
       "skillPath": "skills/engineering/diagnosing-bugs/SKILL.md",
-      "computedHash": "ede7254edbd22fcab97a0941511f7d440d8f9a249348fea97c50987ad5501674",
-      "installMode": "copy"
+      "computedHash": "ede7254edbd22fcab97a0941511f7d440d8f9a249348fea97c50987ad5501674"
     },
     "playwright-cli": {
       "source": "microsoft/playwright-cli",
       "sourceType": "github",
       "skillPath": "skills/playwright-cli/SKILL.md",
-      "computedHash": "835a0ebe31ba7481dd23afcb14782f8ef2d4195aad44ae296ccfbc6cfaadcb3f",
-      "installMode": "copy"
+      "computedHash": "835a0ebe31ba7481dd23afcb14782f8ef2d4195aad44ae296ccfbc6cfaadcb3f"
     },
     "skill-creator": {
       "source": "anthropics/skills",
       "sourceType": "github",
       "skillPath": "skills/skill-creator/SKILL.md",
-      "computedHash": "5ea13a6d9f0d4bb694405d79acd00cadec0d21bb138c4dd10fcf3c500cb835c2",
-      "installMode": "copy"
+      "computedHash": "5ea13a6d9f0d4bb694405d79acd00cadec0d21bb138c4dd10fcf3c500cb835c2"
     },
     "tdd": {
       "source": "mattpocock/skills",
       "sourceType": "github",
       "skillPath": "skills/engineering/tdd/SKILL.md",
-      "computedHash": "daf55026f456af104a72fa43247f7bcec89e5127316dc5b1b8d675d6a9d8ce94",
-      "installMode": "copy"
+      "computedHash": "daf55026f456af104a72fa43247f7bcec89e5127316dc5b1b8d675d6a9d8ce94"
     }
   }
 }

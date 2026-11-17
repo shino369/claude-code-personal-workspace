@@ -3,20 +3,11 @@
  * For more information: https://vitest.dev/config/
  */
 import { defineConfig } from 'vitest/config';
+import { vendoredGlobs } from './utils/workspace-config.js';
 
-// Third-party skills are vendored as-is; do not run or measure them.
-const thirdPartySkills = [
-  '**/.agents/**',
-  '**/.github/skills/**',
-  '**/.claude/skills/agent-browser/**',
-  '**/.claude/skills/browser-use/**',
-  '**/.claude/skills/code-review/**',
-  '**/.claude/skills/diagnosing-bugs/**',
-  '**/.claude/skills/i-have-adhd/**',
-  '**/.claude/skills/playwright-cli/**',
-  '**/.claude/skills/skill-creator/**',
-  '**/.claude/skills/tdd/**',
-];
+// Third-party skills (and the .claude/skills link mirror) are vendored as-is;
+// do not run or measure them. Project-owned skills in .agents/skills are tested.
+const thirdPartySkills = vendoredGlobs();
 
 export default defineConfig({
   test: {

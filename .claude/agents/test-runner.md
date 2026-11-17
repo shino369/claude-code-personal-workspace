@@ -313,7 +313,7 @@ Tests were not executed due to linting failures.
 This workspace requires **100% coverage** for:
 
 - All scripts in `.claude/hooks/`
-- All scripts in `.claude/skills/`
+- All scripts in project-owned `.agents/skills/`
 - All scripts in `utils/`
 - Business logic, data processing, API interaction scripts
 

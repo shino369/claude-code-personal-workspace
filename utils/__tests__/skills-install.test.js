@@ -62,9 +62,9 @@ describe('buildInstallArgs', () => {
       'owner/repo',
       '--skill',
       'alpha',
-      '--copy',
       '--agent',
       'claude-code',
+      'codex',
       '-y',
     ]);
   });
@@ -116,6 +116,62 @@ describe('installSkills', () => {
     expect(calls[0].args).toContain('owner/a');
     expect(calls[1].args).toContain('owner/b');
     expect(lines).toContain('Installed 2 skill(s).');
+  });
+
+  test('should spawn without a shell outside Windows', async () => {
+    const root = await makeTempDir();
+    const lockPath = await writeLock(root, { alpha: { source: 'owner/a' } });
+    const { calls, spawn } = makeSpawn(0);
+
+    await installSkills({
+      rootDir: root,
+      lockPath,
+      spawn,
+      log: () => {},
+      platform: 'darwin',
+    });
+
+    expect(calls[0].options).toMatchObject({ shell: false });
+  });
+
+  test('should use a shell on Windows for the pnpm.cmd shim', async () => {
+    const root = await makeTempDir();
+    const lockPath = await writeLock(root, { alpha: { source: 'owner/a' } });
+    const { calls, spawn } = makeSpawn(0);
+
+    await installSkills({
+      rootDir: root,
+      lockPath,
+      spawn,
+      log: () => {},
+      platform: 'win32',
+    });
+
+    expect(calls[0].options).toMatchObject({ shell: true });
+  });
+
+  test('should refuse unsafe sources and names from the lock', async () => {
+    const root = await makeTempDir();
+    const lockPath = await writeLock(root, {
+      alpha: { source: 'owner/a & calc' },
+      'Bad Name': { source: 'owner/b' },
+    });
+    const { calls, spawn } = makeSpawn(0);
+    /** @type {string[]} */
+    const lines = [];
+
+    const code = await installSkills({
+      rootDir: root,
+      lockPath,
+      spawn,
+      log: (line) => lines.push(line),
+    });
+
+    expect(code).toBe(1);
+    expect(calls).toHaveLength(0);
+    expect(lines).toContain(
+      '✗ alpha (unsafe source or name in skills-lock.json; refusing)'
+    );
   });
 
   test('honours --skip', async () => {

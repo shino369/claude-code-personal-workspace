@@ -1,0 +1,3 @@
+#!/bin/sh
+# Shared commit-msg hook (enable with: git config core.hooksPath .githooks).
+exec node "$(git rev-parse --show-toplevel)/utils/git-hooks.js" commit-msg "$1"

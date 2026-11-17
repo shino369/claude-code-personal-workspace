@@ -59,7 +59,7 @@ This skill bundles `scripts/analyze_deps.mjs` (dependency-free Node). Run it wit
 project root:
 
 ```bash
-node .claude/skills/dependency-update/scripts/analyze_deps.mjs [package] [--catalog <name>] [--json] [--stale-months 12]
+node .agents/skills/dependency-update/scripts/analyze_deps.mjs [package] [--catalog <name>] [--json] [--stale-months 12]
 ```
 
 It discovers catalogs + `package.json` deps + the cooldown policy, then labels each package and prints

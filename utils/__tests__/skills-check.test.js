@@ -19,7 +19,7 @@ async function makeTempDir() {
  * @param {string} [frontmatterName]
  */
 async function writeSkill(root, name, frontmatterName = name) {
-  const skillDir = path.join(root, '.claude', 'skills', name);
+  const skillDir = path.join(root, '.agents', 'skills', name);
   await mkdir(skillDir, { recursive: true });
   await writeFile(
     path.join(skillDir, 'SKILL.md'),
