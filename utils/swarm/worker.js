@@ -16,6 +16,7 @@ import fs from 'fs';
 import { runAgent } from '../loop/adapters.js';
 import { fingerprint, runLoop } from '../loop/driver.js';
 import { runIfMain } from '../module-runner.js';
+import { pnpmInstall } from '../spawn.js';
 import { formatBrief, summarizeTask } from '../task/brief.js';
 import { gitInfo } from '../task/git.js';
 import { INNER_LOOP_ENV } from '../task/loop.js';
@@ -228,11 +229,7 @@ export function defaultWorkerDeps(overrides = {}) {
     env: process.env,
     log: console.log,
     spawn,
-    install: (dir) =>
-      spawn('pnpm', ['install', '--frozen-lockfile', '--prefer-offline'], {
-        cwd: dir,
-        stdio: 'inherit',
-      }),
+    install: (dir) => pnpmInstall(dir, spawn),
     runAgent,
     runCommands,
     ...overrides,

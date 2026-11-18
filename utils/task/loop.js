@@ -10,8 +10,8 @@ import crypto from 'crypto';
 import { withCheck } from './check.js';
 import { formatGit } from './git.js';
 import { appendSeparator, formatNoteEntry } from './markdown.js';
-import { decideQuality, freshQuality } from './quality.js';
-import { fingerprint, reviewBase, reviewScope } from './review.js';
+import { decideQuality } from './quality.js';
+import { fingerprint, taskReviewScope } from './review.js';
 import { appendNotes, loadTask, readActive, updateState } from './store.js';
 import { stripAnsi, summarize } from './verify.js';
 
@@ -197,15 +197,10 @@ function activeLoop(deps) {
  */
 export function scopeFingerprint(deps, taskDir, state) {
   try {
-    const base = reviewBase({
-      quality: state.quality ?? freshQuality(),
-      taskDir,
-      startCommit: state.startCommit,
-    });
-    const scope = reviewScope({
+    const scope = taskReviewScope({
       rootDir: deps.rootDir,
       taskDir,
-      base,
+      state,
       runGit: deps.runGit,
     });
     // Nothing in scope: no review to ask for (pnpm task review would refuse).

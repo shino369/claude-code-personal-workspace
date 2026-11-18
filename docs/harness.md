@@ -132,9 +132,13 @@ plan ─▶ build test-first ─▶ e2e (if required) ─▶ review round N ─�
    `--force` for an early review). It writes `reviews/BRIEF_<task>-rN.md`, which has the goal,
    plan, standards files, the files in scope, the severity rubric, and earlier refuted or fixed
    findings. It also writes an empty findings table in `reviews/REVIEW_<task>-rN.md`. The scope is
-   the task's code, or, for a task that edits the workspace, the git changes since `--base`
-   (default: the commit the task started from, so work committed straight onto `main` is still
-   reviewed; else `main`). An empty scope refuses to open a round.
+   the task's code, read from its folder (no git: `tasks/` is ignored), or, for a task that edits
+   the workspace's tracked files, the git changes since `--base`. The default base is the
+   repository's default branch as last fetched (`origin/HEAD`, e.g. `origin/main`, else `main`), so
+   a feature branch is reviewed as a whole. When the work is committed on that branch itself, it is
+   the commit the task started from (recorded by `pnpm task new` / `init`); an explicit `--base` is
+   used as given. A task with folder code is scoped to that folder only,
+   even if it also edits tracked files. An empty scope refuses to open a round.
 2. **Reviewer** (`.claude/agents/reviewer.md`): a fresh agent that works from the brief only. Each
    finding needs a concrete failure scenario: inputs or state → wrong result.
 3. **Triage** (the "Triage mode" of `.claude/agents/verifier.md`): another fresh agent tries to

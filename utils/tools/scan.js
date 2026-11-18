@@ -1,10 +1,12 @@
 /**
  * Probe tools on this machine: find executables on PATH (no shell), run their
- * check command, and turn the result into registry entries.
+ * check command (Windows .cmd shims through crossSpawn), and turn the result
+ * into registry entries.
  */
-import { spawnSync } from 'child_process';
 import fs from 'fs';
-import path from 'path';
+import { crossSpawn, isExecutable, which } from '../spawn.js';
+
+// Moved to utils/spawn.js (shared with the agent adapters); re-exported here.
 
 export const CHECK_TIMEOUT_MS = 15 * 1000;
 
@@ -19,20 +21,6 @@ export const CHECK_TIMEOUT_MS = 15 * 1000;
  * }} ProbeDeps
  */
 
-/**
- * @param {string} file
- * @returns {boolean}
- */
-export function isExecutable(file) {
-  try {
-    if (!fs.statSync(file).isFile()) return false;
-    fs.accessSync(file, fs.constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** @returns {ProbeDeps} */
 export function defaultProbeDeps() {
   return {
@@ -46,37 +34,9 @@ export function defaultProbeDeps() {
         return file;
       }
     },
-    spawn: /** @type {Spawn} */ (spawnSync),
+    // Resolves Windows .cmd shims (pnpm.cmd, codex.cmd) and runs them safely.
+    spawn: crossSpawn(),
   };
-}
-
-/**
- * Find an executable on PATH, like `which`, without a shell. Names with a
- * path separator are checked as given.
- *
- * @param {string} name
- * @param {Pick<ProbeDeps, 'env' | 'platform' | 'isExecutable'>} deps
- * @returns {string | null}
- */
-export function which(name, { env, platform, isExecutable: canRun }) {
-  const win = platform === 'win32';
-  const p = win ? path.win32 : path.posix;
-  const exts = win
-    ? ['', ...(env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)]
-    : [''];
-  if (name.includes('/') || (win && name.includes('\\'))) {
-    return exts.map((ext) => name + ext).find((file) => canRun(file)) ?? null;
-  }
-  const dirs = (env.PATH ?? env.Path ?? '')
-    .split(win ? ';' : ':')
-    .filter(Boolean);
-  for (const dir of dirs) {
-    for (const ext of exts) {
-      const file = p.join(dir, name + ext);
-      if (canRun(file)) return file;
-    }
-  }
-  return null;
 }
 
 /**

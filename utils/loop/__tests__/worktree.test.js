@@ -32,11 +32,16 @@ function git(cwd, args) {
   return result.stdout.trim();
 }
 
-/** Real git; `pnpm` is answered by the fake installer. */
+/** `pnpm install`, also as `cmd.exe /d /s /c "…pnpm.CMD install …"` on Windows. */
+const INSTALL = /pnpm\S* install --frozen-lockfile --prefer-offline/i;
+
+/** Real git; `pnpm install` is answered by the fake installer. */
 const spawn = vi.fn(
   /** @type {import('../worktree.js').Spawn} */ (
     (command, args, options) =>
-      command === 'pnpm' ? { status: 0 } : spawnSync(command, args, options)
+      INSTALL.test([command, ...args].join(' '))
+        ? { status: 0 }
+        : spawnSync(command, args, options)
   )
 );
 
@@ -130,11 +135,10 @@ describe('prepareWorktree', () => {
     expect(
       fs.readFileSync(path.join(dir, 'tasks', '.active'), 'utf-8').trim()
     ).toBe(TASK);
-    expect(spawn).toHaveBeenCalledWith(
-      'pnpm',
-      ['install', '--frozen-lockfile', '--prefer-offline'],
-      expect.objectContaining({ cwd: dir })
+    const install = spawn.mock.calls.find(([command, args]) =>
+      INSTALL.test([command, ...args].join(' '))
     );
+    expect(install?.[2]).toMatchObject({ cwd: dir, stdio: 'inherit' });
   });
 
   test('should warn that uncommitted changes stay in the main checkout', () => {

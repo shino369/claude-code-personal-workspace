@@ -748,38 +748,141 @@ describe('review', () => {
     const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
     expect(parsed.scope).toEqual({
       base: 'main',
-      mergeBase: 'abc',
+      since: 'abc',
       files: ['utils/x.js'],
     });
     expect(state().quality?.base).toBe('main');
   });
 
-  test('should review a workspace task against the commit it started from', () => {
-    const runGit = vi.fn(
+  /**
+   * A fake git: HEAD is `head`, merge-base(HEAD, main) is `mergeBase`, and one
+   * file changed.
+   *
+   * @param {{ head: string, mergeBase: string }} refs
+   */
+  const fakeGit = ({ head, mergeBase }) =>
+    vi.fn(
       /** @type {import('../review.js').RunGit} */ (args) =>
         args[0] === 'rev-parse'
-          ? 'start123'
+          ? head
           : args[0] === 'merge-base'
-            ? 'start123'
+            ? args[2] === 'main'
+              ? mergeBase
+              : args[2]
             : args[0] === 'diff'
               ? 'utils/x.js'
               : ''
     );
+
+  test('should review work committed on main since the task started', () => {
     run(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'v'], {
-      runGit,
+      runGit: fakeGit({ head: 'start123', mergeBase: 'start123' }),
     });
     expect(state().startCommit).toBe('start123');
     run(['step', 's1', 'done']);
     run(['verify']);
+    // Two commits later, still on main: merge-base(HEAD, main) is HEAD.
+    const runGit = fakeGit({ head: 'later456', mergeBase: 'later456' });
     const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
-    expect(parsed.scope).toMatchObject({
+    expect(parsed.scope).toEqual({
       base: 'start123',
+      since: 'start123',
       files: ['utils/x.js'],
     });
     expect(runGit).toHaveBeenCalledWith(
-      ['merge-base', 'HEAD', 'start123'],
+      ['diff', '--name-only', 'start123'],
       root
     );
+    expect(state().quality?.base).toBe('start123');
+  });
+
+  test('should review the whole feature branch, not only since the task started', () => {
+    run(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'v'], {
+      runGit: fakeGit({ head: 'mid789', mergeBase: 'fork000' }),
+    });
+    run(['step', 's1', 'done']);
+    run(['verify']);
+    const runGit = fakeGit({ head: 'tip999', mergeBase: 'fork000' });
+    const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
+    expect(parsed.scope).toMatchObject({ base: 'main', since: 'fork000' });
+    expect(runGit).toHaveBeenCalledWith(
+      ['diff', '--name-only', 'fork000'],
+      root
+    );
+  });
+
+  test("should review against the repository's default branch", () => {
+    newTask(['--verify', 'pnpm test']);
+    finishSteps();
+    run(['verify']);
+    const runGit = vi.fn(
+      /** @type {import('../review.js').RunGit} */ (args) =>
+        args[0] === 'symbolic-ref'
+          ? 'origin/develop'
+          : args[0] === 'merge-base'
+            ? 'fork000'
+            : args[0] === 'diff'
+              ? 'utils/x.js'
+              : 'tip999'
+    );
+    const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
+    expect(parsed.scope).toMatchObject({
+      base: 'origin/develop',
+      since: 'fork000',
+    });
+    expect(runGit).toHaveBeenCalledWith(
+      ['merge-base', 'HEAD', 'origin/develop'],
+      root
+    );
+  });
+
+  test('should review unpushed work on main since the task started', () => {
+    run(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'v'], {
+      runGit: fakeGit({ head: 'start123', mergeBase: 'start123' }),
+    });
+    run(['step', 's1', 'done']);
+    run(['verify']);
+    // On local main, two commits ahead of origin/main.
+    const runGit = vi.fn(
+      /** @type {import('../review.js').RunGit} */ (args) =>
+        ({
+          'symbolic-ref': 'origin/main',
+          'merge-base': 'pushed000',
+          'rev-parse': 'local222',
+          branch: 'main',
+          diff: 'utils/x.js',
+        })[args[0]] ?? ''
+    );
+    const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
+    expect(parsed.scope).toEqual({
+      base: 'start123',
+      since: 'start123',
+      files: ['utils/x.js'],
+    });
+  });
+
+  test('should use an explicit --base as given, even on main', () => {
+    run(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'v'], {
+      runGit: fakeGit({ head: 'start123', mergeBase: 'start123' }),
+    });
+    run(['step', 's1', 'done']);
+    run(['verify']);
+    const runGit = vi.fn(
+      /** @type {import('../review.js').RunGit} */ (args) =>
+        ({ 'merge-base': 'later456', 'rev-parse': 'later456' })[args[0]] ?? ''
+    );
+    expect(() => run(['review', '--base', 'main'], { runGit })).toThrow(
+      /no files changed since main \(commit later45\)\. If the work/
+    );
+  });
+
+  test('should record the start commit when adopting a hand-written task', () => {
+    legacyTask();
+    run(['init', 'old', '--verify', 'v'], {
+      runGit: fakeGit({ head: 'adopt111', mergeBase: 'adopt111' }),
+    });
+    const adopted = loadTask(root, 'old-251101').state;
+    expect(adopted?.startCommit).toBe('adopt111');
   });
 
   test('should refuse to open a round with nothing in scope', () => {
@@ -789,7 +892,7 @@ describe('review', () => {
     const runGit = (/** @type {string[]} */ args) =>
       args[0] === 'merge-base' ? 'abcdef123' : '';
     expect(() => run(['review'], { runGit })).toThrow(
-      /Nothing to review for demo-261117: no files changed since main \(merge base abcdef1\)\..*\nFix: pnpm task review --base/s
+      /Nothing to review for demo-261117: no files changed since main \(commit abcdef1\)\. demo-261117 has no recorded start commit.*\nFix: pnpm task review --base/s
     );
     expect(state().quality?.reviewRounds).toBe(0);
     fs.mkdirSync(path.join(tasksRoot(root), NAME, 'app'), { recursive: true });
@@ -1343,17 +1446,21 @@ process.exitCode = code;`;
             { stdio: ['ignore', 'pipe', 'pipe'] }
           );
           let out = '';
+          let err = '';
           child.stdout.on('data', (chunk) => (out += chunk));
+          child.stderr.on('data', (chunk) => (err += chunk));
           child.on('error', reject);
           child.on('close', (code) =>
-            resolve({ code, result: JSON.parse(out) })
+            resolve({ code, err, result: out ? JSON.parse(out) : null })
           );
         })
     );
     const results =
-      /** @type {Array<{ code: number, result: { step: { id: string, owner: string } | null } }>} */ (
+      /** @type {Array<{ code: number, err: string, result: { step: { id: string, owner: string } | null } }>} */ (
         await Promise.all(workers)
       );
+    // A crashed worker prints nothing on stdout: show why.
+    expect(results.map((r) => r.err).filter(Boolean)).toEqual([]);
     const claimed = results
       .filter((r) => r.code === 0)
       .map((r) => r.result.step?.id);

@@ -437,11 +437,15 @@ describe('defaultCliDeps', () => {
     expect(d.pid).toBe(process.pid);
     expect(d.date()).toBeInstanceOf(Date);
     expect(d.install('/x')).toEqual({ status: 0 });
-    expect(spawn).toHaveBeenCalledWith(
-      'pnpm',
-      ['install', '--frozen-lockfile', '--prefer-offline'],
-      { cwd: '/x', stdio: 'inherit' }
+    // Through crossSpawn: `pnpm …` here, `cmd.exe /d /s /c "…pnpm.CMD …"` on Windows
+    const call = /** @type {unknown[]} */ (spawn.mock.calls[0]);
+    expect(call.flat().join(' ')).toMatch(
+      /pnpm\S* install --frozen-lockfile --prefer-offline/i
     );
+    expect(call[2]).toMatchObject({
+      cwd: '/x',
+      stdio: 'inherit',
+    });
     expect(defaultCliDeps().spawn).toBe(spawnSync);
   });
 });

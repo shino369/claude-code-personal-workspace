@@ -17,6 +17,11 @@ export default defineConfig({
     // Test environment
     environment: 'node',
 
+    // Spawning git and node is several times slower on Windows: tests that
+    // build real repositories take 1–4 s there (vs 5 s default), so a slow
+    // runner times them out.
+    testTimeout: process.platform === 'win32' ? 20_000 : 5_000,
+
     // Include patterns
     include: [
       '**/__tests__/**/*.js',

@@ -13,6 +13,7 @@ import {
   openRound,
   parseFindings,
   recordFindings,
+  defaultBranch,
   reviewBase,
   reviewFiles,
   reviewScope,
@@ -97,6 +98,22 @@ describe('reviewFiles', () => {
   });
 });
 
+describe('defaultBranch', () => {
+  test('should read origin/HEAD as the remote ref', () => {
+    const runGit = vi.fn(() => 'origin/develop');
+    expect(defaultBranch(runGit, '/r')).toBe('origin/develop');
+    expect(runGit).toHaveBeenCalledWith(
+      ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'],
+      '/r'
+    );
+  });
+
+  test('should fall back to main without origin/HEAD', () => {
+    expect(defaultBranch(() => null, '/r')).toBe('main');
+    expect(defaultBranch(() => 'upstream/trunk', '/r')).toBe('main');
+  });
+});
+
 describe('reviewBase', () => {
   const taskDir = () => path.join(root, 'tasks', NAME);
   const withCode = () => {
@@ -153,7 +170,7 @@ describe('reviewScope', () => {
 
     expect(reviewScope({ rootDir: root, taskDir, base: null })).toEqual({
       base: null,
-      mergeBase: null,
+      since: null,
       files: [`tasks/${NAME}/app/a.js`],
     });
   });
@@ -170,7 +187,7 @@ describe('reviewScope', () => {
       reviewScope({ rootDir: root, taskDir: root, base: 'main', runGit })
     ).toEqual({
       base: 'main',
-      mergeBase: 'abc123',
+      since: 'abc123',
       files: ['utils/a.js', 'utils/b.js', 'utils/new.js'],
     });
     expect(runGit).toHaveBeenCalledWith(['merge-base', 'HEAD', 'main'], root);
@@ -332,7 +349,7 @@ describe('openRound', () => {
 });
 
 describe('formatReviewBrief', () => {
-  const scope = { base: null, mergeBase: null, files: [`tasks/${NAME}/a.js`] };
+  const scope = { base: null, since: null, files: [`tasks/${NAME}/a.js`] };
 
   test('should give the goal, plan, standards, scope, rubric, and output steps', () => {
     const text = formatReviewBrief({
@@ -364,12 +381,12 @@ describe('formatReviewBrief', () => {
     const text = formatReviewBrief({
       state,
       round: 1,
-      scope: { base: 'main', mergeBase: '0123456789abcdef', files: [] },
+      scope: { base: 'main', since: '0123456789abcdef', files: [] },
       taskRel: `tasks/${NAME}`,
     });
 
     expect(text).toContain(
-      'changes since main (merge base 0123456789ab; see them with: git diff 0123456789ab -- <file>)'
+      'changes since main (commit 0123456789ab; see them with: git diff 0123456789ab -- <file>)'
     );
     expect(text).toContain('- (no files: nothing changed)');
     expect(text).toContain('E2E: no');

@@ -49,18 +49,52 @@ export function readIfExists(file) {
   }
 }
 
+/** Codes Windows gives for a file another process has open or is deleting. */
+const WINDOWS_BUSY = new Set(['EPERM', 'EACCES', 'EBUSY']);
+
+/**
+ * Whether `error` is Windows' transient "file in use" (worth a retry) rather
+ * than a real failure. Elsewhere these codes are real permission errors.
+ *
+ * @param {unknown} error
+ * @param {NodeJS.Platform} platform
+ */
+function isWindowsBusy(error, platform) {
+  return (
+    platform === 'win32' &&
+    WINDOWS_BUSY.has(String(/** @type {NodeJS.ErrnoException} */ (error).code))
+  );
+}
+
 /**
  * Write a file atomically: readers see the old or the new content, never a
- * partial write.
+ * partial write. On Windows, replacing a file another process is reading
+ * fails for a moment (EPERM/EBUSY), so the rename is retried for `retryMs`.
  *
  * @param {string} file
  * @param {string} content
+ * @param {{ platform?: NodeJS.Platform, retryMs?: number }} [options]
  */
-export function writeFileAtomic(file, content) {
+export function writeFileAtomic(
+  file,
+  content,
+  { platform = process.platform, retryMs = 2000 } = {}
+) {
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  const deadline = Date.now() + retryMs;
   try {
     fs.writeFileSync(tmp, content, 'utf-8');
-    fs.renameSync(tmp, file);
+    for (;;) {
+      try {
+        fs.renameSync(tmp, file);
+        return;
+      } catch (error) {
+        if (!isWindowsBusy(error, platform) || Date.now() >= deadline) {
+          throw error;
+        }
+        sleepSync(20);
+      }
+    }
   } catch (error) {
     fs.rmSync(tmp, { force: true });
     throw error;
@@ -74,18 +108,25 @@ function sleepSync(ms) {
 
 /**
  * Run `fn` while holding `<dir>/.lock`. A lock older than `staleMs` is
- * assumed to belong to a crashed process and is taken over.
+ * assumed to belong to a crashed process and is taken over. On Windows,
+ * creating the lock while another process is deleting it fails with EPERM
+ * instead of EEXIST; that is waited out the same way.
  *
  * @template T
  * @param {string} dir
  * @param {() => T} fn
- * @param {{ timeoutMs?: number, staleMs?: number, now?: () => number }} [options]
+ * @param {{ timeoutMs?: number, staleMs?: number, now?: () => number, platform?: NodeJS.Platform }} [options]
  * @returns {T}
  */
 export function withLock(
   dir,
   fn,
-  { timeoutMs = 5000, staleMs = 30_000, now = Date.now } = {}
+  {
+    timeoutMs = 5000,
+    staleMs = 30_000,
+    now = Date.now,
+    platform = process.platform,
+  } = {}
 ) {
   const lock = path.join(dir, '.lock');
   const deadline = now() + timeoutMs;
@@ -95,12 +136,15 @@ export function withLock(
       fs.closeSync(fs.openSync(lock, 'wx'));
       break;
     } catch (error) {
-      if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'EEXIST') {
+      if (
+        /** @type {NodeJS.ErrnoException} */ (error).code !== 'EEXIST' &&
+        !isWindowsBusy(error, platform)
+      ) {
         throw error;
       }
       const stat = fs.statSync(lock, { throwIfNoEntry: false });
       if (stat && now() - stat.mtimeMs > staleMs) {
-        fs.rmSync(lock, { force: true });
+        fs.rmSync(lock, { force: true, maxRetries: 5 });
         continue;
       }
       if (now() >= deadline) {
@@ -115,7 +159,7 @@ export function withLock(
   try {
     return fn();
   } finally {
-    fs.rmSync(lock, { force: true });
+    fs.rmSync(lock, { force: true, maxRetries: 5 });
   }
 }
 

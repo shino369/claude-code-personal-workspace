@@ -81,6 +81,36 @@ describe('writeFileAtomic', () => {
     );
     expect(fs.readdirSync(root)).toEqual([]);
   });
+
+  test('should retry a rename Windows refuses while the file is in use', () => {
+    const realRename = fs.renameSync;
+    vi.spyOn(fs, 'renameSync')
+      .mockImplementationOnce(() => {
+        throw Object.assign(new Error('in use'), { code: 'EPERM' });
+      })
+      .mockImplementation(realRename);
+    const file = path.join(root, 'a.txt');
+    writeFileAtomic(file, 'hello', { platform: 'win32' });
+    expect(fs.readFileSync(file, 'utf-8')).toBe('hello');
+    expect(fs.readdirSync(root)).toEqual(['a.txt']);
+  });
+
+  test('should give up on a busy rename after the retry time, and not retry elsewhere', () => {
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      throw Object.assign(new Error('in use'), { code: 'EBUSY' });
+    });
+    const file = path.join(root, 'a.txt');
+    expect(() =>
+      writeFileAtomic(file, 'x', { platform: 'win32', retryMs: 30 })
+    ).toThrow('in use');
+    expect(rename.mock.calls.length).toBeGreaterThan(1);
+    rename.mockClear();
+    expect(() => writeFileAtomic(file, 'x', { platform: 'linux' })).toThrow(
+      'in use'
+    );
+    expect(rename).toHaveBeenCalledTimes(1);
+    expect(fs.readdirSync(root)).toEqual([]);
+  });
 });
 
 describe('withLock', () => {
@@ -124,6 +154,27 @@ describe('withLock', () => {
       withLock(root, () => 'never', { timeoutMs: 100, now })
     ).toThrow(/locked by another process/);
     expect(fs.existsSync(path.join(root, '.lock'))).toBe(true);
+  });
+
+  test('should wait out a lock Windows is still deleting (EPERM)', () => {
+    const realOpen = fs.openSync;
+    const open = vi
+      .spyOn(fs, 'openSync')
+      .mockImplementationOnce(() => {
+        throw Object.assign(new Error('delete pending'), { code: 'EPERM' });
+      })
+      .mockImplementation(realOpen);
+    expect(withLock(root, () => 'ok', { platform: 'win32' })).toBe('ok');
+    expect(open).toHaveBeenCalledTimes(2);
+  });
+
+  test('should rethrow EPERM off Windows', () => {
+    vi.spyOn(fs, 'openSync').mockImplementation(() => {
+      throw Object.assign(new Error('denied'), { code: 'EPERM' });
+    });
+    expect(() => withLock(root, () => 1, { platform: 'linux' })).toThrow(
+      'denied'
+    );
   });
 
   test('should rethrow errors other than EEXIST', () => {

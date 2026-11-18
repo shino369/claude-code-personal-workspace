@@ -9,6 +9,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { AGENTS, buildCommand } from '../loop/adapters.js';
 import { runIfMain } from '../module-runner.js';
+import { pnpmInstall } from '../spawn.js';
 import { gitInfo } from '../task/git.js';
 import { MAX_ITERATIONS, parseMax } from '../task/loop.js';
 import { readySteps } from '../task/state.js';
@@ -284,11 +285,7 @@ export function defaultCliDeps(overrides = {}) {
     clock: Date.now,
     date: () => new Date(),
     spawn,
-    install: (dir) =>
-      spawn('pnpm', ['install', '--frozen-lockfile', '--prefer-offline'], {
-        cwd: dir,
-        stdio: 'inherit',
-      }),
+    install: (dir) => pnpmInstall(dir, spawn),
     runCommands,
     startWorker: (config, logFile) => startWorker(config, logFile),
     pid: process.pid,
