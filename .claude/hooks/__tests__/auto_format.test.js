@@ -15,7 +15,9 @@ const childProcess = await import('child_process');
 const spawnSync = /** @type {import('vitest').Mock} */ (
   /** @type {unknown} */ (childProcess.spawnSync)
 );
-const { processHookInput, runPrettier } = await import('../auto_format.js');
+const { prettierBin, processHookInput, runPrettier } =
+  await import('../auto_format.js');
+const BIN = /** @type {string} */ (prettierBin());
 
 describe('auto_format', () => {
   const testDir = 'test_format_files';
@@ -107,8 +109,8 @@ describe('auto_format', () => {
 
       expect(result).toBe(true);
       expect(spawnSync).toHaveBeenCalledWith(
-        'pnpm',
-        ['prettier', '--write', testFile],
+        process.execPath,
+        [BIN, '--write', testFile],
         expect.any(Object)
       );
       expect(consoleLogSpy).toHaveBeenCalledWith(
@@ -175,86 +177,71 @@ describe('auto_format', () => {
     });
   });
 
+  describe('prettierBin', () => {
+    test("should find this workspace's Prettier CLI script", () => {
+      expect(BIN).toMatch(/prettier[\\/]bin[\\/]prettier\.c?js$/);
+      expect(fs.existsSync(BIN)).toBe(true);
+    });
+
+    test('should read an object bin field and handle a missing one', () => {
+      const dir = fs.mkdtempSync(path.join(testDir, 'pkg-'));
+      const manifest = path.join(dir, 'package.json');
+      const at = () => manifest;
+      fs.writeFileSync(manifest, JSON.stringify({ bin: { prettier: 'p.js' } }));
+      expect(prettierBin(at)).toBe(path.join(dir, 'p.js'));
+      fs.writeFileSync(manifest, JSON.stringify({ bin: { other: 'o.js' } }));
+      expect(prettierBin(at)).toBeNull();
+      fs.writeFileSync(manifest, JSON.stringify({}));
+      expect(prettierBin(at)).toBeNull();
+      expect(
+        prettierBin(() => {
+          throw new Error('not installed');
+        })
+      ).toBeNull();
+    });
+  });
+
   describe('runPrettier', () => {
-    test('should return true when prettier succeeds', () => {
-      const result = runPrettier('test.js');
-
-      expect(result).toBe(true);
+    test('should run the CLI script with node, without a shell', () => {
+      expect(runPrettier('test.js')).toBe(true);
+      expect(spawnSync).toHaveBeenCalledTimes(1);
       expect(spawnSync).toHaveBeenCalledWith(
-        'pnpm',
-        ['prettier', '--version'],
-        {
-          stdio: 'ignore',
-        }
-      );
-      expect(spawnSync).toHaveBeenCalledWith(
-        'pnpm',
-        ['prettier', '--write', 'test.js'],
-        expect.any(Object)
+        process.execPath,
+        [BIN, '--write', 'test.js'],
+        { stdio: 'pipe', encoding: 'utf-8' }
       );
     });
 
-    test('should return false and log error when prettier is not available', () => {
-      spawnSync.mockImplementation((cmd, args) => {
-        if (args && args.includes('--version')) {
-          return { status: 1, stderr: 'prettier not found' };
-        }
-        return { status: 0, stderr: '' };
-      });
-
+    test('should return false and log when Prettier is not installed', () => {
       const consoleErrorSpy = vi
         .spyOn(console, 'error')
         .mockImplementation(() => {});
-
-      const result = runPrettier('test.js');
-
-      expect(result).toBe(false);
-      expect(consoleErrorSpy).toHaveBeenCalled();
-
+      expect(runPrettier('test.js', null)).toBe(false);
+      expect(spawnSync).not.toHaveBeenCalled();
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Prettier not available')
+      );
       consoleErrorSpy.mockRestore();
     });
 
-    test('should return false when prettier fails to format', () => {
-      spawnSync.mockImplementation((cmd, args) => {
-        if (args && args.includes('--write')) {
-          return { status: 1, stderr: 'formatting error' };
-        }
-        return { status: 0, stderr: '' };
-      });
-
+    test('should return false with stderr, a spawn error, or a default message', () => {
       const consoleErrorSpy = vi
         .spyOn(console, 'error')
         .mockImplementation(() => {});
-
-      const result = runPrettier('test.js');
-
-      expect(result).toBe(false);
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Prettier formatting failed')
-      );
-
-      consoleErrorSpy.mockRestore();
-    });
-
-    test('should return false when prettier fails with empty stderr', () => {
-      spawnSync.mockImplementation((cmd, args) => {
-        if (args && args.includes('--write')) {
-          return { status: 1, stderr: '' };
-        }
-        return { status: 0, stderr: '' };
-      });
-
-      const consoleErrorSpy = vi
-        .spyOn(console, 'error')
-        .mockImplementation(() => {});
-
-      const result = runPrettier('test.js');
-
-      expect(result).toBe(false);
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Prettier formatting failed')
-      );
-
+      for (const [result, text] of [
+        [{ status: 1, stderr: 'formatting error' }, 'formatting error'],
+        [
+          { status: null, stderr: '', error: new Error('spawn EACCES') },
+          'spawn EACCES',
+        ],
+        [{ status: 1, stderr: '' }, 'Prettier formatting failed'],
+      ]) {
+        spawnSync.mockImplementation(() => result);
+        expect(runPrettier('test.js')).toBe(false);
+        expect(consoleErrorSpy).toHaveBeenLastCalledWith(
+          expect.stringContaining(/** @type {string} */ (text))
+        );
+      }
       consoleErrorSpy.mockRestore();
     });
   });

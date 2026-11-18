@@ -288,6 +288,8 @@ export function defaultCliDeps(overrides = {}) {
       spawn('pnpm', ['install', '--frozen-lockfile', '--prefer-offline'], {
         cwd: dir,
         stdio: 'inherit',
+        // pnpm is a .cmd shim on Windows; fixed arguments, so a shell is safe
+        shell: process.platform === 'win32',
       }),
     runCommands,
     startWorker: (config, logFile) => startWorker(config, logFile),

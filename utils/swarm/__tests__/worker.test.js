@@ -327,7 +327,7 @@ describe('defaultWorkerDeps', () => {
     expect(spawn).toHaveBeenCalledWith(
       'pnpm',
       ['install', '--frozen-lockfile', '--prefer-offline'],
-      { cwd: '/x', stdio: 'inherit' }
+      { cwd: '/x', stdio: 'inherit', shell: process.platform === 'win32' }
     );
     expect(defaultWorkerDeps().spawn).toBe(spawnSync);
   });

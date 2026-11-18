@@ -55,7 +55,9 @@ Read a day's log with `jq . logs/<YYYYMMDD>/logging.jsonl`.
 
 **What it does:**
 
-- Runs prettier on formattable files after Edit or Write operations
+- Runs prettier on formattable files after Edit or Write operations: Prettier's own CLI script
+  through `node` (no pnpm, no shell), so it works the same on Windows and a file path never
+  reaches a shell
 - Supports common file types: .js, .jsx, .ts, .tsx, .json, .css, .scss, .html, .md, .yaml, etc.
 - Skips files that aren't formattable or don't exist
 - Uses `pnpm` to run prettier (as per workspace configuration)

@@ -5,6 +5,7 @@
  */
 import { spawnSync } from 'child_process';
 import fs from 'fs';
+import { createRequire } from 'module';
 import path from 'path';
 import { runIfMain } from '#utils/module-runner.js';
 
@@ -51,38 +52,48 @@ function fileExists(filePath) {
 }
 
 /**
+ * Prettier's CLI script in this workspace, or null when it is not installed.
+ * Run with `node` directly: no pnpm and no shell, so it works the same on
+ * Windows (where pnpm is a .cmd shim) and a file path never reaches a shell.
+ *
+ * @param {(id: string) => string} [resolve]
+ * @returns {string | null}
+ */
+export function prettierBin(resolve = createRequire(import.meta.url).resolve) {
+  try {
+    const manifest = resolve('prettier/package.json');
+    const { bin } = JSON.parse(fs.readFileSync(manifest, 'utf-8'));
+    const script = typeof bin === 'string' ? bin : bin?.prettier;
+    return script ? path.join(path.dirname(manifest), script) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * @param {string} filePath
+ * @param {string | null} [bin] Prettier's CLI script
  * @returns {boolean}
  */
-export function runPrettier(filePath) {
-  try {
-    // Check if prettier is available (use pnpm as per workspace config)
-    const versionCheck = spawnSync('pnpm', ['prettier', '--version'], {
-      stdio: 'ignore',
-    });
-
-    if (versionCheck.status !== 0) {
-      throw new Error('Prettier not available');
-    }
-
-    // Run prettier with file path as argument (prevents command injection)
-    const result = spawnSync('pnpm', ['prettier', '--write', filePath], {
-      stdio: 'pipe',
-      encoding: 'utf-8',
-    });
-
-    if (result.status !== 0) {
-      throw new Error(result.stderr || 'Prettier formatting failed');
-    }
-
-    return true;
-  } catch (err) {
-    // Prettier might not be installed or file might have syntax errors
-    // Only Errors are thrown above (spawnSync reports failures via its result).
-    const { message } = /** @type {Error} */ (err);
-    console.error(`Prettier formatting failed for ${filePath}: ${message}`);
+export function runPrettier(filePath, bin = prettierBin()) {
+  if (!bin) {
+    console.error(
+      `Prettier formatting failed for ${filePath}: Prettier not available (pnpm install)`
+    );
     return false;
   }
+  // Arguments as an array, no shell: the path cannot inject a command.
+  const result = spawnSync(process.execPath, [bin, '--write', filePath], {
+    stdio: 'pipe',
+    encoding: 'utf-8',
+  });
+  if (result.status !== 0) {
+    console.error(
+      `Prettier formatting failed for ${filePath}: ${result.stderr || result.error?.message || 'Prettier formatting failed'}`
+    );
+    return false;
+  }
+  return true;
 }
 
 /**

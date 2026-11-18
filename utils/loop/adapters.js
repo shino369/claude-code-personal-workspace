@@ -13,7 +13,7 @@
  * `read` (the default for `pnpm agent ask`) cannot change files: claude `plan`
  * mode, codex `read-only` sandbox, dsh `read-only` preset.
  */
-import { spawnSync } from 'child_process';
+import { crossSpawn } from '../spawn.js';
 
 export const AGENTS = /** @type {const} */ (['claude', 'codex', 'dsh']);
 
@@ -161,7 +161,8 @@ export function runAgent({
   prompt,
   timeoutMs,
   env,
-  spawn = /** @type {AgentSpawn} */ (spawnSync),
+  // Resolves Windows .cmd shims (e.g. a pnpm-installed codex.cmd) safely.
+  spawn = /** @type {AgentSpawn} */ (crossSpawn()),
   now = Date.now,
 }) {
   const started = now();
