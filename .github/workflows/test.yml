@@ -1,14 +1,22 @@
 name: Test CI
 
 on:
+  # One run per commit: pushes to the protected branches, and PRs into them.
   push:
-    # Every branch, so a fix branch gets the Windows + Linux matrix before a PR.
     branches:
-      - '**'
+      - main
+      - develop
   pull_request:
     branches:
       - main
       - develop
+  # Any other branch, before a PR: gh workflow run test.yml --ref <branch>
+  workflow_dispatch:
+
+# A new push cancels the older run of the same branch or PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
