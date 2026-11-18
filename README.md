@@ -57,7 +57,8 @@ subagents — ask Claude directly.
 - pnpm **12.14.0**, pinned in `package.json` via Corepack. Run `corepack enable`, or prefix
   commands with `corepack pnpm`
 - Chrome/Chromium, for Playwright e2e tests and browser-driving skills
-- `uv`, for the `browser-use` runtime and `skill-creator` Python scripts
+- `uv`, for the `browser-use` runtime and the `skill-creator` and `transparent-background` Python
+  scripts
 
 ## Getting Started
 
@@ -147,6 +148,7 @@ together, with a worked example: `docs/harness.md`. `tasks/` and
 | `dependency-update`       | Dependabot-style pnpm updates with `analyze_deps.mjs`.                           |
 | `security-update`         | CVE and audit patching with release-age checks.                                  |
 | `web-browsing`            | Tool selection and workflows for web interaction, real-browser sessions, e2e.    |
+| `transparent-background`  | Flat-background image → transparent PNG with clean edges; specks and recolour.   |
 
 ### Third-party skills
 
@@ -225,14 +227,15 @@ To add a skill manually, use
 
 Most skills are instructions only. These require a local runtime:
 
-| Skill               | Runtime              | Check / install                                                                                                                     |
-| ------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `agent-browser`     | `agent-browser` CLI  | `pnpm exec agent-browser --version`; run `pnpm exec agent-browser install` once, then `pnpm exec agent-browser ...` (devDependency) |
-| `browser-use`       | `browser-use` CLI    | `browser-use --version`; install with `uv tool install --python 3.12 browser-use`                                                   |
-| `playwright-cli`    | local Playwright     | `pnpm exec playwright --version`; run `pnpm exec playwright cli ...`                                                                |
-| `skill-creator`     | Python 3.12 + PyYAML | `uv run --with pyyaml --python 3.12 python ...` from the skill directory                                                            |
-| `dependency-update` | `gh` CLI             | `gh --version`; install from <https://cli.github.com/> (also used for PR attachments)                                               |
-| Playwright e2e      | Chromium             | `pnpm exec playwright install chromium`                                                                                             |
+| Skill                    | Runtime                            | Check / install                                                                                                                           |
+| ------------------------ | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent-browser`          | `agent-browser` CLI                | `pnpm exec agent-browser --version`; run `pnpm exec agent-browser install` once, then `pnpm exec agent-browser ...` (devDependency)       |
+| `browser-use`            | `browser-use` CLI                  | `browser-use --version`; install with `uv tool install --python 3.12 browser-use`                                                         |
+| `playwright-cli`         | local Playwright                   | `pnpm exec playwright --version`; run `pnpm exec playwright cli ...`                                                                      |
+| `skill-creator`          | Python 3.12 + PyYAML               | `uv run --with pyyaml --python 3.12 python ...` from the skill directory                                                                  |
+| `transparent-background` | Python 3.12 + Pillow, NumPy, SciPy | `uv run --python 3.12 --with pillow --with numpy --with scipy python -I .agents/skills/transparent-background/scripts/imgalpha.py --help` |
+| `dependency-update`      | `gh` CLI                           | `gh --version`; install from <https://cli.github.com/> (also used for PR attachments)                                                     |
+| Playwright e2e           | Chromium                           | `pnpm exec playwright install chromium`                                                                                                   |
 
 `npm` commands are blocked in this workspace. Use `pnpm dlx` for one-off CLIs, `pnpm add -D` +
 `pnpm exec` for project-local binaries, and `uv tool` / `uvx` for Python CLIs. Avoid `pnpm add -g`:

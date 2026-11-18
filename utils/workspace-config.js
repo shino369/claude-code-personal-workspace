@@ -33,6 +33,7 @@ export const OWNED_SKILLS = [
   'engineering-terminology',
   'security-update',
   'translation-expertise',
+  'transparent-background',
   'web-browsing',
   'workspace-setup',
 ];

@@ -269,6 +269,7 @@ skills automatically, open the matching `SKILL.md` and follow it when its "Use w
 | `engineering-terminology`                        | Technical terms in translations                             | this repo   |
 | `document-writing`                               | Formal documents in EN/JA/zh-TW                             | this repo   |
 | `context-manager`                                | Long sessions losing focus                                  | this repo   |
+| `transparent-background`                         | Remove an image background, clean edges, recolour shapes    | this repo   |
 | `code-review`, `tdd`, `diagnosing-bugs`          | Review, test-first work, hard bugs                          | third-party |
 | `agent-browser`, `browser-use`, `playwright-cli` | Browser runtimes                                            | third-party |
 | `skill-creator`                                  | Creating or improving skills                                | third-party |
@@ -282,6 +283,7 @@ Skill runtimes:
 - `browser-use` — `uv tool install --python 3.12 browser-use`.
 - `playwright-cli` — `pnpm exec playwright cli …`.
 - `skill-creator` — `uv run --with pyyaml --python 3.12 python …`.
+- `transparent-background` — `uv run --python 3.12 --with pillow --with numpy --with scipy python -I …/imgalpha.py` (see its SKILL.md).
 - `gh` (GitHub CLI) — for Dependabot PR review; may not be installed (`pnpm tools show gh`).
 
 If a runtime is missing, tell the user what to install (`pnpm tools show <name>` prints the hint for
