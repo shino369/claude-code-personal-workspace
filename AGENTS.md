@@ -269,6 +269,7 @@ skills automatically, open the matching `SKILL.md` and follow it when its "Use w
 | `engineering-terminology`                        | Technical terms in translations                             | this repo   |
 | `document-writing`                               | Formal documents in EN/JA/zh-TW                             | this repo   |
 | `context-manager`                                | Long sessions losing focus                                  | this repo   |
+| `transparent-background`                         | Remove an image background, clean edges, recolour shapes    | this repo   |
 | `code-review`, `tdd`, `diagnosing-bugs`          | Review, test-first work, hard bugs                          | third-party |
 | `agent-browser`, `browser-use`, `playwright-cli` | Browser runtimes                                            | third-party |
 | `skill-creator`                                  | Creating or improving skills                                | third-party |

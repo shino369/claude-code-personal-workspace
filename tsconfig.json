@@ -29,6 +29,7 @@
     ".agents/skills/engineering-terminology/**/*",
     ".agents/skills/security-update/**/*",
     ".agents/skills/translation-expertise/**/*",
+    ".agents/skills/transparent-background/**/*",
     ".agents/skills/web-browsing/**/*",
     ".agents/skills/workspace-setup/**/*"
   ],
