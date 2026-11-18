@@ -754,32 +754,70 @@ describe('review', () => {
     expect(state().quality?.base).toBe('main');
   });
 
-  test('should review a workspace task against the commit it started from', () => {
-    const runGit = vi.fn(
+  /**
+   * A fake git: HEAD is `head`, merge-base(HEAD, main) is `mergeBase`, and one
+   * file changed.
+   *
+   * @param {{ head: string, mergeBase: string }} refs
+   */
+  const fakeGit = ({ head, mergeBase }) =>
+    vi.fn(
       /** @type {import('../review.js').RunGit} */ (args) =>
         args[0] === 'rev-parse'
-          ? 'start123'
+          ? head
           : args[0] === 'merge-base'
-            ? 'start123'
+            ? args[2] === 'main'
+              ? mergeBase
+              : args[2]
             : args[0] === 'diff'
               ? 'utils/x.js'
               : ''
     );
+
+  test('should review work committed on main since the task started', () => {
     run(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'v'], {
-      runGit,
+      runGit: fakeGit({ head: 'start123', mergeBase: 'start123' }),
     });
     expect(state().startCommit).toBe('start123');
     run(['step', 's1', 'done']);
     run(['verify']);
+    // Two commits later, still on main: merge-base(HEAD, main) is HEAD.
+    const runGit = fakeGit({ head: 'later456', mergeBase: 'later456' });
     const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
-    expect(parsed.scope).toMatchObject({
+    expect(parsed.scope).toEqual({
       base: 'start123',
+      mergeBase: 'start123',
       files: ['utils/x.js'],
     });
     expect(runGit).toHaveBeenCalledWith(
-      ['merge-base', 'HEAD', 'start123'],
+      ['diff', '--name-only', 'start123'],
       root
     );
+    expect(state().quality?.base).toBe('start123');
+  });
+
+  test('should review the whole feature branch, not only since the task started', () => {
+    run(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'v'], {
+      runGit: fakeGit({ head: 'mid789', mergeBase: 'fork000' }),
+    });
+    run(['step', 's1', 'done']);
+    run(['verify']);
+    const runGit = fakeGit({ head: 'tip999', mergeBase: 'fork000' });
+    const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
+    expect(parsed.scope).toMatchObject({ base: 'main', mergeBase: 'fork000' });
+    expect(runGit).toHaveBeenCalledWith(
+      ['diff', '--name-only', 'fork000'],
+      root
+    );
+  });
+
+  test('should record the start commit when adopting a hand-written task', () => {
+    legacyTask();
+    run(['init', 'old', '--verify', 'v'], {
+      runGit: fakeGit({ head: 'adopt111', mergeBase: 'adopt111' }),
+    });
+    const adopted = loadTask(root, 'old-251101').state;
+    expect(adopted?.startCommit).toBe('adopt111');
   });
 
   test('should refuse to open a round with nothing in scope', () => {

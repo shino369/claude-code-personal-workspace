@@ -107,8 +107,8 @@ Work
   review [--base <ref>] [--force]
                                 Code tasks: open the next review round (max 2) and write the
                                 brief + findings file for clean-context reviewers. Scope: the
-                                task's code, else git changes since --base (default: the
-                                commit the task started from, else main)
+                                task's code, else git changes since --base (default main;
+                                for work on main itself, the commit the task started from)
   review record [file]          Read the triaged findings table; CONFIRMED must-fix/high
                                 findings become fix: steps
   template review|study [--name <kebab>]
@@ -550,6 +550,8 @@ export const COMMANDS = {
       branch: deps.git(deps.rootDir).branch,
       agent: detectAgent(options, deps.env),
       now: deps.now(),
+      // Adopted now: on main, later reviews cover the changes from here on.
+      startCommit: deps.runGit(['rev-parse', 'HEAD'], deps.rootDir),
       ...resolveKind(options),
     });
     saveState(task.dir, state);
@@ -954,13 +956,13 @@ export const COMMANDS = {
       quality,
       taskDir: task.dir,
       base: options.base,
-      startCommit: task.state.startCommit,
     });
     const scope = reviewScope({
       rootDir: deps.rootDir,
       taskDir: task.dir,
       base,
       runGit: deps.runGit,
+      startCommit: task.state.startCommit ?? null,
     });
     if (scope.files.length === 0 && quality.phase !== 'review') {
       throw new Error(
@@ -979,7 +981,8 @@ export const COMMANDS = {
       (current) => {
         const result = openRound(current, {
           fingerprint: print,
-          base,
+          // The base actually used (the start commit when the work is on main)
+          base: scope.base,
           force: options.force,
         });
         round = result.round;

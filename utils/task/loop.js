@@ -200,13 +200,13 @@ export function scopeFingerprint(deps, taskDir, state) {
     const base = reviewBase({
       quality: state.quality ?? freshQuality(),
       taskDir,
-      startCommit: state.startCommit,
     });
     const scope = reviewScope({
       rootDir: deps.rootDir,
       taskDir,
       base,
       runGit: deps.runGit,
+      startCommit: state.startCommit ?? null,
     });
     // Nothing in scope: no review to ask for (pnpm task review would refuse).
     return scope.files.length === 0

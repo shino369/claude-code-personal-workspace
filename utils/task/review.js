@@ -5,8 +5,9 @@
  * findings into `fix:` steps.
  *
  * Scope: the task's own code (files `pnpm task check` looks at) when it has
- * any; otherwise the git changes since a base ref (default: the commit the
- * task started from, else `main`), for tasks that change the workspace itself.
+ * any; otherwise the git changes since a base ref (default `main`; for work
+ * on main itself, the commit the task started from), for tasks that change
+ * the workspace itself.
  */
 import crypto from 'crypto';
 import { spawnSync } from 'child_process';
@@ -69,24 +70,27 @@ export const reviewFiles = (name, round) => ({
  * The base a round reviews against: an open round keeps its own; otherwise
  * `--base`, else the git base an earlier round used (so the Stop hook and the
  * next round compare the same files), else none for a task with code (its
- * folder is the scope), else the commit the task started from (so work
- * committed straight onto main is still in scope), else `main`.
+ * folder is the scope), else `main` (see `reviewScope` for work on main).
  *
- * @param {{ quality: import('./quality.js').Quality, taskDir: string, base?: string, startCommit?: string | null }} options
+ * @param {{ quality: import('./quality.js').Quality, taskDir: string, base?: string }} options
  * @returns {string | null}
  */
-export function reviewBase({ quality, taskDir, base, startCommit }) {
+export function reviewBase({ quality, taskDir, base }) {
   if (quality.phase === 'review') return quality.base ?? null;
   if (base !== undefined) return base;
   if (quality.base) return quality.base;
-  if (hasTaskCode(taskDir)) return null;
-  return startCommit ?? DEFAULT_BASE;
+  return hasTaskCode(taskDir) ? null : DEFAULT_BASE;
 }
 
 /**
  * The files a review round covers, as sorted root-relative POSIX paths.
  *
- * @param {{ rootDir: string, taskDir: string, base: string | null, runGit?: RunGit }} options
+ * Against `main` the scope is everything since the branch left it. When the
+ * work is on `main` itself, that merge base is HEAD and the diff would be
+ * empty, so the task's start commit (recorded by `pnpm task new` / `init`)
+ * becomes the base instead; the returned `base` says which one was used.
+ *
+ * @param {{ rootDir: string, taskDir: string, base: string | null, runGit?: RunGit, startCommit?: string | null }} options
  * @returns {Scope}
  */
 export function reviewScope({
@@ -94,6 +98,7 @@ export function reviewScope({
   taskDir,
   base,
   runGit = defaultRunGit,
+  startCommit = null,
 }) {
   if (base === null) {
     const prefix = relPosix(rootDir, taskDir);
@@ -103,12 +108,17 @@ export function reviewScope({
       files: listCodeFiles(taskDir).map((file) => `${prefix}/${file}`),
     };
   }
-  const mergeBase = runGit(['merge-base', 'HEAD', base], rootDir);
-  if (!mergeBase) {
+  const found = runGit(['merge-base', 'HEAD', base], rootDir);
+  if (!found) {
     throw new Error(
       `Cannot find the merge base of HEAD and ${base}.\nFix: pass an existing branch or commit: pnpm task review --base <ref>`
     );
   }
+  const onBase =
+    base === DEFAULT_BASE &&
+    startCommit !== null &&
+    found === runGit(['rev-parse', 'HEAD'], rootDir);
+  const mergeBase = onBase ? startCommit : found;
   const lines = (/** @type {string | null} */ text) =>
     (text ?? '').split('\n').filter(Boolean);
   const files = new Set([
@@ -116,7 +126,7 @@ export function reviewScope({
     ...lines(runGit(['ls-files', '--others', '--exclude-standard'], rootDir)),
   ]);
   return {
-    base,
+    base: onBase ? startCommit : base,
     mergeBase,
     files: [...files].filter((file) => !file.startsWith('tasks/')).sort(),
   };
