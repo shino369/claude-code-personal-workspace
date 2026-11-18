@@ -62,10 +62,8 @@ import {
   openRound,
   parseFindings,
   recordFindings,
-  defaultBranch,
-  reviewBase,
   reviewFiles,
-  reviewScope,
+  taskReviewScope,
 } from './review.js';
 import { summarize, tail } from './verify.js';
 import { relPosix } from '../paths.js';
@@ -109,8 +107,9 @@ Work
                                 Code tasks: open the next review round (max 2) and write the
                                 brief + findings file for clean-context reviewers. Scope: the
                                 task's code (no git), else git changes since --base (default:
-                                the default branch, origin/HEAD or main; for work committed
-                                on it, the commit the task started from)
+                                the default branch as fetched, e.g. origin/main, else main;
+                                for work committed on it, the commit the task started from;
+                                an explicit --base is used as given)
   review record [file]          Read the triaged findings table; CONFIRMED must-fix/high
                                 findings become fix: steps
   template review|study [--name <kebab>]
@@ -954,23 +953,21 @@ export const COMMANDS = {
       );
     }
     const quality = task.state.quality ?? freshQuality();
-    const base = reviewBase({
-      quality,
-      taskDir: task.dir,
-      base: options.base,
-      defaultBase: defaultBranch(deps.runGit, deps.rootDir),
-    });
-    const scope = reviewScope({
+    const scope = taskReviewScope({
       rootDir: deps.rootDir,
       taskDir: task.dir,
-      base,
+      state: task.state,
+      base: options.base,
       runGit: deps.runGit,
-      startCommit: task.state.startCommit ?? null,
     });
     if (scope.files.length === 0 && quality.phase !== 'review') {
+      // A null base means task code, which is never empty: this is a git scope.
+      const noStart =
+        task.state.startCommit === undefined && options.base === undefined
+          ? ` ${name} has no recorded start commit (it predates them), so work committed on ${scope.base} itself cannot be found.`
+          : '';
       throw new Error(
-        // A null base means task code, which is never empty: this is a git scope.
-        `Nothing to review for ${name}: no files changed since ${scope.base} (merge base ${String(scope.mergeBase).slice(0, 7)}). If the work is already committed there, review against the commit before it.\nFix: pnpm task review --base <the commit before the task's first commit>`
+        `Nothing to review for ${name}: no files changed since ${scope.base} (commit ${String(scope.since).slice(0, 7)}).${noStart} If the work is already committed there, review against the commit before it.\nFix: pnpm task review --base <the commit before the task's first commit>`
       );
     }
     const print = fingerprint(deps.rootDir, scope.files);

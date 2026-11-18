@@ -134,9 +134,10 @@ plan ─▶ build test-first ─▶ e2e (if required) ─▶ review round N ─�
    findings. It also writes an empty findings table in `reviews/REVIEW_<task>-rN.md`. The scope is
    the task's code, read from its folder (no git: `tasks/` is ignored), or, for a task that edits
    the workspace's tracked files, the git changes since `--base`. The default base is the
-   repository's default branch (`origin/HEAD`, else `main`), so a feature branch is reviewed as a
-   whole; when the work is committed on that branch itself, the commit the task started from
-   (recorded by `pnpm task new` / `init`). A task with folder code is scoped to that folder only,
+   repository's default branch as last fetched (`origin/HEAD`, e.g. `origin/main`, else `main`), so
+   a feature branch is reviewed as a whole. When the work is committed on that branch itself, it is
+   the commit the task started from (recorded by `pnpm task new` / `init`); an explicit `--base` is
+   used as given. A task with folder code is scoped to that folder only,
    even if it also edits tracked files. An empty scope refuses to open a round.
 2. **Reviewer** (`.claude/agents/reviewer.md`): a fresh agent that works from the brief only. Each
    finding needs a concrete failure scenario: inputs or state → wrong result.

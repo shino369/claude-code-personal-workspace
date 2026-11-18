@@ -748,7 +748,7 @@ describe('review', () => {
     const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
     expect(parsed.scope).toEqual({
       base: 'main',
-      mergeBase: 'abc',
+      since: 'abc',
       files: ['utils/x.js'],
     });
     expect(state().quality?.base).toBe('main');
@@ -786,7 +786,7 @@ describe('review', () => {
     const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
     expect(parsed.scope).toEqual({
       base: 'start123',
-      mergeBase: 'start123',
+      since: 'start123',
       files: ['utils/x.js'],
     });
     expect(runGit).toHaveBeenCalledWith(
@@ -804,7 +804,7 @@ describe('review', () => {
     run(['verify']);
     const runGit = fakeGit({ head: 'tip999', mergeBase: 'fork000' });
     const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
-    expect(parsed.scope).toMatchObject({ base: 'main', mergeBase: 'fork000' });
+    expect(parsed.scope).toMatchObject({ base: 'main', since: 'fork000' });
     expect(runGit).toHaveBeenCalledWith(
       ['diff', '--name-only', 'fork000'],
       root
@@ -827,12 +827,52 @@ describe('review', () => {
     );
     const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
     expect(parsed.scope).toMatchObject({
-      base: 'develop',
-      mergeBase: 'fork000',
+      base: 'origin/develop',
+      since: 'fork000',
     });
     expect(runGit).toHaveBeenCalledWith(
-      ['merge-base', 'HEAD', 'develop'],
+      ['merge-base', 'HEAD', 'origin/develop'],
       root
+    );
+  });
+
+  test('should review unpushed work on main since the task started', () => {
+    run(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'v'], {
+      runGit: fakeGit({ head: 'start123', mergeBase: 'start123' }),
+    });
+    run(['step', 's1', 'done']);
+    run(['verify']);
+    // On local main, two commits ahead of origin/main.
+    const runGit = vi.fn(
+      /** @type {import('../review.js').RunGit} */ (args) =>
+        ({
+          'symbolic-ref': 'origin/main',
+          'merge-base': 'pushed000',
+          'rev-parse': 'local222',
+          branch: 'main',
+          diff: 'utils/x.js',
+        })[args[0]] ?? ''
+    );
+    const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
+    expect(parsed.scope).toEqual({
+      base: 'start123',
+      since: 'start123',
+      files: ['utils/x.js'],
+    });
+  });
+
+  test('should use an explicit --base as given, even on main', () => {
+    run(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'v'], {
+      runGit: fakeGit({ head: 'start123', mergeBase: 'start123' }),
+    });
+    run(['step', 's1', 'done']);
+    run(['verify']);
+    const runGit = vi.fn(
+      /** @type {import('../review.js').RunGit} */ (args) =>
+        ({ 'merge-base': 'later456', 'rev-parse': 'later456' })[args[0]] ?? ''
+    );
+    expect(() => run(['review', '--base', 'main'], { runGit })).toThrow(
+      /no files changed since main \(commit later45\)\. If the work/
     );
   });
 
@@ -852,7 +892,7 @@ describe('review', () => {
     const runGit = (/** @type {string[]} */ args) =>
       args[0] === 'merge-base' ? 'abcdef123' : '';
     expect(() => run(['review'], { runGit })).toThrow(
-      /Nothing to review for demo-261117: no files changed since main \(merge base abcdef1\)\..*\nFix: pnpm task review --base/s
+      /Nothing to review for demo-261117: no files changed since main \(commit abcdef1\)\. demo-261117 has no recorded start commit.*\nFix: pnpm task review --base/s
     );
     expect(state().quality?.reviewRounds).toBe(0);
     fs.mkdirSync(path.join(tasksRoot(root), NAME, 'app'), { recursive: true });
