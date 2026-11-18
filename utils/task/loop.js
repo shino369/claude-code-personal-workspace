@@ -187,7 +187,8 @@ function activeLoop(deps) {
 
 /**
  * Fingerprint of the task's review scope now, or null when git cannot say
- * (no merge base): the quality loop then lets the stop through.
+ * (no merge base) or nothing is in scope: the quality loop then lets the stop
+ * through.
  *
  * @param {import('./deps.js').Deps} deps
  * @param {string} taskDir
@@ -199,6 +200,7 @@ export function scopeFingerprint(deps, taskDir, state) {
     const base = reviewBase({
       quality: state.quality ?? freshQuality(),
       taskDir,
+      startCommit: state.startCommit,
     });
     const scope = reviewScope({
       rootDir: deps.rootDir,
@@ -206,7 +208,10 @@ export function scopeFingerprint(deps, taskDir, state) {
       base,
       runGit: deps.runGit,
     });
-    return fingerprint(deps.rootDir, scope.files);
+    // Nothing in scope: no review to ask for (pnpm task review would refuse).
+    return scope.files.length === 0
+      ? null
+      : fingerprint(deps.rootDir, scope.files);
   } catch {
     return null;
   }

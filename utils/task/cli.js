@@ -9,7 +9,12 @@
 import fs from 'fs';
 import path from 'path';
 import { runIfMain } from '../module-runner.js';
-import { formatBrief, formatNoActiveBrief, summarizeTask } from './brief.js';
+import {
+  formatBrief,
+  formatNoActiveBrief,
+  statusLabel,
+  summarizeTask,
+} from './brief.js';
 import { defaultDeps } from './deps.js';
 import { formatGit } from './git.js';
 import {
@@ -62,6 +67,7 @@ import {
   reviewScope,
 } from './review.js';
 import { summarize, tail } from './verify.js';
+import { relPosix } from '../paths.js';
 
 export const HELP = `Usage: pnpm task <command> [options]
 
@@ -101,13 +107,14 @@ Work
   review [--base <ref>] [--force]
                                 Code tasks: open the next review round (max 2) and write the
                                 brief + findings file for clean-context reviewers. Scope: the
-                                task's code, else git changes since --base (default main)
+                                task's code, else git changes since --base (default: the
+                                commit the task started from, else main)
   review record [file]          Read the triaged findings table; CONFIRMED must-fix/high
                                 findings become fix: steps
   template review|study [--name <kebab>]
                                 Copy a REVIEW_/STUDIES_ template into the task
-  done [-m "…"] [--force]       Close the task (needs a passing verify; code tasks also a
-                                finished review loop; --force overrides)
+  done [-m "…"] [--force]       Close the task (needs every step done and a passing verify;
+                                code tasks also a finished review loop; --force overrides)
 
 Options
   --task <name>   Act on <name> instead of the active task
@@ -281,7 +288,9 @@ export function sessionBrief(deps) {
   const active = readActive(deps.rootDir);
   if (active) {
     const task = loadTask(deps.rootDir, active);
-    return formatBrief(summarizeTask(task, deps.git(deps.rootDir)));
+    return formatBrief(summarizeTask(task, deps.git(deps.rootDir)), {
+      active: true,
+    });
   }
   const tasks = listTasks(deps);
   return tasks.length === 0 ? null : formatNoActiveBrief(tasks);
@@ -397,19 +406,29 @@ export function codeTaskLines(state) {
 }
 
 /**
- * Why a code task cannot be closed yet (empty = it can): the quality loop
- * (AGENTS.md §4.5) needs at least one review round, no open round, no open
- * CONFIRMED must-fix/high finding, and an e2e verify command when e2e is
- * required. General tasks have no such gate.
+ * Why a task cannot be closed yet (empty = it can). Every task: no step left
+ * open. Code tasks also need the quality loop (AGENTS.md §4.5) finished: at
+ * least one review round, no open round, no open CONFIRMED must-fix/high
+ * finding, and an e2e verify command when e2e is required.
  *
  * @param {import('./state.js').TaskState} state
- * @returns {string[]} one "problem — Fix: …" line each
+ * @returns {string[]} one "problem. Fix: …" line each
  */
 export function doneBlockers(state) {
-  if (state.kind !== 'code') return [];
   const quality = state.quality ?? freshQuality();
+  // Fix steps of open findings are reported with the findings below.
+  const fixSteps = new Set(toFix(quality).map((f) => f.step));
+  const unfinished = state.steps.filter(
+    (s) => s.status !== 'done' && !fixSteps.has(s.id)
+  );
   /** @type {string[]} */
-  const blockers = [];
+  const blockers =
+    unfinished.length > 0
+      ? [
+          `${unfinished.length} step(s) not done: ${unfinished.map((s) => `${s.id} (${s.status})`).join(', ')}. Fix: finish them (pnpm task next), or drop what is out of scope: pnpm task step <id> done -m "dropped: <why>"`,
+        ]
+      : [];
+  if (state.kind !== 'code') return blockers;
   if (quality.reviewRounds === 0) {
     blockers.push(
       'No review round ran. Fix: pnpm task review, then the reviewer and the triage in clean contexts, then pnpm task review record'
@@ -484,6 +503,7 @@ export const COMMANDS = {
       branch: deps.git(deps.rootDir).branch,
       agent,
       now,
+      startCommit: deps.runGit(['rev-parse', 'HEAD'], deps.rootDir),
       ...mode,
     });
     const dir = scaffoldTask({
@@ -500,7 +520,7 @@ export const COMMANDS = {
       options,
       { ok: true, name, dir, state },
       [
-        `Created ${path.relative(deps.rootDir, dir)}/ (active task).`,
+        `Created ${relPosix(deps.rootDir, dir)}/ (active task).`,
         ...codeTaskLines(state),
         state.steps.length === 0
           ? 'Next: add steps — pnpm task step add "…"'
@@ -559,7 +579,7 @@ export const COMMANDS = {
     }
     for (const t of tasks) {
       deps.log(
-        `${t.active ? '*' : ' '} ${t.name}  [${t.status}${t.tracked ? '' : ', no state.json'}]  updated ${t.updated}  next: ${t.next}`
+        `${t.active ? '*' : ' '} ${t.name}  [${statusLabel(t.status, t.tracked)}${t.active ? ', active task' : ''}]  updated ${t.updated}  next: ${t.next}`
       );
     }
     return 0;
@@ -571,7 +591,12 @@ export const COMMANDS = {
       loadTask(deps.rootDir, name),
       deps.git(deps.rootDir)
     );
-    output(deps, options, summary, formatBrief(summary));
+    output(
+      deps,
+      options,
+      summary,
+      formatBrief(summary, { active: name === readActive(deps.rootDir) })
+    );
     return 0;
   },
 
@@ -929,6 +954,7 @@ export const COMMANDS = {
       quality,
       taskDir: task.dir,
       base: options.base,
+      startCommit: task.state.startCommit,
     });
     const scope = reviewScope({
       rootDir: deps.rootDir,
@@ -936,6 +962,12 @@ export const COMMANDS = {
       base,
       runGit: deps.runGit,
     });
+    if (scope.files.length === 0 && quality.phase !== 'review') {
+      throw new Error(
+        // A null base means task code, which is never empty: this is a git scope.
+        `Nothing to review for ${name}: no files changed since ${scope.base} (merge base ${String(scope.mergeBase).slice(0, 7)}). If the work is already committed there, review against the commit before it.\nFix: pnpm task review --base <the commit before the task's first commit>`
+      );
+    }
     const print = fingerprint(deps.rootDir, scope.files);
     const now = deps.now();
     const agent = detectAgent(options, deps.env);
@@ -1027,7 +1059,7 @@ export const COMMANDS = {
       `${prefix}${label}.md`
     );
     if (fs.existsSync(target)) {
-      throw new Error(`${path.relative(deps.rootDir, target)} already exists.`);
+      throw new Error(`${relPosix(deps.rootDir, target)} already exists.`);
     }
     const content = renderTemplate(
       fs.readFileSync(path.join(deps.templatesDir, file), 'utf-8'),
@@ -1035,7 +1067,7 @@ export const COMMANDS = {
     );
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, content, 'utf-8');
-    const relative = path.relative(deps.rootDir, target);
+    const relative = relPosix(deps.rootDir, target);
     output(
       deps,
       options,
@@ -1075,7 +1107,7 @@ export const COMMANDS = {
     if (blockers.length > 0 && !options.force) {
       throw new Error(
         [
-          `${name} is a code task and its quality loop is not finished:`,
+          `${name} is not finished:`,
           ...blockers.map((b) => `- ${b}`),
           'Fix: the lines above — or, if the user agrees, pnpm task done --force',
         ].join('\n')
@@ -1129,7 +1161,7 @@ function recordReview(options, deps) {
     : path.join(task.dir, reviewFiles(name, round).findings);
   if (!fs.existsSync(file)) {
     throw new Error(
-      `No findings file at ${path.relative(deps.rootDir, file)}.\nFix: pnpm task review (opens a round and creates it)`
+      `No findings file at ${relPosix(deps.rootDir, file)}.\nFix: pnpm task review (opens a round and creates it)`
     );
   }
   const { findings, errors } = parseFindings(fs.readFileSync(file, 'utf-8'), {
@@ -1138,7 +1170,7 @@ function recordReview(options, deps) {
   });
   if (errors.length > 0) {
     throw new Error(
-      `${path.relative(deps.rootDir, file)} is not ready:\n${errors.map((e) => `- ${e}`).join('\n')}\nFix the rows above, then re-run: pnpm task review record`
+      `${relPosix(deps.rootDir, file)} is not ready:\n${errors.map((e) => `- ${e}`).join('\n')}\nFix the rows above, then re-run: pnpm task review record`
     );
   }
   const now = deps.now();

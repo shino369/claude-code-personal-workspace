@@ -103,7 +103,7 @@ In `plan.md`, edit the Goal, Acceptance, and Decisions by hand. The Steps block 
 | Keep working until verify passes     | `pnpm task set --loop on [--loop-max N]` (Claude Stop hook) |
 | End of every session (required)      | `pnpm task note --done "…" --next "…" [--open "…"]`         |
 | Write a review or study              | `pnpm task template review` / `pnpm task template study`    |
-| Everything is done and verify passes | `pnpm task done`                                            |
+| Every step done and verify passes    | `pnpm task done` (refuses open steps; `--force` overrides)  |
 
 `pnpm task note` appends (never rewrites) this entry to `NOTES.md` and fills in `State:` for you.
 Write the same shape by hand only when the CLI cannot run:

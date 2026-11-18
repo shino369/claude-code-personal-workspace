@@ -191,6 +191,9 @@ beforeEach(() => {
   fs.writeFileSync(path.join(repo, '.gitignore'), 'tasks/\nnode_modules/\n');
   fs.writeFileSync(path.join(repo, 'README.md'), 'hi\n');
   git(repo, ['init', '-q', '-b', 'main']);
+  // Keep LF on Windows checkouts with core.autocrlf=true (the swarm's own
+  // git commands read this repo's config, so the fixture sets it there).
+  git(repo, ['config', 'core.autocrlf', 'false']);
   git(repo, ['config', 'user.email', 't@example.com']);
   git(repo, ['config', 'user.name', 't']);
   git(repo, ['config', 'commit.gpgsign', 'false']);

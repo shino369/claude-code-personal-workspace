@@ -356,6 +356,17 @@ describe('runInnerLoop', () => {
       ).toMatch(/^[0-9a-f]{16}$/);
     });
 
+    test('should give no fingerprint when nothing is in scope', () => {
+      const state = createState({ name: NAME, goal: 'G', kind: 'code' });
+      expect(
+        scopeFingerprint(
+          deps({ runGit: (args) => (args[0] === 'merge-base' ? 'abc' : '') }),
+          path.join(root, 'none'),
+          state
+        )
+      ).toBeNull();
+    });
+
     test('should leave general tasks to the plain inner loop', () => {
       cli([
         'new',

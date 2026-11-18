@@ -38,6 +38,7 @@ import {
   updateState,
 } from '../task/store.js';
 import { runLoop } from './driver.js';
+import { relPosix } from '../paths.js';
 
 export const BEGIN = 'BEGIN FINDINGS';
 export const END = 'END FINDINGS';
@@ -49,7 +50,7 @@ export const END = 'END FINDINGS';
  *   runTask: (argv: string[]) => string,
  *   scopeFingerprint: (rootDir: string, taskDir: string, state: TaskState) => string | null,
  * }} ReviewDeps
- * @typedef {'complete' | 'verify' | 'fix' | 'blocked' | 'steps-open' | 'no-scope' | 'reviewer' | 'triage' | 'record' | 'timeout'} ReviewStop
+ * @typedef {'complete' | 'verify' | 'fix' | 'blocked' | 'steps-open' | 'no-scope' | 'open' | 'reviewer' | 'triage' | 'record' | 'timeout'} ReviewStop
  * @typedef {{ ok: boolean, reason: ReviewStop, detail: string, rounds: number, logDir: string }} ReviewResult
  */
 
@@ -349,7 +350,7 @@ export function runReviewLoop({
         at: deps.date(),
         agent: command.agent,
         label: 'auto: review loop',
-        message: `pnpm loop --review --agent ${command.agent} (reviewer ${reviewer.agent}): ${ok ? 'complete' : `stopped (${reason})`} — ${detail} ${rounds} round(s) this run.${extra ? ` ${extra}` : ''}${fs.existsSync(logDir) ? ` Logs: ${path.relative(rootDir, logDir)}/` : ''}`,
+        message: `pnpm loop --review --agent ${command.agent} (reviewer ${reviewer.agent}): ${ok ? 'complete' : `stopped (${reason})`} — ${detail} ${rounds} round(s) this run.${extra ? ` ${extra}` : ''}${fs.existsSync(logDir) ? ` Logs: ${relPosix(rootDir, logDir)}/` : ''}`,
         state: `${formatGit(deps.git(rootDir))}; verify ${state.lastVerify?.ok ? 'pass' : 'fail'}`,
       }),
       appendSeparator
@@ -429,9 +430,16 @@ export function runReviewLoop({
       }
     }
 
-    const opened = JSON.parse(
-      deps.runTask(['review', '--task', name, '--json'])
-    );
+    /** @type {{ round: number, brief: string, findings: string, reopened: boolean }} */
+    let opened;
+    try {
+      opened = JSON.parse(deps.runTask(['review', '--task', name, '--json']));
+    } catch (error) {
+      return finish(
+        'open',
+        `pnpm task review could not open a round: ${/** @type {Error} */ (error).message}`
+      );
+    }
     const round = /** @type {number} */ (opened.round);
     const findingsPath = path.join(rootDir, opened.findings);
     deps.log(

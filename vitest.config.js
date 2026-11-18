@@ -3,11 +3,14 @@
  * For more information: https://vitest.dev/config/
  */
 import { defineConfig } from 'vitest/config';
-import { vendoredGlobs } from './utils/workspace-config.js';
+import { localGlobs, vendoredGlobs } from './utils/workspace-config.js';
 
 // Third-party skills (and the .claude/skills link mirror) are vendored as-is;
 // do not run or measure them. Project-owned skills in .agents/skills are tested.
 const thirdPartySkills = vendoredGlobs();
+// Local-only folders git ignores (resources/ with venvs, …): Vitest does not
+// read .gitignore, and coverage would otherwise measure every JS file there.
+const localOnly = localGlobs();
 
 export default defineConfig({
   test: {
@@ -32,7 +35,10 @@ export default defineConfig({
       '**/build/**',
       '**/tasks/**',
       '**/logs/**',
+      // Shared fixture helpers, imported by tests (not tests themselves)
+      '**/__tests__/support/**',
       ...thirdPartySkills,
+      ...localOnly,
     ],
 
     // Coverage configuration
@@ -58,6 +64,7 @@ export default defineConfig({
         // them against stubs in .claude/workflows/__tests__/.
         '.claude/workflows/*.js',
         ...thirdPartySkills,
+        ...localOnly,
       ],
       reportOnFailure: true,
       // Thresholds for 100% coverage

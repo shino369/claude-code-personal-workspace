@@ -355,10 +355,10 @@ describe('list', () => {
     const lines = run(['list']).out.split('\n');
     expect(lines).toHaveLength(2);
     expect(lines[0]).toBe(
-      `* ${NAME}  [active]  updated 2026-11-17 09:30  next: s1. One`
+      `* ${NAME}  [open, active task]  updated 2026-11-17 09:30  next: s1. One`
     );
     expect(lines[1]).toMatch(
-      /^ {2}old-251101 {2}\[active, no state\.json\].*next: b$/
+      /^ {2}old-251101 {2}\[open, untracked\].*next: b$/
     );
     expect(run(['list', '--all']).out.split('\n')).toHaveLength(3);
   });
@@ -382,8 +382,17 @@ describe('list', () => {
 describe('status, switch, and sessionBrief', () => {
   test('should print the brief for the active task', () => {
     newTask();
-    expect(run(['status']).out).toContain(`[Task] ${NAME} — active`);
-    expect(JSON.parse(run(['status', '--json']).out).name).toBe(NAME);
+    expect(run(['status']).out).toContain(
+      `[Task] ${NAME} (active task) — open (tasks/${NAME}/)`
+    );
+    expect(JSON.parse(run(['status', '--json']).out)).toMatchObject({
+      name: NAME,
+      status: 'active',
+    });
+    legacyTask();
+    expect(run(['status', 'old']).out).toContain(
+      '[Task] old-251101 — open, untracked (tasks/old-251101/)'
+    );
   });
 
   test('should switch tasks by name or --task', () => {
@@ -745,6 +754,51 @@ describe('review', () => {
     expect(state().quality?.base).toBe('main');
   });
 
+  test('should review a workspace task against the commit it started from', () => {
+    const runGit = vi.fn(
+      /** @type {import('../review.js').RunGit} */ (args) =>
+        args[0] === 'rev-parse'
+          ? 'start123'
+          : args[0] === 'merge-base'
+            ? 'start123'
+            : args[0] === 'diff'
+              ? 'utils/x.js'
+              : ''
+    );
+    run(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'v'], {
+      runGit,
+    });
+    expect(state().startCommit).toBe('start123');
+    run(['step', 's1', 'done']);
+    run(['verify']);
+    const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
+    expect(parsed.scope).toMatchObject({
+      base: 'start123',
+      files: ['utils/x.js'],
+    });
+    expect(runGit).toHaveBeenCalledWith(
+      ['merge-base', 'HEAD', 'start123'],
+      root
+    );
+  });
+
+  test('should refuse to open a round with nothing in scope', () => {
+    newTask(['--verify', 'pnpm test']);
+    finishSteps();
+    run(['verify']);
+    const runGit = (/** @type {string[]} */ args) =>
+      args[0] === 'merge-base' ? 'abcdef123' : '';
+    expect(() => run(['review'], { runGit })).toThrow(
+      /Nothing to review for demo-261117: no files changed since main \(merge base abcdef1\)\..*\nFix: pnpm task review --base/s
+    );
+    expect(state().quality?.reviewRounds).toBe(0);
+    fs.mkdirSync(path.join(tasksRoot(root), NAME, 'app'), { recursive: true });
+    fs.writeFileSync(path.join(tasksRoot(root), NAME, 'app', 'notes.txt'), '');
+    expect(() => run(['review', '--base', 'main'], { runGit })).toThrow(
+      /no files changed since main/
+    );
+  });
+
   test('should take --base and --force', () => {
     newTask(['--verify', 'pnpm test']);
     finishSteps();
@@ -1010,7 +1064,7 @@ describe('template', () => {
   test('should create review and study files from templates', () => {
     newTask();
     expect(run(['template', 'review']).out).toBe(
-      `Created ${path.join('tasks', NAME, 'reviews', 'REVIEW_demo.md')} — fill in every (…) placeholder.`
+      `Created tasks/${NAME}/reviews/REVIEW_demo.md — fill in every (…) placeholder.`
     );
     expect(read(path.join('reviews', 'REVIEW_demo.md'))).toMatch(
       /^# Review — demo\n\nDate: 2026-11-17/
@@ -1023,7 +1077,7 @@ describe('template', () => {
       '--json',
     ]);
     expect(JSON.parse(out).file).toBe(
-      path.join('tasks', NAME, 'studies', 'STUDIES_api-limits.md')
+      `tasks/${NAME}/studies/STUDIES_api-limits.md`
     );
   });
 
@@ -1042,8 +1096,27 @@ describe('template', () => {
 });
 
 describe('done', () => {
+  const finishSteps = () => {
+    run(['step', 's1', 'done']);
+    run(['step', 's2', 'done']);
+  };
+
+  test('should refuse open steps in any task unless forced', () => {
+    newTask(['--kind', 'general']);
+    run(['step', 's1', 'start']);
+    expect(() => run(['done'])).toThrow(
+      /^demo-261117 is not finished:\n- 2 step\(s\) not done: s1 \(in_progress\), s2 \(todo\)\. Fix: finish them/
+    );
+    expect(state().status).toBe('active');
+    expect(run(['done', '--force']).out).toBe(`Closed ${NAME}.`);
+    expect(read('NOTES.md')).toContain(
+      'Forced past: 2 step(s) not done: s1 (in_progress), s2 (todo).'
+    );
+  });
+
   test('should close a task without verify commands and clear the pointer', () => {
     newTask();
+    finishSteps();
     expect(run(['done', '-m', 'All good.']).out).toBe(`Closed ${NAME}.`);
     expect(state()).toMatchObject({ status: 'done', next: null });
     expect(readActive(root)).toBeNull();
@@ -1054,6 +1127,7 @@ describe('done', () => {
 
   test('should require a passing verify unless forced', () => {
     newTask(['--verify', 'pnpm test']);
+    finishSteps();
     expect(() => run(['done'])).toThrow(/did not pass \(not run\)/);
     run(['verify'], { runCommands: fakeRunner([{ ok: false }]) });
     expect(() => run(['done'])).toThrow(/`pnpm test` failed/);
@@ -1062,6 +1136,7 @@ describe('done', () => {
 
   test('should close a passing non-active task and keep the pointer', () => {
     newTask(['--verify', 'a', '--kind', 'general']);
+    finishSteps();
     run(['verify']);
     legacyTask();
     run(['switch', 'old']);
@@ -1098,13 +1173,14 @@ describe('done', () => {
     });
     const greenCode = () => {
       newTask(['--verify', 'pnpm test']);
+      finishSteps();
       run(['verify']);
     };
 
     test('should refuse a code task that never had a review round', () => {
       greenCode();
       expect(() => run(['done'])).toThrow(
-        /code task and its quality loop is not finished:\n- No review round ran\. Fix: pnpm task review/
+        /is not finished:\n- No review round ran\. Fix: pnpm task review/
       );
       expect(state().status).not.toBe('done');
     });
@@ -1133,6 +1209,8 @@ describe('done', () => {
         '2 CONFIRMED must-fix/high finding(s) not fixed: r1-1 (step s3), r1-2.'
       );
       expect(message).not.toContain('No review round ran');
+      // s3 is the fix step of r1-1: reported with the finding, not again as a step
+      expect(message).not.toContain('step(s) not done');
       expect(message).toContain('pnpm task done --force');
     });
 

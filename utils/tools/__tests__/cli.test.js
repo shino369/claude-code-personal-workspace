@@ -14,6 +14,7 @@ import {
   setupTools,
 } from '../cli.js';
 import { readRegistry } from '../registry.js';
+import { toPosix } from '../../paths.js';
 
 const NOW = new Date('2026-11-17T09:00:00.000Z');
 
@@ -56,9 +57,10 @@ function probe({ onPath = ['codex', 'gh'], spawn, env = {} } = {}) {
   return {
     env: { PATH: '/bin', ...env },
     platform: /** @type {NodeJS.Platform} */ ('darwin'),
+    // The probe builds native paths (\\bin\\codex on Windows); compare with /.
     isExecutable: (/** @type {string} */ file) =>
-      onPath.some((name) => file === `/bin/${name}`) ||
-      file.endsWith('/real-tool'),
+      onPath.some((name) => toPosix(file) === `/bin/${name}`) ||
+      toPosix(file).endsWith('/real-tool'),
     realpath: (/** @type {string} */ file) => file,
     spawn:
       spawn ??

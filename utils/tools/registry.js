@@ -13,8 +13,9 @@ import { readIfExists, writeFileAtomic } from '../task/store.js';
 
 export const REGISTRY_VERSION = 1;
 export const TOOLS_DIR = 'tools';
-export const LOCAL_FILE = path.join(TOOLS_DIR, 'local.json');
-export const CATALOG_FILE = path.join(TOOLS_DIR, 'catalog.json');
+// Repo-relative with `/` (shown in messages; path.join accepts it on Windows).
+export const LOCAL_FILE = `${TOOLS_DIR}/local.json`;
+export const CATALOG_FILE = `${TOOLS_DIR}/catalog.json`;
 export const KINDS = ['agent', 'cli', 'runtime', 'source'];
 export const TOOL_NAME_RE = /^[a-z0-9][a-z0-9._-]*$/;
 

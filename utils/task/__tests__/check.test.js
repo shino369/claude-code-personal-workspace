@@ -23,6 +23,7 @@ import {
   tsconfigFor,
   withCheck,
 } from '../check.js';
+import { linkDir } from '../../__tests__/support/links.js';
 
 /** @type {string} */
 let root;
@@ -83,13 +84,11 @@ describe('listCodeFiles', () => {
   });
 
   test('should ignore entries that are neither files nor folders', () => {
-    write({ 'real.js': '' });
-    fs.symlinkSync(
-      path.join(taskDir, 'real.js'),
-      path.join(taskDir, 'link.js')
-    );
+    write({ 'real/a.js': '' });
+    // A directory link (a junction on Windows, which needs no symlink rights)
+    linkDir(path.join(taskDir, 'real'), path.join(taskDir, 'linked'));
 
-    expect(listCodeFiles(taskDir)).toEqual(['real.js']);
+    expect(listCodeFiles(taskDir)).toEqual(['real/a.js']);
   });
 });
 

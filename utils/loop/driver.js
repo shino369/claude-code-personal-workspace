@@ -26,6 +26,7 @@ import {
 } from '../task/store.js';
 import { summarize, tail } from '../task/verify.js';
 import { gitText } from './worktree.js';
+import { relPosix } from '../paths.js';
 
 /** Lines of agent output kept in each iteration log. */
 export const OUTPUT_TAIL_LINES = 60;
@@ -310,7 +311,7 @@ export function runLoop({
     'no-progress': `stopped: no progress in ${stall} iteration(s) in a row`,
     timeout: `stopped: wall-clock cap (${Math.round(timeoutMs / 60000)} min)`,
   };
-  const relativeLogs = path.relative(rootDir, logDir);
+  const relativeLogs = relPosix(rootDir, logDir);
   appendNotes(
     taskDir,
     formatNoteEntry({

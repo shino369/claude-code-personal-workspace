@@ -5,6 +5,7 @@
  * by Codex and other agents). Harnesses that need their own directory (Claude
  * Code reads `.claude/skills/`) get links pointing back at the canonical copy.
  */
+import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -72,4 +73,51 @@ export function vendoredGlobs(rootDir = ROOT_DIR, fsApi = fs) {
       (name) => `**/.agents/skills/${name}/**`
     ),
   ];
+}
+
+/**
+ * Folders the static ignore lists already handle (and `pnpm task check`
+ * un-ignores `tasks/` on purpose), so `localGlobs` leaves them out.
+ */
+const HANDLED_DIRS = [
+  'tasks/',
+  'node_modules/',
+  '.agents/skills/',
+  '.claude/skills/',
+];
+
+/**
+ * Glob patterns for local-only folders: every directory git ignores here
+ * (`resources/` with models and venvs, `coverage/`, `logs/`, …). ESLint,
+ * tsc, and Vitest do not read `.gitignore`, so their configs add these.
+ * Asking git keeps one source of truth: a new local folder only needs a
+ * `.gitignore` line. Outside a git checkout (or without git) it returns [].
+ *
+ * @param {string} [rootDir]
+ * @param {(cmd: string, args: string[], opts: object) => { status: number | null, stdout?: string | Buffer | null }} [spawn]
+ * @returns {string[]}
+ */
+export function localGlobs(rootDir = ROOT_DIR, spawn = spawnSync) {
+  const result = spawn(
+    'git',
+    [
+      'ls-files',
+      '--others',
+      '--ignored',
+      '--exclude-standard',
+      '--directory',
+      '-z',
+    ],
+    { cwd: rootDir, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }
+  );
+  if (result.status !== 0) return [];
+  return String(result.stdout ?? '')
+    .split('\0')
+    .filter(
+      (entry) =>
+        entry.endsWith('/') &&
+        !HANDLED_DIRS.some((dir) => entry.startsWith(dir))
+    )
+    .map((dir) => `${dir}**`)
+    .sort();
 }

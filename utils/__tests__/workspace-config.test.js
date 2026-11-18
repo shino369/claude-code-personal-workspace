@@ -1,11 +1,14 @@
+import { spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { vi } from 'vitest';
 import {
   OWNED_SKILLS,
   ROOT_DIR,
   SKILLS_DIR,
   listThirdPartySkills,
+  localGlobs,
   vendoredGlobs,
 } from '../workspace-config.js';
 
@@ -70,5 +73,49 @@ describe('vendoredGlobs', () => {
       '**/.github/skills/**',
       '**/.agents/skills/tdd/**',
     ]);
+  });
+});
+
+describe('localGlobs', () => {
+  test('should turn git-ignored directories into globs, minus handled ones', () => {
+    const spawn = vi.fn(() => ({
+      status: 0,
+      stdout: [
+        'resources/',
+        'coverage/',
+        'tools/local.json',
+        'tasks/',
+        'node_modules/',
+        '.agents/skills/tdd/',
+        '.claude/skills/',
+        'nested/cache/',
+        '',
+      ].join('\0'),
+    }));
+    expect(localGlobs(root, spawn)).toEqual([
+      'coverage/**',
+      'nested/cache/**',
+      'resources/**',
+    ]);
+    expect(spawn).toHaveBeenCalledWith(
+      'git',
+      expect.arrayContaining(['--ignored', '--directory', '-z']),
+      expect.objectContaining({ cwd: root })
+    );
+  });
+
+  test('should be empty outside a git checkout', () => {
+    expect(localGlobs(root)).toEqual([]);
+    expect(localGlobs(root, () => ({ status: 0, stdout: null }))).toEqual([]);
+  });
+
+  test('should list a real ignored folder of a git checkout', () => {
+    const git = (/** @type {string[]} */ ...args) =>
+      spawnSync('git', args, { cwd: root, encoding: 'utf-8' });
+    git('init', '-q');
+    fs.writeFileSync(path.join(root, '.gitignore'), 'resources/\n');
+    fs.mkdirSync(path.join(root, 'resources', 'venv'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'resources', 'venv', 'a.js'), '');
+    expect(localGlobs(root)).toEqual(['resources/**']);
   });
 });

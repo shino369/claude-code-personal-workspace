@@ -2,9 +2,9 @@ name: Test CI
 
 on:
   push:
+    # Every branch, so a fix branch gets the Windows + Linux matrix before a PR.
     branches:
-      - main
-      - develop
+      - '**'
   pull_request:
     branches:
       - main
@@ -15,11 +15,14 @@ permissions:
 
 jobs:
   test:
-    name: Test on Node.js ${{ matrix.node-version }}
-    runs-on: ubuntu-latest
+    name: Test on ${{ matrix.os }}, Node.js ${{ matrix.node-version }}
+    runs-on: ${{ matrix.os }}
 
     strategy:
+      # Report every OS even when one fails: the harness runs on Windows too.
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         node-version: [24.x]
 
     steps:
@@ -37,6 +40,7 @@ jobs:
 
       - name: Get pnpm store directory
         id: pnpm-cache
+        shell: bash
         run: echo "path=$(pnpm store path)" >> $GITHUB_OUTPUT
 
       - name: Cache pnpm store
@@ -63,8 +67,25 @@ jobs:
         run: pnpm test:coverage
 
       - name: Upload coverage to Codecov
-        if: matrix.node-version == '24.x'
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '24.x'
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+
+  # The single check the main/develop ruleset requires ("Test on Node.js 24.x").
+  # It passes only when every OS in the matrix passed, so the matrix can change
+  # without editing the ruleset.
+  required:
+    name: Test on Node.js 24.x
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the matrix result
+        shell: bash
+        run: |
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "Matrix result: ${{ needs.test.result }}"
+            exit 1
+          fi

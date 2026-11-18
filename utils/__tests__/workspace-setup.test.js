@@ -1,3 +1,4 @@
+import path from 'path';
 import { vi } from 'vitest';
 import {
   HELP,
@@ -17,6 +18,9 @@ import {
 } from '../workspace-setup.js';
 
 /** @typedef {import('../workspace-setup.js').Deps} Deps */
+
+/** The default link target, in this platform's separator. */
+const CLAUDE_SKILLS = path.join('.claude', 'skills');
 
 /**
  * Test doubles are loosely typed on purpose (mock return shapes).
@@ -67,7 +71,7 @@ describe('parseArgs', () => {
       withBrowsers: false,
       json: false,
       help: false,
-      targets: ['.claude/skills'],
+      targets: [CLAUDE_SKILLS],
     });
   });
 
@@ -94,7 +98,7 @@ describe('parseArgs', () => {
   test('should append extra targets in both forms', () => {
     expect(
       parseArgs(['--target', '.dsh/skills', '--target=x']).targets
-    ).toEqual(['.claude/skills', '.dsh/skills', 'x']);
+    ).toEqual([CLAUDE_SKILLS, '.dsh/skills', 'x']);
   });
 
   test('should reject a target flag without a value', () => {

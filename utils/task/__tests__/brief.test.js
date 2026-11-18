@@ -131,7 +131,7 @@ describe('formatBrief', () => {
 
   test('should render the core lines for a fresh task', () => {
     expect(brief().split('\n')).toEqual([
-      '[Task] demo-261117 — active (tasks/demo-261117/)',
+      '[Task] demo-261117 — open (tasks/demo-261117/)',
       'Goal: Ship it',
       'Progress: 0/2 steps done',
       'Next step: s1. One',
@@ -285,7 +285,9 @@ describe('formatBrief', () => {
 describe('formatNoActiveBrief', () => {
   test('should suggest creating a task when none are open', () => {
     expect(
-      formatNoActiveBrief([{ name: 'a', status: 'done', updated: 'x' }])
+      formatNoActiveBrief([
+        { name: 'a', status: 'done', tracked: true, updated: 'x' },
+      ])
     ).toMatch(/^\[Task\] No active task\. Multi-step work/);
   });
 
@@ -293,12 +295,14 @@ describe('formatNoActiveBrief', () => {
     const tasks = ['a', 'b', 'c'].map((name) => ({
       name,
       status: 'active',
+      tracked: name !== 'b',
       updated: '2026-11-17 10:00',
     }));
+    // No task is "active" here: that word means the active pointer.
     expect(formatNoActiveBrief(tasks, 2).split('\n')).toEqual([
       '[Task] No active task. Open tasks (newest first):',
-      '  - a (active, updated 2026-11-17 10:00)',
-      '  - b (active, updated 2026-11-17 10:00)',
+      '  - a (open, updated 2026-11-17 10:00)',
+      '  - b (open, untracked, updated 2026-11-17 10:00)',
       'Resume one: pnpm task switch <name>, then pnpm task status. New work: pnpm task new <name> --goal "…"',
     ]);
   });
@@ -307,6 +311,7 @@ describe('formatNoActiveBrief', () => {
     const tasks = Array.from({ length: 7 }, (_, i) => ({
       name: `t${i}`,
       status: 'blocked',
+      tracked: true,
       updated: 'x',
     }));
     expect(formatNoActiveBrief(tasks).split('\n')).toHaveLength(7);
