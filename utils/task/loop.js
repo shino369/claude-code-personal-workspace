@@ -11,7 +11,12 @@ import { withCheck } from './check.js';
 import { formatGit } from './git.js';
 import { appendSeparator, formatNoteEntry } from './markdown.js';
 import { decideQuality, freshQuality } from './quality.js';
-import { fingerprint, reviewBase, reviewScope } from './review.js';
+import {
+  defaultBranch,
+  fingerprint,
+  reviewBase,
+  reviewScope,
+} from './review.js';
 import { appendNotes, loadTask, readActive, updateState } from './store.js';
 import { stripAnsi, summarize } from './verify.js';
 
@@ -200,6 +205,7 @@ export function scopeFingerprint(deps, taskDir, state) {
     const base = reviewBase({
       quality: state.quality ?? freshQuality(),
       taskDir,
+      defaultBase: defaultBranch(deps.runGit, deps.rootDir),
     });
     const scope = reviewScope({
       rootDir: deps.rootDir,

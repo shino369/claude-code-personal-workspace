@@ -62,6 +62,7 @@ import {
   openRound,
   parseFindings,
   recordFindings,
+  defaultBranch,
   reviewBase,
   reviewFiles,
   reviewScope,
@@ -107,8 +108,9 @@ Work
   review [--base <ref>] [--force]
                                 Code tasks: open the next review round (max 2) and write the
                                 brief + findings file for clean-context reviewers. Scope: the
-                                task's code, else git changes since --base (default main;
-                                for work on main itself, the commit the task started from)
+                                task's code (no git), else git changes since --base (default:
+                                the default branch, origin/HEAD or main; for work committed
+                                on it, the commit the task started from)
   review record [file]          Read the triaged findings table; CONFIRMED must-fix/high
                                 findings become fix: steps
   template review|study [--name <kebab>]
@@ -956,6 +958,7 @@ export const COMMANDS = {
       quality,
       taskDir: task.dir,
       base: options.base,
+      defaultBase: defaultBranch(deps.runGit, deps.rootDir),
     });
     const scope = reviewScope({
       rootDir: deps.rootDir,

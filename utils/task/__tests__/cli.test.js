@@ -811,6 +811,31 @@ describe('review', () => {
     );
   });
 
+  test("should review against the repository's default branch", () => {
+    newTask(['--verify', 'pnpm test']);
+    finishSteps();
+    run(['verify']);
+    const runGit = vi.fn(
+      /** @type {import('../review.js').RunGit} */ (args) =>
+        args[0] === 'symbolic-ref'
+          ? 'origin/develop'
+          : args[0] === 'merge-base'
+            ? 'fork000'
+            : args[0] === 'diff'
+              ? 'utils/x.js'
+              : 'tip999'
+    );
+    const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
+    expect(parsed.scope).toMatchObject({
+      base: 'develop',
+      mergeBase: 'fork000',
+    });
+    expect(runGit).toHaveBeenCalledWith(
+      ['merge-base', 'HEAD', 'develop'],
+      root
+    );
+  });
+
   test('should record the start commit when adopting a hand-written task', () => {
     legacyTask();
     run(['init', 'old', '--verify', 'v'], {

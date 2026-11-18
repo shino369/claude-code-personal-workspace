@@ -13,6 +13,7 @@ import {
   openRound,
   parseFindings,
   recordFindings,
+  defaultBranch,
   reviewBase,
   reviewFiles,
   reviewScope,
@@ -94,6 +95,22 @@ describe('reviewFiles', () => {
       brief: `reviews/BRIEF_${NAME}-r2.md`,
       findings: `reviews/REVIEW_${NAME}-r2.md`,
     });
+  });
+});
+
+describe('defaultBranch', () => {
+  test('should read origin/HEAD as a local branch name', () => {
+    const runGit = vi.fn(() => 'origin/develop');
+    expect(defaultBranch(runGit, '/r')).toBe('develop');
+    expect(runGit).toHaveBeenCalledWith(
+      ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'],
+      '/r'
+    );
+  });
+
+  test('should fall back to main without origin/HEAD', () => {
+    expect(defaultBranch(() => null, '/r')).toBe('main');
+    expect(defaultBranch(() => 'upstream/trunk', '/r')).toBe('main');
   });
 });
 
