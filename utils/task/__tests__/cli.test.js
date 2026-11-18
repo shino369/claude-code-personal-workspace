@@ -1446,17 +1446,21 @@ process.exitCode = code;`;
             { stdio: ['ignore', 'pipe', 'pipe'] }
           );
           let out = '';
+          let err = '';
           child.stdout.on('data', (chunk) => (out += chunk));
+          child.stderr.on('data', (chunk) => (err += chunk));
           child.on('error', reject);
           child.on('close', (code) =>
-            resolve({ code, result: JSON.parse(out) })
+            resolve({ code, err, result: out ? JSON.parse(out) : null })
           );
         })
     );
     const results =
-      /** @type {Array<{ code: number, result: { step: { id: string, owner: string } | null } }>} */ (
+      /** @type {Array<{ code: number, err: string, result: { step: { id: string, owner: string } | null } }>} */ (
         await Promise.all(workers)
       );
+    // A crashed worker prints nothing on stdout: show why.
+    expect(results.map((r) => r.err).filter(Boolean)).toEqual([]);
     const claimed = results
       .filter((r) => r.code === 0)
       .map((r) => r.result.step?.id);
