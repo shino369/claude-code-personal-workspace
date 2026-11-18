@@ -6,13 +6,12 @@ import {
   CHECK_TIMEOUT_MS,
   defaultProbeDeps,
   guessVia,
-  isExecutable,
   mergeScan,
   parseVersion,
   probeTool,
   runCheck,
-  which,
 } from '../scan.js';
+import { isExecutable, which } from '../../spawn.js';
 
 const NOW = new Date('2026-11-17T09:00:00.000Z');
 

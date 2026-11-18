@@ -7,7 +7,6 @@ import fs from 'fs';
 import { crossSpawn, isExecutable, which } from '../spawn.js';
 
 // Moved to utils/spawn.js (shared with the agent adapters); re-exported here.
-export { isExecutable, which } from '../spawn.js';
 
 export const CHECK_TIMEOUT_MS = 15 * 1000;
 

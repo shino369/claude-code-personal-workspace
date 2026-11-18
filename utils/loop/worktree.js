@@ -8,6 +8,7 @@
 import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { pnpmInstall } from '../spawn.js';
 import { tasksRoot, writeActive } from '../task/store.js';
 
 /**
@@ -100,13 +101,7 @@ export function prepareWorktree({
   rootDir,
   task,
   spawn = /** @type {Spawn} */ (spawnSync),
-  install = (dir) =>
-    spawn('pnpm', ['install', '--frozen-lockfile', '--prefer-offline'], {
-      cwd: dir,
-      stdio: 'inherit',
-      // pnpm is a .cmd shim on Windows; fixed arguments, so a shell is safe
-      shell: process.platform === 'win32',
-    }),
+  install = (dir) => pnpmInstall(dir, spawn),
 }) {
   if (isLinkedWorktree(rootDir, spawn)) {
     return {

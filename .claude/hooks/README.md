@@ -60,7 +60,6 @@ Read a day's log with `jq . logs/<YYYYMMDD>/logging.jsonl`.
   reaches a shell
 - Supports common file types: .js, .jsx, .ts, .tsx, .json, .css, .scss, .html, .md, .yaml, etc.
 - Skips files that aren't formattable or don't exist
-- Uses `pnpm` to run prettier (as per workspace configuration)
 
 **Prerequisites:**
 Prettier must be installed in the workspace. To install:

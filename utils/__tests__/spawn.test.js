@@ -3,7 +3,14 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { vi } from 'vitest';
-import { crossSpawn, quoteCmdArg, resolveCommand, which } from '../spawn.js';
+import {
+  PNPM_INSTALL,
+  crossSpawn,
+  pnpmInstall,
+  quoteCmdArg,
+  resolveCommand,
+  which,
+} from '../spawn.js';
 
 /**
  * A Windows-like file check: case-insensitive, like NTFS.
@@ -54,6 +61,13 @@ describe('quoteCmdArg', () => {
     );
     expect(quoteCmdArg('a&b')).toBe('"a&b"');
     expect(quoteCmdArg('')).toBe('""');
+  });
+
+  test('should double trailing backslashes so they do not escape the closing quote', () => {
+    expect(quoteCmdArg('C:\\x y\\')).toBe('"C:\\x y\\\\"');
+    expect(quoteCmdArg('C:\\x y\\\\')).toBe('"C:\\x y\\\\\\\\"');
+    // Unquoted, a trailing backslash is literal and stays as it is.
+    expect(quoteCmdArg('C:\\x\\')).toBe('C:\\x\\');
   });
 
   test('should refuse characters cmd.exe expands even inside quotes', () => {
@@ -168,4 +182,41 @@ describe('crossSpawn', () => {
       }
     }
   );
+});
+
+describe('pnpmInstall', () => {
+  test('should run pnpm install with the output shown', () => {
+    const spawn = vi.fn(() => ({ status: 0 }));
+    expect(pnpmInstall('/w', spawn, { platform: 'darwin', env: {} })).toEqual({
+      status: 0,
+    });
+    expect(spawn).toHaveBeenCalledWith('pnpm', PNPM_INSTALL, {
+      cwd: '/w',
+      stdio: 'inherit',
+    });
+  });
+
+  test('should run the pnpm.cmd shim through cmd.exe on Windows', () => {
+    const spawn = vi.fn(() => ({ status: 0 }));
+    pnpmInstall('C:\\w', spawn, {
+      ...WIN,
+      isExecutable: winFiles('C:\\nvm4w\\nodejs\\pnpm.cmd'),
+    });
+    expect(spawn).toHaveBeenCalledWith(
+      'C:\\Windows\\cmd.exe',
+      [
+        '/d',
+        '/s',
+        '/c',
+        '"C:\\nvm4w\\nodejs\\pnpm.CMD install --frozen-lockfile --prefer-offline"',
+      ],
+      { cwd: 'C:\\w', stdio: 'inherit', windowsVerbatimArguments: true }
+    );
+  });
+
+  test('should default to the real spawnSync', () => {
+    // A missing folder fails fast without running an install.
+    const result = pnpmInstall(path.join(os.tmpdir(), 'no-such-dir-spawn'));
+    expect(result.error ?? result.status).toBeTruthy();
+  });
 });

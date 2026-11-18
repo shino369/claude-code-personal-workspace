@@ -81,7 +81,10 @@ export function quoteCmdArg(arg) {
       `${JSON.stringify(arg)} cannot be passed safely to a Windows .cmd/.bat shim (it contains " % ! or a line break).\nFix: pass it on stdin or in a file instead`
     );
   }
-  return CMD_PLAIN.test(arg) ? arg : `"${arg}"`;
+  if (CMD_PLAIN.test(arg)) return arg;
+  // A trailing backslash would escape the closing quote (`"C:\x y\"` reaches
+  // the program as `C:\x y"`), so trailing backslashes are doubled.
+  return `"${arg.replace(/(\\+)$/, '$1$1')}"`;
 }
 
 /**
@@ -131,4 +134,30 @@ export function crossSpawn(
       ...resolved.options,
     });
   };
+}
+
+/** What the loop and the swarm run in a fresh worktree. */
+export const PNPM_INSTALL = [
+  'install',
+  '--frozen-lockfile',
+  '--prefer-offline',
+];
+
+/**
+ * `pnpm install` in `dir`, through `crossSpawn` (pnpm is a `.cmd` shim on
+ * Windows), with the output shown.
+ *
+ * @param {string} dir
+ * @param {Spawn} [spawn]
+ * @param {Partial<LookupDeps>} [deps]
+ */
+export function pnpmInstall(
+  dir,
+  spawn = /** @type {Spawn} */ (spawnSync),
+  deps = {}
+) {
+  return crossSpawn(spawn, deps)('pnpm', PNPM_INSTALL, {
+    cwd: dir,
+    stdio: 'inherit',
+  });
 }
