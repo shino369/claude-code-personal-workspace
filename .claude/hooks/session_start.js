@@ -18,6 +18,7 @@ import {
   pruneSessions,
   readActive,
   readSession,
+  touchSession,
   writeSession,
 } from '#utils/task/store.js';
 import { toolsLine } from '#utils/tools/format.js';
@@ -80,6 +81,8 @@ export function processHookInput(
  */
 export function bindNewSession(rootDir, session) {
   if (!session) return;
+  // Touch before pruning: a resumed session is in use, however long it slept.
+  touchSession(rootDir, session);
   pruneSessions(rootDir);
   if (readSession(rootDir, session)) return;
   writeSession(rootDir, session, {

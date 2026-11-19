@@ -76,6 +76,18 @@ describe('planRemoval', () => {
     expect(plan('c.js', repo).from).toBe(path.join(repo, 'c.js'));
   });
 
+  test('should ignore a scope folder that no longer exists', () => {
+    touch(path.join(root, 'stale.txt'));
+    expect(
+      planRemoval({
+        rootDir: root,
+        scopes: [root, path.join(repo, 'moved-away')],
+        target: 'stale.txt',
+        cwd: root,
+      }).label
+    ).toBe('workspace');
+  });
+
   test('should refuse a path that does not exist', () => {
     expect(() => plan('nope.js')).toThrow(/nope\.js: no such file or folder/);
   });

@@ -337,7 +337,24 @@ export function clearSession(rootDir, session) {
 }
 
 /**
- * Remove bindings not written for `maxAgeMs`.
+ * Mark a session's binding as in use (its file time), so pruning removes
+ * only bindings of sessions that have gone quiet.
+ *
+ * @param {string} rootDir
+ * @param {string | null | undefined} session
+ * @param {Date} [now]
+ * @returns {boolean} false when there is no binding
+ */
+export function touchSession(rootDir, session, now = new Date()) {
+  if (!isSessionId(session)) return false;
+  const file = sessionFile(rootDir, session);
+  if (!fs.existsSync(file)) return false;
+  fs.utimesSync(file, now, now);
+  return true;
+}
+
+/**
+ * Remove bindings not written or touched for `maxAgeMs`.
  *
  * @param {string} rootDir
  * @param {{ now?: number, maxAgeMs?: number }} [options]

@@ -151,6 +151,12 @@ describe('session_start processHookInput', () => {
     });
     fs.writeFileSync(path.join(root, 'tasks', '.active'), 'demo-261117\n');
     writeSession(root, 'sess-1', { task: 'mine-261117', engaged: true });
+    const old = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(
+      path.join(root, 'tasks', '.sessions', 'sess-1.json'),
+      old,
+      old
+    );
 
     const context =
       processHookInput(
@@ -163,6 +169,8 @@ describe('session_start processHookInput', () => {
       task: 'mine-261117',
       engaged: true,
     });
+    const file = path.join(root, 'tasks', '.sessions', 'sess-1.json');
+    expect(Date.now() - fs.statSync(file).mtimeMs).toBeLessThan(60_000);
   });
 
   test('should prune stale bindings at session start', () => {

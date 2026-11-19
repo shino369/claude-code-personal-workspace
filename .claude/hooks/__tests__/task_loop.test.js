@@ -6,6 +6,7 @@ import os from 'os';
 import path from 'path';
 import { vi } from 'vitest';
 import { main as taskCli } from '#utils/task/cli.js';
+import { writeSession } from '#utils/task/store.js';
 import { processHookInput as processSessionStart } from '../session_start.js';
 import { processHookInput, processResetInput } from '../task_loop.js';
 
@@ -182,6 +183,22 @@ describe('task_loop processResetInput', () => {
     expect(
       processResetInput({ prompt: 'x' }, { rootDir: root, reset: broken })
     ).toBe(false);
+  });
+
+  test("should keep a working session's binding from being pruned", () => {
+    fs.mkdirSync(path.join(root, 'tasks', 'demo-261117'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'tasks', 'demo-261117', 'NOTES.md'), '');
+    writeSession(root, 'sess-1', { task: 'demo-261117', engaged: true });
+    const file = path.join(root, 'tasks', '.sessions', 'sess-1.json');
+    const old = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(file, old, old);
+
+    processResetInput(
+      { prompt: 'go on', session_id: 'sess-1' },
+      { rootDir: root, reset: () => false }
+    );
+
+    expect(Date.now() - fs.statSync(file).mtimeMs).toBeLessThan(60_000);
   });
 
   test('should reset a real halted loop on a typed prompt', () => {

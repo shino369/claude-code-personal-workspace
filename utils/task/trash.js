@@ -57,7 +57,9 @@ export function planRemoval({ rootDir, scopes, target, cwd }) {
     path.basename(abs)
   );
   const workspace = fs.realpathSync(rootDir);
+  // A task repo that was moved or deleted is simply no longer in scope.
   const scope = scopes
+    .filter((dir) => fs.existsSync(dir))
     .map((dir) => fs.realpathSync(dir))
     .filter((dir) => inside(path.relative(dir, from)))
     .sort((a, b) => b.length - a.length)[0];

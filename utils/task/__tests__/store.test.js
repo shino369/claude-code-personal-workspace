@@ -22,6 +22,7 @@ import {
   sessionFromEnv,
   sessionTask,
   tasksRoot,
+  touchSession,
   updateState,
   withLock,
   writeActive,
@@ -380,6 +381,17 @@ describe('session bindings', () => {
     expect(readSession(root, 'old')).toBeNull();
     expect(readSession(root, 'new')).not.toBeNull();
     expect(fs.existsSync(path.join(dir, 'notes.txt'))).toBe(true);
+  });
+
+  test('should refresh the time of an existing binding only', () => {
+    writeSession(root, 'live', { task: 'a-task', engaged: true });
+    const file = path.join(tasksRoot(root), '.sessions', 'live.json');
+    const old = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(file, old, old);
+    expect(touchSession(root, 'live')).toBe(true);
+    expect(pruneSessions(root)).toBe(0);
+    expect(touchSession(root, 'missing')).toBe(false);
+    expect(touchSession(root, '../x')).toBe(false);
   });
 
   test('should prune nothing without a sessions folder', () => {

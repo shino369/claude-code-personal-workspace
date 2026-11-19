@@ -21,6 +21,7 @@
 import { runIfMain } from '#utils/module-runner.js';
 import { defaultDeps } from '#utils/task/deps.js';
 import { resetInnerLoop, runInnerLoop } from '#utils/task/loop.js';
+import { touchSession } from '#utils/task/store.js';
 import { ROOT_DIR } from '#utils/workspace-config.js';
 
 /**
@@ -71,6 +72,8 @@ export function processResetInput(
   { rootDir = ROOT_DIR, reset = resetInnerLoop, deps = {} } = {}
 ) {
   try {
+    // A prompt means the session is in use: keep its binding from pruning.
+    touchSession(rootDir, input?.session_id);
     return reset({
       deps: defaultDeps({ rootDir, ...deps }),
       prompt: input?.prompt,
