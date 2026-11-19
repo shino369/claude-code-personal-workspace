@@ -66,16 +66,35 @@ tasks/<name>-<yymmdd>/          # git-ignored: tasks are personal to the machine
 └── tmp/ scripts/ docs/ studies/ translated/
 ```
 
-`tasks/.active` names the active task. Every command takes `--task <name>`, `--agent <name>`, and
-`--json`. Several agents can share one plan: `pnpm task claim` hands each a different ready step
-(dependencies done) under a lock file.
+Every command takes `--task <name>`, `--agent <name>`, and `--json`. Several agents can share one
+plan: `pnpm task claim` hands each a different ready step (dependencies done) under a lock file.
+
+**Which task a command acts on.** Several sessions often work in one checkout at once, so the
+active task is per session: `tasks/.sessions/<id>.json` (the id is `$TASK_SESSION`, else Claude
+Code's `$CLAUDE_CODE_SESSION_ID`, which the hooks also receive). Claude's `SessionStart` hook binds
+a new session, dormant, to the default task (`tasks/.active`); `new` and `switch` move the
+binding (and the default); the first `pnpm task` command that changes a task engages it. The
+`Stop`, `PreCompact`, and context-monitor hooks act only on an engaged task, so a session that
+only talks, or works on something else, never runs another task's verify or writes into its notes.
+A caller without a session id uses `tasks/.active`, as before.
+
+**The task's repository.** `--repo <path>` (on `new`, `init`, or `set`) records the git
+repository the task works in, when that is not this workspace. The brief's `Git:` line, NOTES
+`State:` lines, the start commit, and the review scope then come from it. The brief warns when the
+branch differs from the one the last note recorded.
+
+**Steps** are `todo`, `in_progress`, `blocked` (the agent cannot go on), `waiting` (on the user or
+someone else: never the agent's next step, does not hold back a review, keeps the task open), or
+`done`. `pnpm task step <id> remove -m "why"` drops a step added by mistake.
 
 ### 3. Resume
 
-`pnpm task status` prints a brief: goal, progress, next step, last verify, git state, and the last
-note. Claude's `SessionStart` hook injects it on startup, resume, `/clear`, and compaction, plus a
-`Tools:` line. The `PreCompact` hook appends a mechanical checkpoint to `NOTES.md`. A new session
-compares the brief's `Git:` line with the last note's `State:` line, then continues from `Next`.
+`pnpm task status` prints a brief: goal, progress, next step, steps waiting on someone else, last
+verify, the task's repository and git state, and the last note. Claude's `SessionStart` hook
+injects the session's task's brief on startup, resume, `/clear`, and compaction, plus a `Tools:`
+line. The `PreCompact` hook appends a mechanical checkpoint to that task's `NOTES.md` once the
+session has worked on it. A new session checks the brief's `Git:` line (a `!` marks a branch that
+differs from the last note's), then continues from `Next`.
 
 ### 4. Gates
 
@@ -98,7 +117,13 @@ compares the brief's `Git:` line with the last note's `State:` line, then contin
 | Quality (see below)    | inner hook or `pnpm loop --review` | review round limit (2), or nothing changed since the last review |
 
 The inner loop's count resets only on a pass, `pnpm task set --loop on`, or a prompt you type —
-never on a Stop event. Unattended runs never touch the main checkout: from it, `pnpm loop` creates
+never on a Stop event. It does not re-run a verify that already passed on the same work: each pass
+records a fingerprint of the verify commands, the working trees of the workspace and the task's
+repository, and every file in the task folder a verify can read (code by content; fixtures, docs,
+translations, and scratch by size and time; not the task records, `reviews/`, logs, or dependency
+and generated folders), and a stop with the same fingerprint lets the session go quietly. Failures always run again. It decides from the task's state on disk, under the task
+lock, so a change another agent makes while verify runs (the loop turned off, a review recorded)
+is kept. Unattended runs never touch the main checkout: from it, `pnpm loop` creates
 `../<repo>-wt/<task>` on branch `loop/<task>` and copies the task folder there. You review the
 result and copy or merge it back yourself.
 
@@ -131,14 +156,19 @@ plan ─▶ build test-first ─▶ e2e (if required) ─▶ review round N ─�
 1. **`pnpm task review`** opens round N (only when every step is done and verify is green;
    `--force` for an early review). It writes `reviews/BRIEF_<task>-rN.md`, which has the goal,
    plan, standards files, the files in scope, the severity rubric, and earlier refuted or fixed
-   findings. It also writes an empty findings table in `reviews/REVIEW_<task>-rN.md`. The scope is
-   the task's code, read from its folder (no git: `tasks/` is ignored), or, for a task that edits
-   the workspace's tracked files, the git changes since `--base`. The default base is the
-   repository's default branch as last fetched (`origin/HEAD`, e.g. `origin/main`, else `main`), so
-   a feature branch is reviewed as a whole. When the work is committed on that branch itself, it is
-   the commit the task started from (recorded by `pnpm task new` / `init`); an explicit `--base` is
-   used as given. A task with folder code is scoped to that folder only,
-   even if it also edits tracked files. An empty scope refuses to open a round.
+   findings. It also writes an empty findings table in `reviews/REVIEW_<task>-rN.md`. The scope:
+   - a task with a `--repo`: the git changes in that repository;
+   - else the task's own code in its folder (no git: `tasks/` is ignored), minus `scripts/`, whose
+     helpers would otherwise hide the work they support;
+   - else the git changes in the workspace; else the task's scripts.
+
+   Git changes count from the commit the task started from (recorded by `pnpm task new`, `init`,
+   or `set --repo`) when that commit is in HEAD's history after the branch point, so work that was
+   already on the branch (another task's) is not reviewed again, or when the work is on the
+   default branch itself. Otherwise they count from the branch point with the default branch
+   (`origin/HEAD` as last fetched, else `main`). An explicit `--base` is used as given
+   (`--base main` reviews the whole branch). An empty scope refuses to open a round.
+
 2. **Reviewer** (`.claude/agents/reviewer.md`): a fresh agent that works from the brief only. Each
    finding needs a concrete failure scenario: inputs or state → wrong result.
 3. **Triage** (the "Triage mode" of `.claude/agents/verifier.md`): another fresh agent tries to
@@ -263,19 +293,25 @@ commands, the last verify to have passed.
   you triage by hand, it is the verifier role's rule, not a check.
 - **Role limits are prompts.** The reviewer and verifier subagents have Edit (for the findings
   table only) by instruction, not by enforcement. The headless reviewers run read-only.
+- **Deleting files.** `rm` is denied to agents; `pnpm task rm <path>…` moves files inside the
+  workspace or the task's repository to `tasks/.trash/<time>/` for 7 days instead, so agents clean
+  up without stopping to ask. It refuses `.git`, the task records, secrets, and folders that hold
+  a `.git` or secrets.
+- **Tasks in another repository** (`--repo`) work interactively; `pnpm loop` and `pnpm swarm`
+  refuse them, because their worktrees are of this workspace.
 - **Claude hooks run only in Claude Code.** Other harnesses get the same state through
   `pnpm task status`, and the same enforcement through git hooks and the `done` gate. DSH can run
   Claude hooks through its opt-in bridge.
 
 ## Where the code lives
 
-| Path                           | What                                                                                        |
-| ------------------------------ | ------------------------------------------------------------------------------------------- |
-| `utils/task/`                  | `pnpm task`: state, store (locks, atomic writes), brief, check, review, quality, inner loop |
-| `utils/loop/`                  | `pnpm loop`: adapters, worktree, driver (verify loop), review-loop                          |
-| `utils/swarm/`                 | `pnpm swarm`: dispatcher, worker processes, git helpers                                     |
-| `utils/agent/`, `utils/tools/` | `pnpm agent ask`, `pnpm tools`                                                              |
-| `.claude/hooks/`               | session_start, pre_compact, task_loop, context_monitor, audit_logger, auto_format           |
-| `.claude/agents/`              | role prompts (planner, reviewer, verifier, …)                                               |
-| `.claude/workflows/`           | Claude workflows: review-changes, implement-plan, research                                  |
-| `templates/task/`              | plan.md, NOTES.md, REVIEW.md, STUDIES.md templates                                          |
+| Path                           | What                                                                                                         |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `utils/task/`                  | `pnpm task`: state, store (locks, atomic writes, sessions), brief, check, review, quality, inner loop, trash |
+| `utils/loop/`                  | `pnpm loop`: adapters, worktree, driver (verify loop), review-loop                                           |
+| `utils/swarm/`                 | `pnpm swarm`: dispatcher, worker processes, git helpers                                                      |
+| `utils/agent/`, `utils/tools/` | `pnpm agent ask`, `pnpm tools`                                                                               |
+| `.claude/hooks/`               | session_start, pre_compact, task_loop, context_monitor, audit_logger, auto_format                            |
+| `.claude/agents/`              | role prompts (planner, reviewer, verifier, …)                                                                |
+| `.claude/workflows/`           | Claude workflows: review-changes, implement-plan, research                                                   |
+| `templates/task/`              | plan.md, NOTES.md, REVIEW.md, STUDIES.md templates                                                           |

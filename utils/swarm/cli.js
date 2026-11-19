@@ -8,6 +8,7 @@ import { spawn as spawnAsync, spawnSync } from 'child_process';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { AGENTS, buildCommand } from '../loop/adapters.js';
+import { assertWorkspaceRepo } from '../loop/worktree.js';
 import { runIfMain } from '../module-runner.js';
 import { pnpmInstall } from '../spawn.js';
 import { gitInfo } from '../task/git.js';
@@ -329,6 +330,7 @@ export async function main({ argv = process.argv.slice(2), deps = {} } = {}) {
     );
   }
 
+  assertWorkspaceRepo(name, state, 'pnpm swarm');
   assertNoTaskCode(dir, name);
   if (options.dryRun) {
     const ready = readySteps(state);

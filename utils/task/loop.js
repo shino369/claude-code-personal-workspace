@@ -7,12 +7,20 @@
  * NOTES.md) so the hook stays a thin stdin/stdout wrapper.
  */
 import crypto from 'crypto';
-import { withCheck } from './check.js';
+import fs from 'fs';
+import path from 'path';
+import { ANY_LEVEL_SKIP, TASK_FILES, isCodeFile, withCheck } from './check.js';
 import { formatGit } from './git.js';
 import { appendSeparator, formatNoteEntry } from './markdown.js';
 import { decideQuality } from './quality.js';
-import { fingerprint, taskReviewScope } from './review.js';
-import { appendNotes, loadTask, readActive, updateState } from './store.js';
+import { fingerprint, scopeRoot, taskReviewScope } from './review.js';
+import {
+  appendNotes,
+  loadTask,
+  sessionTask,
+  taskRepoDir,
+  updateState,
+} from './store.js';
 import { stripAnsi, summarize } from './verify.js';
 
 /** Identical failures in a row (after the first) that count as no progress. */
@@ -170,19 +178,116 @@ export function decideInner({ state, verify }) {
 }
 
 /**
- * The loop of the active task when the inner loop applies to it, else null.
+ * The loop of the session's task when the inner loop applies to it, else
+ * null: only a task the session has worked on (see `sessionTask`).
  *
  * @param {import('./deps.js').Deps} deps
+ * @param {string | null | undefined} session the hook's session id
  * @returns {{ name: string, task: import('./store.js').Task, state: TaskState } | null}
  */
-function activeLoop(deps) {
+function activeLoop(deps, session) {
   if (deps.env[INNER_LOOP_ENV] === 'off') return null;
-  const name = readActive(deps.rootDir);
-  if (!name) return null;
+  const found = sessionTask(deps.rootDir, session);
+  if (!found?.engaged) return null;
+  const { name } = found;
   const task = loadTask(deps.rootDir, name);
   const { state } = task;
   if (!state || !state.loop.enabled || state.status === 'done') return null;
   return { name, task, state };
+}
+
+/** Git queries whose answers make up the state of a working tree. */
+const TREE_QUERIES = [
+  ['rev-parse', 'HEAD'],
+  ['status', '--porcelain', '--untracked-files=all'],
+  ['diff', 'HEAD', '--binary'],
+  ['ls-files', '--others', '--exclude-standard'],
+];
+
+/**
+ * Top-level task entries no verify reads: what `pnpm task`, the review
+ * rounds, and `pnpm loop` / `pnpm swarm` write.
+ */
+const RECORDS = new Set([...TASK_FILES, 'reviews', 'loop', 'swarm']);
+
+/**
+ * The task folder's files a verify can read, as sorted POSIX paths: `code`
+ * (regular files `pnpm task check` formats) and `other` (fixtures, docs,
+ * translations, images, scratch, symlinks). Skips RECORDS, dependency and
+ * generated folders (ANY_LEVEL_SKIP), and dot-folders (caches); symlinked
+ * folders are not followed.
+ *
+ * @param {string} taskDir
+ * @returns {{ code: string[], other: string[] }}
+ */
+export function taskInputs(taskDir) {
+  /** @type {{ code: string[], other: string[] }} */
+  const found = { code: [], other: [] };
+  /** @param {string} rel */
+  const walk = (rel) => {
+    const entries = fs.readdirSync(path.join(taskDir, rel), {
+      withFileTypes: true,
+    });
+    for (const entry of entries) {
+      const child = rel ? `${rel}/${entry.name}` : entry.name;
+      if (!rel && RECORDS.has(entry.name)) continue;
+      if (entry.isDirectory()) {
+        if (!entry.name.startsWith('.') && !ANY_LEVEL_SKIP.has(entry.name)) {
+          walk(child);
+        }
+      } else if (entry.isFile() && isCodeFile(entry.name)) {
+        found.code.push(child);
+      } else {
+        found.other.push(child);
+      }
+    }
+  };
+  if (fs.existsSync(taskDir)) walk('');
+  found.code.sort();
+  found.other.sort();
+  return found;
+}
+
+/**
+ * @param {string} dir
+ * @param {string} file
+ * @returns {string} `file` with its size and modification time, read without
+ *   opening it (large files, secrets), or `-` when it is gone
+ */
+const statLine = (dir, file) => {
+  const stat = fs.statSync(path.join(dir, file), { throwIfNoEntry: false });
+  return `\0${file}:${stat ? `${stat.size}:${stat.mtimeMs}` : '-'}`;
+};
+
+/**
+ * A fingerprint of everything a verify run depends on: the verify commands,
+ * the working tree of the workspace and of the task's repository (HEAD,
+ * status, tracked changes, and each untracked file's size and time), and the
+ * task folder (git-ignored): its code by content, every other file a verify
+ * can read (`taskInputs`) by size and time. The inner loop skips a verify
+ * that already passed on the same fingerprint. Null when git cannot answer
+ * (no repository, a diff too large), which never matches.
+ *
+ * @param {Pick<import('./deps.js').Deps, 'rootDir' | 'runGit'>} deps
+ * @param {TaskState} state
+ * @param {string} taskDir
+ * @returns {string | null}
+ */
+export function workPrint(deps, state, taskDir) {
+  const hash = crypto.createHash('sha256');
+  hash.update(JSON.stringify([state.verify, state.verifyFast]));
+  for (const dir of new Set([deps.rootDir, taskRepoDir(deps.rootDir, state)])) {
+    const answers = TREE_QUERIES.map((args) => deps.runGit(args, dir));
+    if (answers.some((answer) => typeof answer !== 'string')) return null;
+    hash.update(`\0${dir}\0${answers.join('\0')}`);
+    for (const file of String(answers[3]).split('\n').filter(Boolean)) {
+      hash.update(statLine(dir, file));
+    }
+  }
+  const { code, other } = taskInputs(taskDir);
+  hash.update(`\0${fingerprint(taskDir, code)}`);
+  for (const file of other) hash.update(statLine(taskDir, file));
+  return hash.digest('hex').slice(0, 16);
 }
 
 /**
@@ -206,7 +311,7 @@ export function scopeFingerprint(deps, taskDir, state) {
     // Nothing in scope: no review to ask for (pnpm task review would refuse).
     return scope.files.length === 0
       ? null
-      : fingerprint(deps.rootDir, scope.files);
+      : fingerprint(scopeRoot(deps.rootDir, state, scope), scope.files);
   } catch {
     return null;
   }
@@ -217,11 +322,11 @@ export function scopeFingerprint(deps, taskDir, state) {
  * return the decision. Returns `{ action: 'skip' }` when the loop is off or
  * halted.
  *
- * @param {{ deps: import('./deps.js').Deps }} input
+ * @param {{ deps: import('./deps.js').Deps, session?: string | null }} input
  * @returns {InnerDecision}
  */
-export function runInnerLoop({ deps }) {
-  const active = activeLoop(deps);
+export function runInnerLoop({ deps, session = null }) {
+  const active = activeLoop(deps, session);
   if (!active || active.state.loop.halted) return { action: 'skip' };
   const { name, task, state } = active;
 
@@ -234,45 +339,82 @@ export function runInnerLoop({ deps }) {
   }
 
   const now = deps.now();
-  const verify = summarize(
-    deps.runCommands({
-      commands,
-      cwd: deps.rootDir,
-      timeoutMs: INNER_VERIFY_TIMEOUT_MS,
-    }),
-    now
-  );
-  const inner = decideInner({ state, verify });
-  const quality =
+  // Nothing changed since a passing verify (a turn that only talked, or a
+  // second stop): do not run it again.
+  const print = workPrint(deps, state, task.dir);
+  const reused =
+    print !== null && state.lastVerify?.ok === true
+      ? state.lastVerify.print === print
+      : false;
+  /** @type {VerifyResult} */
+  const verify = reused
+    ? /** @type {VerifyResult} */ (state.lastVerify)
+    : {
+        ...summarize(
+          deps.runCommands({
+            commands,
+            cwd: deps.rootDir,
+            timeoutMs: INNER_VERIFY_TIMEOUT_MS,
+          }),
+          now
+        ),
+        ...(print ? { print } : {}),
+      };
+  // The fingerprint reads git and files: work it out before taking the lock.
+  const scopePrint =
     verify.ok && state.kind === 'code'
-      ? decideQuality({
-          state: { ...state, lastVerify: verify },
-          fingerprint: scopeFingerprint(deps, task.dir, state),
-        })
+      ? scopeFingerprint(deps, task.dir, state)
       : null;
-  /** @type {InnerDecision} */
-  const decision = !quality
-    ? inner
-    : quality.action === 'block'
-      ? {
-          ...inner,
-          action: 'block',
-          reason: quality.reason,
-          message: undefined,
-        }
-      : { ...inner, message: quality.message ?? inner.message };
   const agent = deps.env.TASK_AGENT ?? 'claude';
+  /** @type {InnerDecision} */
+  let decision = { action: 'skip' };
+  /** @type {import('./quality.js').QualityDecision | null} */
+  let quality = null;
+  // Decide from the state on disk, under the lock: verify can take minutes,
+  // and another agent may have changed the task meanwhile (turned the loop
+  // off, recorded a review). Deciding from the copy read before verify
+  // would write those changes back over.
   updateState(
     deps.rootDir,
     name,
-    (current) => ({
-      ...current,
-      lastVerify: verify,
-      loop: /** @type {TaskState['loop']} */ (decision.loop),
-      ...(quality ? { quality: quality.quality } : {}),
-    }),
+    (current) => {
+      if (!current.loop.enabled || current.status === 'done') {
+        return { ...current, lastVerify: verify };
+      }
+      const inner = decideInner({ state: current, verify });
+      quality =
+        verify.ok && current.kind === 'code'
+          ? decideQuality({
+              state: { ...current, lastVerify: verify },
+              fingerprint: scopePrint,
+            })
+          : null;
+      decision = !quality
+        ? inner
+        : quality.action === 'block'
+          ? {
+              ...inner,
+              action: 'block',
+              reason: quality.reason,
+              message: undefined,
+            }
+          : { ...inner, message: quality.message ?? inner.message };
+      return {
+        ...current,
+        lastVerify: verify,
+        loop: /** @type {TaskState['loop']} */ (decision.loop),
+        ...(quality ? { quality: quality.quality } : {}),
+      };
+    },
     { now, agent }
   );
+  quality = /** @type {import('./quality.js').QualityDecision | null} */ (
+    quality
+  );
+  decision = /** @type {InnerDecision} */ (decision);
+  if (reused && decision.action === 'allow' && !quality?.message) {
+    decision = { ...decision, message: undefined };
+  }
   if (quality?.note) {
     appendNotes(
       task.dir,
@@ -281,7 +423,7 @@ export function runInnerLoop({ deps }) {
         agent,
         label: 'auto: quality loop',
         message: quality.note,
-        state: `${formatGit(deps.git(deps.rootDir))}; verify pass`,
+        state: `${formatGit(deps.git(taskRepoDir(deps.rootDir, state)))}; verify pass`,
       }),
       appendSeparator
     );
@@ -294,7 +436,7 @@ export function runInnerLoop({ deps }) {
         agent,
         label: 'auto: inner loop',
         message: decision.note,
-        state: `${formatGit(deps.git(deps.rootDir))}; verify fail`,
+        state: `${formatGit(deps.git(taskRepoDir(deps.rootDir, state)))}; verify fail`,
       }),
       appendSeparator
     );
@@ -309,13 +451,13 @@ export function runInnerLoop({ deps }) {
  * (background tasks, rewakes); resetting on those would undo the cap, so they
  * are ignored. A missing prompt does not reset either (fail closed).
  *
- * @param {{ deps: import('./deps.js').Deps, prompt: unknown }} input
+ * @param {{ deps: import('./deps.js').Deps, prompt: unknown, session?: string | null }} input
  * @returns {boolean} true when the count was reset
  */
-export function resetInnerLoop({ deps, prompt }) {
+export function resetInnerLoop({ deps, prompt, session = null }) {
   const text = typeof prompt === 'string' ? prompt.trimStart() : '';
   if (!text || text.startsWith('<task-notification>')) return false;
-  const active = activeLoop(deps);
+  const active = activeLoop(deps, session);
   if (!active) return false;
   const { loop } = active.state;
   if (loop.iteration === 0 && !loop.signature && !loop.halted) return false;

@@ -17,9 +17,10 @@ import {
   resetInnerLoop,
   runInnerLoop,
   scopeFingerprint,
+  workPrint,
 } from '../loop.js';
 import { createState } from '../state.js';
-import { TEMPLATES_DIR, loadTask, writeActive } from '../store.js';
+import { TEMPLATES_DIR, loadTask, updateState, writeActive } from '../store.js';
 
 const NOW = new Date(2026, 10, 17, 9, 30);
 const GIT = { branch: 'feat/x', changed: 1, diffStat: null };
@@ -422,6 +423,86 @@ describe('runInnerLoop', () => {
     expect(runCommands).not.toHaveBeenCalled();
   });
 
+  describe('changes made while verify runs', () => {
+    /**
+     * A verify (failing unless `ok`) during which another agent changes the
+     * task.
+     *
+     * @param {(state: import('../state.js').TaskState) => import('../state.js').TaskState} change
+     * @param {boolean} [ok]
+     */
+    const failingWhile = (change, ok = false) =>
+      vi.fn(() => {
+        updateState(root, NAME, change);
+        return [
+          {
+            command: 'pnpm test',
+            ok,
+            code: ok ? 0 : 1,
+            durationMs: 5,
+            output: ok ? '' : 'expected 3, received 4',
+          },
+        ];
+      });
+
+    test('should not turn a loop back on that was turned off during verify', () => {
+      cli(['new', 'demo', '--goal', 'G', '--verify', 'pnpm test']);
+      const runCommands = failingWhile((s) => ({
+        ...s,
+        loop: { ...s.loop, enabled: false },
+      }));
+
+      const decision = runInnerLoop({ deps: deps({ runCommands }) });
+
+      expect(decision.action).toBe('skip');
+      const { state } = loadTask(root, NAME);
+      expect(state?.loop.enabled).toBe(false);
+      expect(state?.lastVerify?.ok).toBe(false);
+    });
+
+    test('should keep a review recorded during a passing verify', () => {
+      cli(['new', 'demo', '--goal', 'G', '--verify', 'pnpm test']);
+      const runCommands = failingWhile(
+        (s) => ({
+          ...s,
+          quality: {
+            .../** @type {import('../quality.js').Quality} */ (s.quality),
+            phase: 'complete',
+            reviewRounds: 1,
+          },
+        }),
+        true
+      );
+
+      runInnerLoop({ deps: deps({ runCommands }) });
+
+      expect(loadTask(root, NAME).state?.quality).toMatchObject({
+        phase: 'complete',
+        reviewRounds: 1,
+      });
+    });
+
+    test('should not block a task closed during verify', () => {
+      cli(['new', 'demo', '--goal', 'G', '--verify', 'pnpm test']);
+      const runCommands = failingWhile((s) => ({ ...s, status: 'done' }));
+
+      expect(runInnerLoop({ deps: deps({ runCommands }) }).action).toBe('skip');
+    });
+
+    test('should count from the iteration on disk, not the one read before verify', () => {
+      cli(['new', 'demo', '--goal', 'G', '--verify', 'pnpm test']);
+      const runCommands = failingWhile((s) => ({
+        ...s,
+        loop: { ...s.loop, iteration: 3 },
+      }));
+
+      const decision = runInnerLoop({ deps: deps({ runCommands }) });
+
+      expect(decision.reason).toContain('task loop iteration 4/5');
+      expect(loadTask(root, NAME).state?.loop.iteration).toBe(4);
+    });
+  });
+
   test('should allow the stop with a fix hint when there are no verify commands', () => {
     cli(['new', 'demo', '--goal', 'G']);
     const dir = path.join(root, 'tasks', NAME);
@@ -485,6 +566,22 @@ describe('runInnerLoop', () => {
     expect(notes).toContain('; verify fail');
   });
 
+  test("should take a note's git state from the task's repository", () => {
+    cli(['new', 'demo', '--goal', 'G', '--verify', 'pnpm test']);
+    cli(['set', '--loop', 'on', '--loop-max', '1']);
+    const repo = path.resolve(root, '..', 'other-repo');
+    updateState(root, NAME, (s) => ({ ...s, repo }));
+    const git = (/** @type {string} */ cwd) =>
+      cwd === repo ? { ...GIT, branch: 'feat/r' } : GIT;
+
+    runInnerLoop({ deps: deps({ git }) });
+    runInnerLoop({ deps: deps({ git }) });
+
+    expect(
+      fs.readFileSync(path.join(root, 'tasks', NAME, 'NOTES.md'), 'utf-8')
+    ).toContain('State: branch feat/r');
+  });
+
   test('should allow the stop and reset the count when verify passes', () => {
     cli(['new', 'demo', '--goal', 'G', '--verify', 'pnpm test']);
     cli(['set', '--loop', 'on']);
@@ -500,6 +597,91 @@ describe('runInnerLoop', () => {
     expect(loadTask(root, NAME).state?.loop.iteration).toBe(0);
     expect(loadTask(root, NAME).state?.lastVerify?.ok).toBe(true);
   });
+  describe('unchanged work', () => {
+    /** A git that reports a fixed tree; `diff` is what the test changes. */
+    const tree = { diff: 'diff-1', untracked: 'new.js' };
+    /** @type {import('../review.js').RunGit} */
+    const runGit = (args) =>
+      ({
+        'rev-parse': 'head1',
+        status: '?? new.js',
+        diff: tree.diff,
+        'ls-files': tree.untracked,
+      })[args[0]] ?? null;
+    const passing = () =>
+      vi.fn(({ commands }) =>
+        commands.map((/** @type {string} */ command) => ({
+          command,
+          ok: true,
+          code: 0,
+          durationMs: 1,
+          output: '',
+        }))
+      );
+
+    beforeEach(() => {
+      tree.diff = 'diff-1';
+      tree.untracked = 'new.js';
+      fs.writeFileSync(path.join(root, 'new.js'), 'v1');
+    });
+
+    test('should not re-run a passing verify when nothing changed', () => {
+      cli([
+        'new',
+        'demo',
+        '--goal',
+        'G',
+        '--verify',
+        'pnpm test',
+        '--kind',
+        'general',
+      ]);
+      cli(['set', '--loop', 'on']);
+      const runCommands = passing();
+      expect(
+        runInnerLoop({ deps: deps({ runGit, runCommands }) })
+      ).toMatchObject({
+        action: 'allow',
+        message: `✓ task verify passed (${NAME})`,
+      });
+
+      const second = runInnerLoop({ deps: deps({ runGit, runCommands }) });
+
+      expect(second).toMatchObject({ action: 'allow', message: undefined });
+      expect(runCommands).toHaveBeenCalledTimes(1);
+    });
+
+    test('should re-run verify after a tracked or untracked change', () => {
+      cli([
+        'new',
+        'demo',
+        '--goal',
+        'G',
+        '--verify',
+        'pnpm test',
+        '--kind',
+        'general',
+      ]);
+      cli(['set', '--loop', 'on']);
+      const runCommands = passing();
+      const stop = () => runInnerLoop({ deps: deps({ runGit, runCommands }) });
+      stop();
+      tree.diff = 'diff-2';
+      stop();
+      fs.writeFileSync(path.join(root, 'new.js'), 'v2, longer');
+      stop();
+      expect(runCommands).toHaveBeenCalledTimes(3);
+    });
+
+    test('should always re-run a failing verify', () => {
+      cli(['new', 'demo', '--goal', 'G', '--verify', 'pnpm test']);
+      const runCommands = deps().runCommands;
+      runInnerLoop({ deps: deps({ runGit, runCommands }) });
+      runInnerLoop({ deps: deps({ runGit, runCommands }) });
+      expect(runCommands).toHaveBeenCalledTimes(2);
+    });
+  });
+
   test('should skip verify entirely once the loop has halted', () => {
     cli(['new', 'demo', '--goal', 'G', '--verify', 'pnpm test']);
     cli(['set', '--loop', 'on', '--loop-max', '1']);
@@ -614,5 +796,137 @@ describe('resetInnerLoop', () => {
     runInnerLoop({ deps: deps() });
     expect(resetInnerLoop({ deps: deps(), prompt: 'hi' })).toBe(true);
     expect(loadTask(root, NAME).state?.loop.iteration).toBe(0);
+  });
+});
+
+describe('workPrint', () => {
+  /** @type {string} */
+  let root;
+  /** @type {Record<string, string | null>} */
+  let outputs;
+  /** @type {Array<[string[], string]>} */
+  let calls;
+  /** @type {import('../review.js').RunGit} */
+  const runGit = (args, cwd) => {
+    calls.push([args, cwd]);
+    return outputs[args[0]] ?? null;
+  };
+  const print = (
+    /** @type {Partial<import('../state.js').TaskState>} */ extra = {}
+  ) =>
+    workPrint(
+      /** @type {any} */ ({ rootDir: root, runGit }),
+      { ...makeState(), ...extra },
+      path.join(root, 'tasks', NAME)
+    );
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'work-print-'));
+    fs.mkdirSync(path.join(root, 'tasks', NAME, 'app'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'tasks', NAME, 'app', 'a.js'), 'v1');
+    outputs = {
+      'rev-parse': 'head1',
+      status: '',
+      diff: '',
+      'ls-files': 'gone.js',
+    };
+    calls = [];
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  test('should be stable for the same work', () => {
+    expect(print()).toMatch(/^[0-9a-f]{16}$/);
+    expect(print()).toBe(print());
+  });
+
+  test('should change with the verify commands and the task code', () => {
+    const first = print();
+    expect(print({ verify: ['pnpm other'] })).not.toBe(first);
+    fs.writeFileSync(path.join(root, 'tasks', NAME, 'app', 'a.js'), 'v2');
+    expect(print()).not.toBe(first);
+  });
+
+  /** @param {string} rel @param {string} content @param {number} [mtime] */
+  const write = (rel, content, mtime) => {
+    const file = path.join(root, 'tasks', NAME, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+    if (mtime !== undefined) fs.utimesSync(file, mtime, mtime);
+  };
+
+  test.each([
+    ['a text fixture', 'app/fixtures/input.txt'],
+    ['a yaml file', 'app/config.yaml'],
+    ['a translation', 'translated/README.ja.md'],
+    ['a doc', 'docs/spec.md'],
+    ['a scratch file', 'tmp/draft.txt'],
+    ['an image', 'app/logo.png'],
+    ['a dotfile', 'app/.env'],
+  ])('should change when %s in the task folder changes', (_label, rel) => {
+    write(rel, 'one', 1000);
+    const first = print();
+    write(rel, 'two', 2000);
+    expect(print()).not.toBe(first);
+  });
+
+  test('should change when a non-code task file is added', () => {
+    const first = print();
+    write('app/fixtures/new.csv', 'a,b');
+    expect(print()).not.toBe(first);
+  });
+
+  test.each([
+    ['the state', 'state.json'],
+    ['the notes', 'NOTES.md'],
+    ['the plan', 'plan.md'],
+    ['a review table', 'reviews/REVIEW_x-r1.md'],
+    ['a loop log', 'loop/run-1.log'],
+    ['a swarm log', 'swarm/s1.log'],
+    ['installed packages', 'app/node_modules/pkg/index.js'],
+    ['coverage output', 'app/coverage/lcov.info'],
+    ['a cache folder', 'app/.cache/blob'],
+  ])('should not change with %s', (_label, rel) => {
+    write(rel, 'one', 1000);
+    const first = print();
+    write(rel, 'two', 2000);
+    expect(print()).toBe(first);
+  });
+
+  test('should not change when code is rewritten with the same content', () => {
+    write('tmp/tsconfig.check.json', '{}\n', 1000);
+    const first = print();
+    write('tmp/tsconfig.check.json', '{}\n', 2000);
+    expect(print()).toBe(first);
+  });
+
+  test('should hash a symlink in the task folder by what it points to', () => {
+    const target = path.join(root, 'fixture-dir');
+    fs.mkdirSync(target);
+    fs.symlinkSync(
+      target,
+      path.join(root, 'tasks', NAME, 'app', 'data.js'),
+      'junction'
+    );
+    expect(print()).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  test('should be null when git cannot answer', () => {
+    outputs.diff = null;
+    expect(print()).toBeNull();
+  });
+
+  test("should include the task's repository", () => {
+    const repo = path.join(root, 'other');
+    print({ repo });
+    expect(calls.map(([, cwd]) => cwd)).toContain(repo);
+    expect(calls.map(([, cwd]) => cwd)).toContain(root);
+  });
+
+  test('should work for a task folder that is gone', () => {
+    fs.rmSync(path.join(root, 'tasks', NAME), { recursive: true });
+    expect(print()).toMatch(/^[0-9a-f]{16}$/);
   });
 });

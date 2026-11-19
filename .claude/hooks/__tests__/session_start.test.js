@@ -5,6 +5,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { vi } from 'vitest';
+import { readSession, writeSession } from '#utils/task/store.js';
 import { processHookInput, registryLine } from '../session_start.js';
 
 /** @type {string} */
@@ -114,6 +115,85 @@ describe('session_start processHookInput', () => {
     expect(context).toContain('Next step: Write it');
     expect(context).toContain('Next (last note): write the parser');
     expect(context).toContain('injected on session clear');
+  });
+
+  test('should bind a new session, dormant, to the default task', () => {
+    makeTask('demo-261117');
+    fs.writeFileSync(path.join(root, 'tasks', '.active'), 'demo-261117\n');
+
+    processHookInput(
+      { source: 'startup', session_id: 'sess-1' },
+      { rootDir: root, tools: () => null }
+    );
+
+    expect(readSession(root, 'sess-1')).toMatchObject({
+      task: 'demo-261117',
+      engaged: false,
+    });
+  });
+
+  test('should bind a new session to no task when none is active', () => {
+    makeTask('older-261116');
+    processHookInput(
+      { source: 'startup', session_id: 'sess-1' },
+      { rootDir: root, tools: () => null }
+    );
+    expect(readSession(root, 'sess-1')).toMatchObject({
+      task: null,
+      engaged: false,
+    });
+  });
+
+  test("should keep a resumed session's binding and brief its task", () => {
+    makeTask('demo-261117');
+    makeTask('mine-261117', {
+      plan: '# Plan\n\nGoal: My work\n\n- [ ] Do it\n',
+    });
+    fs.writeFileSync(path.join(root, 'tasks', '.active'), 'demo-261117\n');
+    writeSession(root, 'sess-1', { task: 'mine-261117', engaged: true });
+    const old = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(
+      path.join(root, 'tasks', '.sessions', 'sess-1.json'),
+      old,
+      old
+    );
+
+    const context =
+      processHookInput(
+        { source: 'compact', session_id: 'sess-1' },
+        { rootDir: root, tools: () => null }
+      )?.hookSpecificOutput.additionalContext ?? '';
+
+    expect(context).toContain('[Task] mine-261117');
+    expect(readSession(root, 'sess-1')).toMatchObject({
+      task: 'mine-261117',
+      engaged: true,
+    });
+    const file = path.join(root, 'tasks', '.sessions', 'sess-1.json');
+    expect(Date.now() - fs.statSync(file).mtimeMs).toBeLessThan(60_000);
+  });
+
+  test('should prune stale bindings at session start', () => {
+    makeTask('demo-261117');
+    writeSession(root, 'old', { task: 'demo-261117', engaged: true });
+    const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(path.join(root, 'tasks', '.sessions', 'old.json'), old, old);
+
+    processHookInput(
+      { source: 'startup', session_id: 'sess-1' },
+      { rootDir: root, tools: () => null }
+    );
+
+    expect(readSession(root, 'old')).toBeNull();
+  });
+
+  test('should write no binding without a session id', () => {
+    makeTask('demo-261117');
+    processHookInput(
+      { source: 'startup' },
+      { rootDir: root, tools: () => null }
+    );
+    expect(fs.existsSync(path.join(root, 'tasks', '.sessions'))).toBe(false);
   });
 
   test('should list open tasks when none is active', () => {

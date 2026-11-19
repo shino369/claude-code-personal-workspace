@@ -181,3 +181,18 @@ export function prepareWorktree({
 
   return { dir, inPlace: false, created, installed, warnings };
 }
+
+/**
+ * Refuse a task that works in another git repository: unattended runs work
+ * in a worktree of this workspace, which does not contain that repository.
+ *
+ * @param {string} name
+ * @param {import('../task/state.js').TaskState} state
+ * @param {string} tool
+ */
+export function assertWorkspaceRepo(name, state, tool) {
+  if (!state.repo) return;
+  throw new Error(
+    `${name} works in ${state.repo}, not this workspace, and ${tool} runs in a worktree of this workspace.\nFix: work on it interactively (the Claude inner loop and review rounds follow its repo), or run ${tool} from a workspace that contains that repository`
+  );
+}

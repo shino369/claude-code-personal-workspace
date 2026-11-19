@@ -539,6 +539,17 @@ describe('runReviewLoop', () => {
     );
   });
 
+  test('should not count steps that wait on someone else as open', () => {
+    seedTask({
+      steps: makeSteps(['Build it', 'Upload']).map((step, i) => ({
+        ...step,
+        status: i === 0 ? 'done' : 'waiting',
+      })),
+    });
+    const { runAgent } = fakeAgents({});
+    expect(review(makeDeps(runAgent)).reason).not.toBe('steps-open');
+  });
+
   test('should not review while steps are open or blocked', () => {
     seedTask({
       steps: [...makeSteps(['Build it', 'Polish'])],

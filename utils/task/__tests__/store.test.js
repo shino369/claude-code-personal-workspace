@@ -8,18 +8,26 @@ import {
   TASK_SUBDIRS,
   TEMPLATES_DIR,
   appendNotes,
+  clearSession,
+  currentTask,
   listTaskNames,
   loadTask,
+  pruneSessions,
   readActive,
   readIfExists,
+  readSession,
   resolveTaskName,
   saveState,
   scaffoldTask,
+  sessionFromEnv,
+  sessionTask,
   tasksRoot,
+  touchSession,
   updateState,
   withLock,
   writeActive,
   writeFileAtomic,
+  writeSession,
 } from '../store.js';
 
 /** @type {string} */
@@ -221,6 +229,173 @@ describe('active task pointer', () => {
     expect(readActive(root)).toBeNull();
     fs.writeFileSync(path.join(tasksRoot(root), '.active'), '\n');
     expect(readActive(root)).toBeNull();
+  });
+});
+
+describe('sessionFromEnv', () => {
+  test('should prefer TASK_SESSION over Claude Code session id', () => {
+    expect(
+      sessionFromEnv({ TASK_SESSION: 'mine', CLAUDE_CODE_SESSION_ID: 'cc-1' })
+    ).toBe('mine');
+  });
+
+  test('should use the Claude Code session id when TASK_SESSION is unset or empty', () => {
+    expect(
+      sessionFromEnv({ TASK_SESSION: '', CLAUDE_CODE_SESSION_ID: 'cc-1' })
+    ).toBe('cc-1');
+  });
+
+  test('should return null when no id is set', () => {
+    expect(sessionFromEnv({})).toBeNull();
+  });
+
+  test('should return null for an id that is not a safe file name', () => {
+    expect(sessionFromEnv({ TASK_SESSION: '../etc' })).toBeNull();
+  });
+});
+
+describe('session bindings', () => {
+  beforeEach(() => {
+    makeTaskDir('a-task', { 'plan.md': '' });
+    makeTaskDir('b-task', { 'plan.md': '' });
+  });
+
+  test('should round-trip a binding and clear it', () => {
+    expect(
+      writeSession(root, 'sess-1', { task: 'a-task', engaged: true, now: NOW })
+    ).toBe(true);
+    expect(readSession(root, 'sess-1')).toEqual({
+      task: 'a-task',
+      engaged: true,
+      updatedAt: NOW.toISOString(),
+    });
+    clearSession(root, 'sess-1');
+    expect(readSession(root, 'sess-1')).toBeNull();
+  });
+
+  test('should keep a binding without a task', () => {
+    writeSession(root, 'sess-1', { task: null, engaged: false });
+    expect(readSession(root, 'sess-1')).toMatchObject({
+      task: null,
+      engaged: false,
+    });
+  });
+
+  test('should refuse or ignore an unsafe session id', () => {
+    expect(writeSession(root, '../x', { task: 'a-task', engaged: true })).toBe(
+      false
+    );
+    expect(writeSession(root, null, { task: 'a-task', engaged: true })).toBe(
+      false
+    );
+    expect(readSession(root, '../x')).toBeNull();
+    expect(readSession(root, null)).toBeNull();
+    expect(() => clearSession(root, '../x')).not.toThrow();
+  });
+
+  test('should treat a corrupt or invalid binding as no binding', () => {
+    const dir = path.join(tasksRoot(root), '.sessions');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'bad-json.json'), '{');
+    fs.writeFileSync(
+      path.join(dir, 'bad-task.json'),
+      JSON.stringify({ task: '../etc', engaged: true })
+    );
+    fs.writeFileSync(
+      path.join(dir, 'bad-flag.json'),
+      JSON.stringify({ task: 'a-task', engaged: 'yes' })
+    );
+    fs.writeFileSync(path.join(dir, 'not-object.json'), '[]');
+    for (const id of ['bad-json', 'bad-task', 'bad-flag', 'not-object']) {
+      expect(readSession(root, id)).toBeNull();
+    }
+  });
+
+  test('should resolve the current task from the binding, else the default', () => {
+    writeActive(root, 'a-task');
+    expect(currentTask(root, null)).toBe('a-task');
+    expect(currentTask(root, 'unbound')).toBe('a-task');
+    writeSession(root, 'sess-1', { task: 'b-task', engaged: false });
+    expect(currentTask(root, 'sess-1')).toBe('b-task');
+  });
+
+  test('should fall back to the default when the bound task is gone or unset', () => {
+    writeActive(root, 'a-task');
+    writeSession(root, 'gone', { task: 'gone-task', engaged: true });
+    writeSession(root, 'empty', { task: null, engaged: false });
+    expect(currentTask(root, 'gone')).toBe('a-task');
+    expect(currentTask(root, 'empty')).toBe('a-task');
+  });
+
+  test('should read the session from the environment by default', () => {
+    writeSession(root, 'env-sess', { task: 'b-task', engaged: true });
+    vi.stubEnv('TASK_SESSION', 'env-sess');
+    expect(currentTask(root)).toBe('b-task');
+    expect(resolveTaskName(root, undefined)).toBe('b-task');
+    vi.unstubAllEnvs();
+  });
+
+  test('should give hooks the bound task and whether the session engaged it', () => {
+    writeActive(root, 'a-task');
+    writeSession(root, 'dormant', { task: 'b-task', engaged: false });
+    writeSession(root, 'engaged', { task: 'b-task', engaged: true });
+    expect(sessionTask(root, 'dormant')).toEqual({
+      name: 'b-task',
+      engaged: false,
+    });
+    expect(sessionTask(root, 'engaged')).toEqual({
+      name: 'b-task',
+      engaged: true,
+    });
+  });
+
+  test('should give hooks nothing for a session bound to no task or a gone task', () => {
+    writeActive(root, 'a-task');
+    writeSession(root, 'empty', { task: null, engaged: false });
+    writeSession(root, 'gone', { task: 'gone-task', engaged: true });
+    expect(sessionTask(root, 'empty')).toBeNull();
+    expect(sessionTask(root, 'gone')).toBeNull();
+  });
+
+  test('should give hooks the default task, engaged, for a session without a binding', () => {
+    expect(sessionTask(root, 'unbound')).toBeNull();
+    writeActive(root, 'a-task');
+    expect(sessionTask(root, 'unbound')).toEqual({
+      name: 'a-task',
+      engaged: true,
+    });
+    expect(sessionTask(root, undefined)).toEqual({
+      name: 'a-task',
+      engaged: true,
+    });
+  });
+
+  test('should prune bindings older than the age limit', () => {
+    writeSession(root, 'old', { task: 'a-task', engaged: true });
+    writeSession(root, 'new', { task: 'a-task', engaged: true });
+    const dir = path.join(tasksRoot(root), '.sessions');
+    fs.writeFileSync(path.join(dir, 'notes.txt'), 'not a binding');
+    const old = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(path.join(dir, 'old.json'), old, old);
+    expect(pruneSessions(root)).toBe(1);
+    expect(readSession(root, 'old')).toBeNull();
+    expect(readSession(root, 'new')).not.toBeNull();
+    expect(fs.existsSync(path.join(dir, 'notes.txt'))).toBe(true);
+  });
+
+  test('should refresh the time of an existing binding only', () => {
+    writeSession(root, 'live', { task: 'a-task', engaged: true });
+    const file = path.join(tasksRoot(root), '.sessions', 'live.json');
+    const old = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(file, old, old);
+    expect(touchSession(root, 'live')).toBe(true);
+    expect(pruneSessions(root)).toBe(0);
+    expect(touchSession(root, 'missing')).toBe(false);
+    expect(touchSession(root, '../x')).toBe(false);
+  });
+
+  test('should prune nothing without a sessions folder', () => {
+    expect(pruneSessions(root, { now: Date.now(), maxAgeMs: 0 })).toBe(0);
   });
 });
 

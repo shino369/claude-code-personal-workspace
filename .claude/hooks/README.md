@@ -89,7 +89,8 @@ pnpm add -D prettier
 - Reads the newest assistant `usage` entry from the session transcript
 - Injects `[Context Monitor]` at 20%, `[WARNING]` at 40%, and `[URGENT]` at 60%
 - Also sets `systemMessage` for warning/urgent levels so the warning is visible in the UI
-- At warning/urgent levels, names the active task and tells the model to run `pnpm task note`
+- At warning/urgent levels, names the task this session works on and tells the model to run
+  `pnpm task note`
 - Fails open (stays silent) if the transcript is missing or unparsable
 
 **Configuration:** The window defaults to 1M tokens. Set `CLAUDE_CONTEXT_WINDOW` to the model's
@@ -102,9 +103,13 @@ actual window if it differs.
 
 **What it does:**
 
-- With an active task (`tasks/.active`), injects the `pnpm task status` brief as
-  `additionalContext`: goal, progress, next step, last verify, git state, last NOTES entry
-- With no active task, lists up to five open tasks to pick from
+- Binds a new session (its `session_id`) to the default task (`tasks/.active`), dormant: the
+  session's hooks act on it only after a `pnpm task` command changes it (`tasks/.sessions/`,
+  see `utils/task/store.js`). A resumed or compacted session keeps its binding; bindings older
+  than 14 days are pruned
+- Injects the session's task's `pnpm task status` brief as `additionalContext`: goal, progress,
+  next step, waiting steps, last verify, repo and git state, last NOTES entry
+- With no task, lists up to five open tasks to pick from
 - Ends with a `Tools:` line from `tools/local.json` (`pnpm tools`): the agents, CLIs, runtimes,
   and source checkouts this machine has, so the session knows what it can call (or a nudge to run
   `pnpm tools scan`). With no tasks and an unreadable registry it stays silent
@@ -117,9 +122,9 @@ actual window if it differs.
 
 **What it does:**
 
-- Appends a mechanical entry to the active task's `NOTES.md`: time, trigger (manual/auto), branch,
-  uncommitted files, last verify result, and `git diff --shortstat`
-- Does nothing when no task is active; never blocks compaction
+- Appends a mechanical entry to the session's task's `NOTES.md`: time, trigger (manual/auto),
+  branch, uncommitted files, last verify result, and `git diff --shortstat` (of the task's repo)
+- Does nothing when the session has not worked on a task; never blocks compaction
 
 ### 6. Task Loop (`task_loop.js`)
 
@@ -129,10 +134,15 @@ walk through the quality loop (review round → triage → fixes; AGENTS.md §4.
 
 **What it does:**
 
-- Does nothing unless the active task has the loop on (the default for code tasks;
-  `pnpm task set --loop on [--loop-max N]`); with the loop off it exits without running anything
+- Does nothing unless the session's task (one it worked on; never another session's) has the
+  loop on (the default for code tasks; `pnpm task set --loop on [--loop-max N]`); with the loop
+  off it exits without running anything
 - Otherwise runs `pnpm task check` (when the task folder has code) and the task's `verifyFast`
-  commands (else `verify`) with a 240 s timeout, and records `lastVerify` in `state.json`
+  commands (else `verify`) with a 240 s timeout, and records `lastVerify` in `state.json`. A
+  verify that already passed on the same work (`workPrint` in `utils/task/loop.js`) is not run
+  again: the stop goes through quietly
+- Decides from the state on disk under the task lock, so changes another agent made while verify
+  ran are kept
 - On failure, blocks the stop with the failure summary (`decision: "block"`) and counts the
   iteration; lets the stop through at `loop.max`, or when the same failure repeats three times in a
   row (no progress), writes a NOTES entry, and marks the loop `halted`: later stops skip verify

@@ -6,12 +6,24 @@
  * validated on read and before every write.
  */
 
+import path from 'path';
 import { freshQuality, validateQuality } from './quality.js';
 
 export const STATE_VERSION = 1;
 
 export const TASK_STATUSES = ['active', 'blocked', 'done'];
-export const STEP_STATUSES = ['todo', 'in_progress', 'blocked', 'done'];
+/**
+ * `waiting`: the step waits on someone else (the user, a store review): it is
+ * never the agent's next step and does not hold back a review, but it keeps
+ * the task open until it is marked done.
+ */
+export const STEP_STATUSES = [
+  'todo',
+  'in_progress',
+  'blocked',
+  'waiting',
+  'done',
+];
 /** `code` tasks run the inner loop by default and get `pnpm task check`. */
 export const TASK_KINDS = ['code', 'general'];
 export const E2E_MODES = ['required', 'no'];
@@ -21,9 +33,10 @@ export const TASK_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const DATE_SUFFIX_RE = /-\d{6}$/;
 
 /**
- * @typedef {'todo' | 'in_progress' | 'blocked' | 'done'} StepStatus
+ * @typedef {'todo' | 'in_progress' | 'blocked' | 'waiting' | 'done'} StepStatus
  * @typedef {{ id: string, title: string, status: StepStatus, deps: string[], owner: string | null, claimedAt?: string, note?: string }} Step
- * @typedef {{ at: string, ok: boolean, failed: string | null, summary: string }} VerifyResult
+ * @typedef {{ at: string, ok: boolean, failed: string | null, summary: string, print?: string }} VerifyResult
+ *   print: what the run saw (`workPrint`); a passing run is not repeated on the same print
  * @typedef {{
  *   version: number,
  *   name: string,
@@ -43,6 +56,7 @@ export const DATE_SUFFIX_RE = /-\d{6}$/;
  *   e2e?: 'required' | 'no',
  *   quality?: import('./quality.js').Quality,
  *   startCommit?: string | null,
+ *   repo?: string | null,
  * }} TaskState
  */
 
@@ -131,6 +145,13 @@ export function validateState(state) {
   if (s.startCommit !== undefined && !isNullableString(s.startCommit)) {
     errors.push('startCommit must be a commit id or null');
   }
+  if (
+    s.repo !== undefined &&
+    s.repo !== null &&
+    !(isString(s.repo) && path.isAbsolute(s.repo))
+  ) {
+    errors.push('repo must be an absolute path or null');
+  }
 
   if (s.lastVerify !== null) {
     const v = /** @type {Record<string, unknown>} */ (s.lastVerify);
@@ -139,7 +160,8 @@ export function validateState(state) {
       !isString(v.at) ||
       typeof v.ok !== 'boolean' ||
       !isNullableString(v.failed) ||
-      !isString(v.summary)
+      !isString(v.summary) ||
+      (v.print !== undefined && !isString(v.print))
     ) {
       errors.push('lastVerify must be null or { at, ok, failed, summary }');
     }
@@ -252,7 +274,7 @@ export function makeSteps(items) {
 /**
  * Create a fresh state object. `code` tasks start with the inner loop on.
  *
- * @param {{ name: string, goal: string, steps?: Step[], verify?: string[], verifyFast?: string[], branch?: string | null, agent?: string | null, now?: Date, kind?: 'code' | 'general', e2e?: 'required' | 'no', startCommit?: string | null }} options
+ * @param {{ name: string, goal: string, steps?: Step[], verify?: string[], verifyFast?: string[], branch?: string | null, agent?: string | null, now?: Date, kind?: 'code' | 'general', e2e?: 'required' | 'no', startCommit?: string | null, repo?: string | null }} options
  * @returns {TaskState}
  */
 export function createState({
@@ -267,6 +289,7 @@ export function createState({
   kind = 'general',
   e2e = 'no',
   startCommit = null,
+  repo = null,
 }) {
   const at = now.toISOString();
   return {
@@ -286,6 +309,8 @@ export function createState({
     ...(kind === 'code' ? { quality: freshQuality() } : {}),
     // HEAD when the task began: the default review base for workspace changes
     ...(startCommit ? { startCommit } : {}),
+    // The git repository the task works in, when it is not this workspace
+    ...(repo ? { repo } : {}),
     createdAt: at,
     updatedAt: at,
     lastAgent: agent,
@@ -340,11 +365,12 @@ export function idleReason(state) {
   ) => steps.map(show).join(', ');
   const running = state.steps.filter((s) => s.status === 'in_progress');
   const blocked = state.steps.filter((s) => s.status === 'blocked');
+  const elsewhere = state.steps.filter((s) => s.status === 'waiting');
   const todo = state.steps.filter((s) => s.status === 'todo');
   const ready = readySteps(state);
-  const waiting = todo.filter((s) => !ready.includes(s));
+  const pending = todo.filter((s) => !ready.includes(s));
   const done = doneIds(state);
-  if (running.length + blocked.length + todo.length === 0) {
+  if (running.length + blocked.length + elsewhere.length + todo.length === 0) {
     return state.steps.length === 0
       ? 'the task has no steps (add one: pnpm task step add "…")'
       : 'every step is done (when verify passes: pnpm task done)';
@@ -354,8 +380,10 @@ export function idleReason(state) {
       `in progress: ${list(running, (s) => `${s.id}${s.owner ? ` (${s.owner})` : ''}`)}`,
     blocked.length > 0 && `blocked: ${list(blocked, (s) => s.id)}`,
     ready.length > 0 && `ready: ${list(ready, (s) => s.id)}`,
-    waiting.length > 0 &&
-      `waiting on dependencies: ${list(waiting, (s) => `${s.id} (needs ${s.deps.filter((dep) => !done.has(dep)).join(', ')})`)}`,
+    pending.length > 0 &&
+      `waiting on dependencies: ${list(pending, (s) => `${s.id} (needs ${s.deps.filter((dep) => !done.has(dep)).join(', ')})`)}`,
+    elsewhere.length > 0 &&
+      `waiting on someone else: ${list(elsewhere, (s) => s.id)}`,
   ]
     .filter(Boolean)
     .join('; ');
@@ -483,6 +511,11 @@ export function setStepStatus(
   if (status === 'blocked' && !note) {
     throw new Error('A blocked step needs a reason: -m "why it is blocked"');
   }
+  if (status === 'waiting' && !note) {
+    throw new Error(
+      'A waiting step needs to say what it waits for: -m "who does what"'
+    );
+  }
   if (status === 'in_progress') {
     if (
       !force &&
@@ -530,6 +563,39 @@ export function setStepStatus(
       ...state,
       steps: state.steps.map((s) => (s.id === id ? step : s)),
     },
+    step,
+  };
+}
+
+/**
+ * Remove a step (one written by mistake, or onto the wrong task). Refused for
+ * a step another step depends on, or one that fixes a review finding (the
+ * quality loop counts on it).
+ *
+ * @param {TaskState} state
+ * @param {string} id
+ * @returns {{ state: TaskState, step: Step }}
+ */
+export function removeStep(state, id) {
+  const step = state.steps.find((s) => s.id === id);
+  if (!step) {
+    const known = state.steps.map((s) => s.id).join(', ') || 'none';
+    throw new Error(`Unknown step "${id}" (steps: ${known})`);
+  }
+  const dependents = state.steps.filter((s) => s.deps.includes(id));
+  if (dependents.length > 0) {
+    throw new Error(
+      `${dependents.map((s) => s.id).join(', ')} depends on ${id}.\nFix: finish or remove ${dependents.map((s) => s.id).join(', ')} first`
+    );
+  }
+  const finding = state.quality?.findings.find((f) => f.step === id);
+  if (finding) {
+    throw new Error(
+      `${id} fixes review finding ${finding.id}; the quality loop needs it.\nFix: finish it, or mark it done -m "dropped: <why>"`
+    );
+  }
+  return {
+    state: { ...state, steps: state.steps.filter((s) => s.id !== id) },
     step,
   };
 }

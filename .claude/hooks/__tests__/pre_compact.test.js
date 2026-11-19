@@ -4,6 +4,8 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { createState } from '#utils/task/state.js';
+import { saveState, writeSession } from '#utils/task/store.js';
 import { processHookInput } from '../pre_compact.js';
 
 /** @type {string} */
@@ -82,6 +84,43 @@ describe('pre_compact processHookInput', () => {
         { rootDir: root, now, git: fakeGit(null) }
       )
     ).toBeNull();
+  });
+
+  test('should write only to a task the session engaged', () => {
+    const notes = makeActiveTask('demo-261117');
+    writeSession(root, 'dormant', { task: 'demo-261117', engaged: false });
+    writeSession(root, 'engaged', { task: 'demo-261117', engaged: true });
+
+    expect(
+      processHookInput(
+        { trigger: 'auto', session_id: 'dormant' },
+        { rootDir: root, now, git: fakeGit(null) }
+      )
+    ).toBeNull();
+    expect(fs.readFileSync(notes, 'utf-8')).toBe('# NOTES\n');
+    expect(
+      processHookInput(
+        { trigger: 'auto', session_id: 'engaged' },
+        { rootDir: root, now, git: fakeGit(null) }
+      )
+    ).toBe('demo-261117');
+  });
+
+  test("should take the git state from the task's repository", () => {
+    makeActiveTask('demo-261117');
+    const dir = path.join(root, 'tasks', 'demo-261117');
+    const repo = path.resolve(root, '..', 'other-repo');
+    saveState(dir, createState({ name: 'demo-261117', goal: 'G', now, repo }));
+    /** @type {string[]} */
+    const asked = [];
+    const git = (/** @type {string} */ cwd) => {
+      asked.push(cwd);
+      return { branch: 'feat/r', changed: 0, diffStat: null };
+    };
+
+    processHookInput({ trigger: 'auto' }, { rootDir: root, now, git });
+
+    expect(asked).toEqual([repo, repo]);
   });
 
   test('should use real git and the current time by default', () => {

@@ -6,6 +6,8 @@ import os from 'os';
 import path from 'path';
 import { vi } from 'vitest';
 import { main as taskCli } from '#utils/task/cli.js';
+import { writeSession } from '#utils/task/store.js';
+import { processHookInput as processSessionStart } from '../session_start.js';
 import { processHookInput, processResetInput } from '../task_loop.js';
 
 /** @type {string} */
@@ -31,7 +33,16 @@ describe('task_loop processHookInput', () => {
     });
     expect(run).toHaveBeenCalledWith({
       deps: expect.objectContaining({ rootDir: root }),
+      session: null,
     });
+  });
+
+  test("should pass the hook's session id to the loop", () => {
+    const run = vi.fn(() => ({ action: /** @type {const} */ ('skip') }));
+    processHookInput({ session_id: 'sess-1' }, { rootDir: root, run });
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ session: 'sess-1' })
+    );
   });
 
   test('should show a system message when the stop is allowed with one', () => {
@@ -104,6 +115,40 @@ describe('task_loop processHookInput', () => {
     expect(output?.decision).toBe('block');
     expect(output?.reason).toContain('task loop iteration 1/3');
   });
+
+  test("should not run another session's task for a session that never worked on it", () => {
+    const deps = {
+      rootDir: root,
+      env: { TASK_AGENT: 'tester', TASK_SESSION: 'owner' },
+      log: () => {},
+      git: () => ({ branch: 'feat/x', changed: 0, diffStat: null }),
+    };
+    taskCli({
+      argv: [
+        'new',
+        'demo',
+        '--goal',
+        'G',
+        '--verify',
+        'node -e "process.exit(3)"',
+      ],
+      deps,
+    });
+    processSessionStart({ session_id: 'bystander' }, { rootDir: root });
+
+    expect(
+      processHookInput(
+        { session_id: 'bystander' },
+        { rootDir: root, deps: { env: {}, git: deps.git } }
+      )
+    ).toBeNull();
+    expect(
+      processHookInput(
+        { session_id: 'owner' },
+        { rootDir: root, deps: { env: {}, git: deps.git } }
+      )?.decision
+    ).toBe('block');
+  });
 });
 
 describe('task_loop processResetInput', () => {
@@ -115,7 +160,15 @@ describe('task_loop processResetInput', () => {
     expect(reset).toHaveBeenCalledWith({
       deps: expect.objectContaining({ rootDir: root }),
       prompt: 'go on',
+      session: null,
     });
+    processResetInput(
+      { prompt: 'go on', session_id: 'sess-1' },
+      { rootDir: root, reset }
+    );
+    expect(reset).toHaveBeenLastCalledWith(
+      expect.objectContaining({ session: 'sess-1' })
+    );
   });
 
   test('should pass undefined without input and fail open on errors', () => {
@@ -130,6 +183,22 @@ describe('task_loop processResetInput', () => {
     expect(
       processResetInput({ prompt: 'x' }, { rootDir: root, reset: broken })
     ).toBe(false);
+  });
+
+  test("should keep a working session's binding from being pruned", () => {
+    fs.mkdirSync(path.join(root, 'tasks', 'demo-261117'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'tasks', 'demo-261117', 'NOTES.md'), '');
+    writeSession(root, 'sess-1', { task: 'demo-261117', engaged: true });
+    const file = path.join(root, 'tasks', '.sessions', 'sess-1.json');
+    const old = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(file, old, old);
+
+    processResetInput(
+      { prompt: 'go on', session_id: 'sess-1' },
+      { rootDir: root, reset: () => false }
+    );
+
+    expect(Date.now() - fs.statSync(file).mtimeMs).toBeLessThan(60_000);
   });
 
   test('should reset a real halted loop on a typed prompt', () => {

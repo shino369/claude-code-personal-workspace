@@ -14,27 +14,37 @@
 import { runIfMain } from '#utils/module-runner.js';
 import { sessionBrief } from '#utils/task/cli.js';
 import { defaultDeps } from '#utils/task/deps.js';
+import {
+  pruneSessions,
+  readActive,
+  readSession,
+  touchSession,
+  writeSession,
+} from '#utils/task/store.js';
 import { toolsLine } from '#utils/tools/format.js';
 import { readRegistry } from '#utils/tools/registry.js';
 import { ROOT_DIR } from '#utils/workspace-config.js';
 
 /**
- * @typedef {{ source?: string }} HookInput
+ * @typedef {{ source?: string, session_id?: string }} HookInput
  * @typedef {{ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: string } }} HookOutput
  */
 
 /**
  * @param {HookInput | undefined} input
  * @param {{ rootDir?: string, brief?: typeof sessionBrief, tools?: (rootDir: string) => string | null }} [options]
+ *   brief gets the deps and the session id
  * @returns {HookOutput | null}
  */
 export function processHookInput(
   input,
   { rootDir = ROOT_DIR, brief = sessionBrief, tools = registryLine } = {}
 ) {
+  const session = input?.session_id ?? null;
   let text;
   try {
-    text = brief(defaultDeps({ rootDir }));
+    bindNewSession(rootDir, session);
+    text = brief(defaultDeps({ rootDir }), session);
   } catch (error) {
     text = `[Task] Could not read the active task — ${error}`;
   }
@@ -48,7 +58,7 @@ export function processHookInput(
       text,
       text.startsWith('[Task] No active task')
         ? `(Injected on session ${source}. If the user asks to resume work, switch to the matching task first.)`
-        : `(Task brief injected on session ${source}. If the user's request is about this task, continue from "Next step"; refresh with: pnpm task status.)`
+        : `(Task brief injected on session ${source}. If the user's request is about this task, continue from "Next step"; its verify loop and notes apply to this session once a pnpm task command changes the task. Refresh with: pnpm task status.)`
     );
   }
   if (toolText) parts.push(toolText);
@@ -58,6 +68,27 @@ export function processHookInput(
       additionalContext: parts.join('\n'),
     },
   };
+}
+
+/**
+ * Give a new session a dormant binding to the workspace default task (or to
+ * no task), so later changes to `tasks/.active` by other sessions do not move
+ * it, and its hooks stay off until it works on a task. A resumed or compacted
+ * session keeps its binding. Stale bindings are pruned here.
+ *
+ * @param {string} rootDir
+ * @param {string | null} session
+ */
+export function bindNewSession(rootDir, session) {
+  if (!session) return;
+  // Touch before pruning: a resumed session is in use, however long it slept.
+  touchSession(rootDir, session);
+  pruneSessions(rootDir);
+  if (readSession(rootDir, session)) return;
+  writeSession(rootDir, session, {
+    task: readActive(rootDir),
+    engaged: false,
+  });
 }
 
 /**

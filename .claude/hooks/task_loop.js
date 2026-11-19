@@ -2,8 +2,10 @@
 /**
  * Stop hook: the opt-in inner loop.
  *
- * When the active task has the loop on (`pnpm task set --loop on`), every stop
- * runs the task's fast verify. If it fails, the hook blocks the stop and hands
+ * When the session's task has the loop on (`pnpm task set --loop on`), every
+ * stop runs the task's fast verify. The session's task is the one it worked
+ * on (`tasks/.sessions/<session_id>.json`, see utils/task/store.js), so a
+ * session that never touched a task never runs another session's loop. If it fails, the hook blocks the stop and hands
  * the failure back to the agent, up to `loop.max` times; it lets the stop
  * through when verify passes, at the cap, or when the same failure keeps
  * repeating (no progress), and then stays paused until the user's next prompt.
@@ -19,10 +21,11 @@
 import { runIfMain } from '#utils/module-runner.js';
 import { defaultDeps } from '#utils/task/deps.js';
 import { resetInnerLoop, runInnerLoop } from '#utils/task/loop.js';
+import { touchSession } from '#utils/task/store.js';
 import { ROOT_DIR } from '#utils/workspace-config.js';
 
 /**
- * @typedef {{ prompt?: unknown }} HookInput
+ * @typedef {{ prompt?: unknown, session_id?: string }} HookInput
  * @typedef {{ decision?: 'block', reason?: string, systemMessage?: string }} HookOutput
  * @typedef {Partial<import('#utils/task/deps.js').Deps>} DepsOverrides
  */
@@ -30,17 +33,20 @@ import { ROOT_DIR } from '#utils/workspace-config.js';
 /**
  * Stop: run the inner loop and turn its decision into hook output.
  *
- * @param {HookInput | undefined} _input
+ * @param {HookInput | undefined} input
  * @param {{ rootDir?: string, run?: typeof runInnerLoop, deps?: DepsOverrides }} [options]
  * @returns {HookOutput | null}
  */
 export function processHookInput(
-  _input,
+  input,
   { rootDir = ROOT_DIR, run = runInnerLoop, deps = {} } = {}
 ) {
   let decision;
   try {
-    decision = run({ deps: defaultDeps({ rootDir, ...deps }) });
+    decision = run({
+      deps: defaultDeps({ rootDir, ...deps }),
+      session: input?.session_id ?? null,
+    });
   } catch {
     return null;
   }
@@ -66,9 +72,12 @@ export function processResetInput(
   { rootDir = ROOT_DIR, reset = resetInnerLoop, deps = {} } = {}
 ) {
   try {
+    // A prompt means the session is in use: keep its binding from pruning.
+    touchSession(rootDir, input?.session_id);
     return reset({
       deps: defaultDeps({ rootDir, ...deps }),
       prompt: input?.prompt,
+      session: input?.session_id ?? null,
     });
   } catch {
     return false;

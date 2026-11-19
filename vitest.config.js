@@ -22,6 +22,10 @@ export default defineConfig({
     // runner times them out.
     testTimeout: process.platform === 'win32' ? 20_000 : 5_000,
 
+    // Tests never see the session of the agent running them: task commands
+    // would otherwise resolve to that session's task (utils/task/store.js).
+    env: { TASK_SESSION: '', CLAUDE_CODE_SESSION_ID: '' },
+
     // Include patterns
     include: [
       '**/__tests__/**/*.js',

@@ -4,20 +4,25 @@
  * reads the triaged findings table and turns CONFIRMED must-fix/high
  * findings into `fix:` steps.
  *
- * Scope: the task's own code (files `pnpm task check` looks at) when it has
- * any (no git involved: the folder is git-ignored); otherwise the git changes
- * since a base ref (default: the repository's default branch as fetched,
- * `origin/HEAD` or `main`; for work committed on it, the task's start
- * commit), for tasks that change the workspace itself.
+ * Scope: for a task that works in another repository (`--repo`), the git
+ * changes there. Otherwise the task's own code in its folder (files `pnpm
+ * task check` looks at, minus the `scripts/` helpers; no git: the folder is
+ * git-ignored) when it has any, else the git changes in the workspace, else
+ * the task's scripts. Git changes are counted from the task's start commit
+ * when the task started on HEAD's line after the branch point (or on the
+ * default branch itself), else from the branch point with the default branch
+ * (`origin/HEAD` as fetched, else `main`); an explicit `--base` is used as
+ * given.
  */
 import crypto from 'crypto';
 import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { hasTaskCode, listCodeFiles } from './check.js';
+import { collectTaskCode, hasTaskCode, listCodeFiles } from './check.js';
 import { git } from './git.js';
 import { SEVERITIES, VERDICTS, freshQuality, toFix } from './quality.js';
 import { addStep } from './state.js';
+import { taskRepoDir } from './store.js';
 import { relPosix } from '../paths.js';
 
 /** Fallback base when the repository has no `origin/HEAD`. */
@@ -87,13 +92,42 @@ export function defaultBranch(runGit, rootDir) {
 }
 
 /**
+ * The task's own code in its folder: what `pnpm task check` looks at, minus
+ * `scripts/` (task-only helpers, such as one-off generators). A helper script
+ * must not turn the review away from the work it supports.
+ *
+ * @param {string} taskDir
+ * @returns {string[]} POSIX paths relative to the task folder
+ */
+export function productFiles(taskDir) {
+  if (!fs.existsSync(taskDir)) return [];
+  return listCodeFiles(taskDir).filter((file) => !file.startsWith('scripts/'));
+}
+
+/**
+ * Whether the task folder holds product code (JavaScript or TypeScript, as
+ * for `hasTaskCode`) outside `scripts/`.
+ *
+ * @param {string} taskDir
+ * @returns {boolean}
+ */
+export function hasProductCode(taskDir) {
+  if (!fs.existsSync(taskDir)) return false;
+  const code = collectTaskCode(taskDir);
+  return [...code.lint, ...code.types].some(
+    (file) => !file.startsWith('scripts/')
+  );
+}
+
+/**
  * The base a round reviews against: an open round keeps its own; otherwise
  * `--base`, else the git base an earlier round used (so the Stop hook and the
- * next round compare the same files), else none for a task with code (its
- * folder is the scope; git is not used), else the default branch (see
- * `reviewScope` for work committed on it).
+ * next round compare the same files), else the default branch for a task in
+ * another repository, else none for a task with product code in its folder
+ * (its folder is the scope; git is not used), else the default branch (see
+ * `reviewScope` for where the changes are counted from).
  *
- * @param {{ quality: import('./quality.js').Quality, taskDir: string, base?: string, defaultBase?: string }} options
+ * @param {{ quality: import('./quality.js').Quality, taskDir: string, base?: string, defaultBase?: string, repo?: string | null }} options
  * @returns {string | null}
  */
 export function reviewBase({
@@ -101,23 +135,29 @@ export function reviewBase({
   taskDir,
   base,
   defaultBase = DEFAULT_BASE,
+  repo = null,
 }) {
   if (quality.phase === 'review') return quality.base ?? null;
   if (base !== undefined) return base;
   if (quality.base) return quality.base;
-  return hasTaskCode(taskDir) ? null : defaultBase;
+  if (repo) return defaultBase;
+  return hasProductCode(taskDir) ? null : defaultBase;
 }
 
 /**
- * The files a review round covers, as sorted root-relative POSIX paths.
+ * The files a review round covers, as sorted POSIX paths: relative to the
+ * workspace for task code (`base` null), else relative to `repoDir`, the
+ * repository the task works in (see `scopeRoot`).
  *
- * Against the default branch the scope is everything since the branch left
- * it. When the work is on that branch itself (HEAD is the branch, or the merge
- * base is HEAD), that diff would be empty or only the unpushed commits, so the
- * task's start commit (recorded by `pnpm task new` / `init`) becomes the base
- * instead; the returned `base` says which.
+ * A git scope counts the changes from the task's start commit (recorded by
+ * `pnpm task new` / `init` / `set --repo`) when that commit is in HEAD's
+ * history and either after the branch point (the task started on a branch
+ * that already carried other work: that work is not this task's) or the work
+ * is on the base branch itself (HEAD is the branch, or the merge base is
+ * HEAD: the diff would be empty or only the unpushed commits). Otherwise it
+ * counts from the branch point. The returned `base` says which.
  *
- * @param {{ rootDir: string, taskDir: string, base: string | null, runGit?: RunGit, startCommit?: string | null }} options
+ * @param {{ rootDir: string, taskDir: string, base: string | null, runGit?: RunGit, startCommit?: string | null, repoDir?: string }} options
  * @returns {Scope}
  */
 export function reviewScope({
@@ -126,39 +166,65 @@ export function reviewScope({
   base,
   runGit = defaultRunGit,
   startCommit = null,
+  repoDir = rootDir,
 }) {
   if (base === null) {
     const prefix = relPosix(rootDir, taskDir);
+    const product = productFiles(taskDir);
     return {
       base: null,
       since: null,
-      files: listCodeFiles(taskDir).map((file) => `${prefix}/${file}`),
+      files: (product.length > 0 ? product : listCodeFiles(taskDir)).map(
+        (file) => `${prefix}/${file}`
+      ),
     };
   }
-  const mergeBase = runGit(['merge-base', 'HEAD', base], rootDir);
+  const mergeBase = runGit(['merge-base', 'HEAD', base], repoDir);
   if (!mergeBase) {
     throw new Error(
       `Cannot find the merge base of HEAD and ${base}.\nFix: pass an existing branch or commit: pnpm task review --base <ref>`
     );
   }
-  const workIsOnBase =
+  const isAncestor = (/** @type {string} */ a, /** @type {string} */ b) =>
+    runGit(['merge-base', '--is-ancestor', a, b], repoDir) !== null;
+  const fromStart =
     startCommit !== null &&
     startCommit !== mergeBase &&
-    (mergeBase === runGit(['rev-parse', 'HEAD'], rootDir) ||
-      runGit(['branch', '--show-current'], rootDir) ===
+    isAncestor(startCommit, 'HEAD') &&
+    (isAncestor(mergeBase, startCommit) ||
+      mergeBase === runGit(['rev-parse', 'HEAD'], repoDir) ||
+      runGit(['branch', '--show-current'], repoDir) ===
         base.replace(/^origin\//, ''));
-  const since = workIsOnBase ? startCommit : mergeBase;
+  const since = fromStart ? startCommit : mergeBase;
   const lines = (/** @type {string | null} */ text) =>
     (text ?? '').split('\n').filter(Boolean);
   const files = new Set([
-    ...lines(runGit(['diff', '--name-only', since], rootDir)),
-    ...lines(runGit(['ls-files', '--others', '--exclude-standard'], rootDir)),
+    ...lines(runGit(['diff', '--name-only', since], repoDir)),
+    ...lines(runGit(['ls-files', '--others', '--exclude-standard'], repoDir)),
   ]);
+  // tasks/ is this workspace's git-ignored task folder; another repository's
+  // tasks/ is code like any other.
+  const inWorkspace = repoDir === rootDir;
   return {
-    base: workIsOnBase ? startCommit : base,
+    base: fromStart ? startCommit : base,
     since,
-    files: [...files].filter((file) => !file.startsWith('tasks/')).sort(),
+    files: [...files]
+      .filter((file) => !inWorkspace || !file.startsWith('tasks/'))
+      .sort(),
   };
+}
+
+/**
+ * The folder a scope's paths are relative to (and `fingerprint` reads them
+ * from): the workspace for task code, else the task's repository.
+ *
+ * @param {string} rootDir
+ * @param {TaskState} state
+ * @param {Scope} scope
+ * @returns {string}
+ */
+export function scopeRoot(rootDir, state, scope) {
+  return scope.base === null ? rootDir : taskRepoDir(rootDir, state);
 }
 
 /**
@@ -176,18 +242,38 @@ export function taskReviewScope({
   base,
   runGit = defaultRunGit,
 }) {
-  return reviewScope({
+  const quality = state.quality ?? freshQuality();
+  const repoDir = taskRepoDir(rootDir, state);
+  const scope = reviewScope({
     rootDir,
     taskDir,
     base: reviewBase({
-      quality: state.quality ?? freshQuality(),
+      quality,
       taskDir,
       base,
-      defaultBase: defaultBranch(runGit, rootDir),
+      defaultBase: defaultBranch(runGit, repoDir),
+      repo: state.repo,
     }),
     runGit,
     startCommit: base === undefined ? (state.startCommit ?? null) : null,
+    repoDir,
   });
+  // A workspace task whose only code is its scripts and that changed nothing
+  // in git: the scripts are its work.
+  const chosen =
+    base === undefined &&
+    quality.phase !== 'review' &&
+    !quality.base &&
+    !state.repo;
+  if (
+    chosen &&
+    scope.base !== null &&
+    scope.files.length === 0 &&
+    hasTaskCode(taskDir)
+  ) {
+    return reviewScope({ rootDir, taskDir, base: null, runGit });
+  }
+  return scope;
 }
 
 /**
@@ -240,7 +326,10 @@ export function openRound(state, { fingerprint: print, base, force = false }) {
     );
   }
   const unfinished = state.steps.filter(
-    (s) => s.status !== 'done' && !s.title.startsWith('fix: ')
+    (s) =>
+      s.status !== 'done' &&
+      s.status !== 'waiting' &&
+      !s.title.startsWith('fix: ')
   );
   if (!force && unfinished.length > 0) {
     throw new Error(
@@ -284,10 +373,12 @@ const where = (f) => `${f.file}${f.line ? `:${f.line}` : ''}`;
 export function formatReviewBrief({ state, round, scope, taskRel }) {
   const quality = state.quality ?? freshQuality();
   const files = reviewFiles(state.name, round);
+  const since = String(scope.since).slice(0, 12);
+  const repo = scope.base !== null && state.repo ? state.repo : null;
   const scopeLine =
     scope.base === null
       ? `the task's code under ${taskRel}/`
-      : `changes since ${scope.base} (commit ${String(scope.since).slice(0, 12)}; see them with: git diff ${String(scope.since).slice(0, 12)} -- <file>)`;
+      : `changes since ${scope.base} (commit ${since}; see them with: git${repo ? ` -C ${repo}` : ''} diff ${since} -- <file>)`;
   const earlier = quality.findings.filter((f) => f.round < round);
   const refuted = earlier.filter((f) => f.verdict === 'REFUTED');
   const fixed = earlier.filter((f) => f.verdict === 'CONFIRMED' && f.step);
@@ -299,6 +390,11 @@ export function formatReviewBrief({ state, round, scope, taskRel }) {
     'edit nothing but the findings table named under Output.',
     '',
     `Goal: ${state.goal}`,
+    ...(repo
+      ? [
+          `Repository: ${repo} (its own git repository; the files below are relative to it, and the plan is in this workspace)`,
+        ]
+      : []),
     `Plan (acceptance, steps, decisions): ${taskRel}/plan.md`,
     `Standards: ${STANDARDS.join('; ')}`,
     `E2E: ${state.e2e ?? 'no'}`,

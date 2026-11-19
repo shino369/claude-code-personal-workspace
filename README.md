@@ -382,7 +382,8 @@ Workspace permissions are configured in `.claude/settings.json`:
 
 **Allowed operations:**
 
-- pnpm commands, git status/diff/log/add/commit
+- pnpm commands (including `pnpm task rm`, the undoable delete), git status/diff/log/add/commit,
+  creating a branch (`git switch -c`, `git checkout -b`), and read-only git (`rev-parse`, `show`)
 - `node` only for repo scripts (`utils/`, `.claude/hooks/`, `.agents/skills/`)
 - ls, dir, cd, pwd, echo, type, mkdir
 
@@ -396,7 +397,8 @@ arbitrary code, read files the Read deny rules protect, or send data out.
 
 **Denied operations:**
 
-- rm, sudo, chmod, chown, dd, mount, systemctl, mkfs, fdisk, parted
+- rm (agents delete with `pnpm task rm`, which moves files to `tasks/.trash/` for 7 days), sudo,
+  chmod, chown, dd, mount, systemctl, mkfs, fdisk, parted
 - npm commands (use pnpm instead)
 - PowerShell, cmd, Windows admin commands
 - destructive git operations (force push, hard reset, clean -fd, branch -D, tag -d)

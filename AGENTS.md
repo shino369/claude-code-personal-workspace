@@ -16,6 +16,8 @@ outputs.
   `~/.ssh/`, `~/.aws/`.
 - Never force-push, `git reset --hard`, `git clean -fd`, delete branches or tags, or
   `pnpm publish`. Never push, merge, or rebase unless the user asks.
+- Never delete with `rm` (it is denied). Use `pnpm task rm <path>…`: it moves files inside this
+  workspace or the task's repo to `tasks/.trash/` for 7 days, so it is safe and needs no asking.
 - Never `git commit --no-verify`. If a hook rejects a commit, fix the cause.
 - Never commit `tasks/`, `logs/`, `tools/local.json`, third-party skills, `.claude/settings.local.json`, or `.mcp.json`.
 - Never edit files under `.claude/skills/` — they are links. Edit `.agents/skills/` instead.
@@ -32,6 +34,8 @@ outputs.
    Report failures honestly, with their output.
 5. **Before you stop working on a task:** `pnpm task note --done "…" --next "…"` (§4.2).
 6. **Unsure what the user wants?** Ask. Do not guess on anything destructive or outward-facing.
+   Do not stop to ask for local commits (§5) or for removing stale files with `pnpm task rm`:
+   both are reversible, so do them and say so.
 7. **Need another agent, a CLI, or a tool an earlier task installed?** Run `pnpm tools list` (§12)
    before saying it is unavailable or installing anything.
 
@@ -45,6 +49,7 @@ outputs.
 | Format / check format         | `pnpm format` / `pnpm format:check`                              |
 | Typecheck                     | `pnpm typecheck`                                                 |
 | Task brief / log / help       | `pnpm task status` · `pnpm task note …` · `pnpm task help`       |
+| Delete stale files (undoable) | `pnpm task rm <path>…` (to `tasks/.trash/`, kept 7 days)         |
 | Tools on this machine         | `pnpm tools list` · `pnpm tools show <name>` · `pnpm tools scan` |
 | Ask another agent (read-only) | `pnpm agent ask --agent claude\|codex\|dsh "…"`                  |
 | Fix until verify passes       | `pnpm loop <task> --agent claude\|codex\|dsh` (`--help`)         |
@@ -62,6 +67,18 @@ Every workspace script prints a `Fix:` line when it fails — run that command.
 `tasks/` is git-ignored: tasks are personal to each machine. Only this procedure and the
 `pnpm task` CLI are shared. Every `pnpm task` command accepts `--json`, `--task <name>` (act on a
 task other than the active one), and `--agent <name>` (who is acting; or set `TASK_AGENT`).
+
+**The active task is per session.** Several sessions can work in one checkout, so each session
+keeps its own task (`tasks/.sessions/<id>.json`; the id is `$TASK_SESSION`, else Claude Code's
+session id). `new` and `switch` set it; the first command that changes a task (`step`, `note`,
+`verify`, `set`, `review`, …) claims it for the session. `tasks/.active` is only the default
+for a new session. Another harness working beside other sessions: pass `--task <name>` on each
+command (or run each one with `TASK_SESSION=<your id>` set).
+
+**Work in another repository?** `pnpm task new … --repo <path>` (or `pnpm task set --repo
+<path>`): the brief's `Git:` line, NOTES `State:` lines, the start commit, and the review scope
+then come from that repository. Verify commands still run from this workspace
+(`pnpm --dir <path> check`).
 
 ### 4.1 Create
 
@@ -97,6 +114,8 @@ In `plan.md`, edit the Goal, Acceptance, and Decisions by hand. The Steps block 
 | Another agent works on the same task | `pnpm task claim` (atomic: takes the next free ready step)  |
 | A step is finished                   | `pnpm task step <id> done -m "what changed"`                |
 | A step cannot continue               | `pnpm task step <id> blocked -m "why"`                      |
+| A step waits on the user or others   | `pnpm task step <id> waiting -m "who does what"`            |
+| A step was added by mistake          | `pnpm task step <id> remove -m "why"`                       |
 | New work appears                     | `pnpm task step add "title" [--deps s1,s2]`                 |
 | Check the work                       | `pnpm task verify` (`--fast` for the quick subset)          |
 | Change the goal or verify commands   | `pnpm task set --verify "pnpm check" [--verify-fast "…"]`   |
@@ -219,7 +238,9 @@ The `commit-msg` hook enforces the header; `pnpm workspace:setup` enables it.
   branch first.
 - PR title: same format as a commit. Body: **what** and **why**, **how to verify** (commands run),
   breaking changes and follow-ups.
-- Commit or push only when the user asks.
+- **Commit locally without asking** once verify is green: on a `<type>/<desc>` branch (if you
+  are on `main`, `git switch -c <type>/<desc>` first), one logical change per commit. In another
+  repository (`--repo`), follow its conventions. **Never push** unless the user asks.
 
 ## 6. Dependencies
 
