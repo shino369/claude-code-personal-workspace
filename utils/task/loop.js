@@ -9,7 +9,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { listCodeFiles, withCheck } from './check.js';
+import { ANY_LEVEL_SKIP, TASK_FILES, isCodeFile, withCheck } from './check.js';
 import { formatGit } from './git.js';
 import { appendSeparator, formatNoteEntry } from './markdown.js';
 import { decideQuality } from './quality.js';
@@ -205,12 +205,68 @@ const TREE_QUERIES = [
 ];
 
 /**
+ * Top-level task entries no verify reads: what `pnpm task`, the review
+ * rounds, and `pnpm loop` / `pnpm swarm` write.
+ */
+const RECORDS = new Set([...TASK_FILES, 'reviews', 'loop', 'swarm']);
+
+/**
+ * The task folder's files a verify can read, as sorted POSIX paths: `code`
+ * (regular files `pnpm task check` formats) and `other` (fixtures, docs,
+ * translations, images, scratch, symlinks). Skips RECORDS, dependency and
+ * generated folders (ANY_LEVEL_SKIP), and dot-folders (caches); symlinked
+ * folders are not followed.
+ *
+ * @param {string} taskDir
+ * @returns {{ code: string[], other: string[] }}
+ */
+export function taskInputs(taskDir) {
+  /** @type {{ code: string[], other: string[] }} */
+  const found = { code: [], other: [] };
+  /** @param {string} rel */
+  const walk = (rel) => {
+    const entries = fs.readdirSync(path.join(taskDir, rel), {
+      withFileTypes: true,
+    });
+    for (const entry of entries) {
+      const child = rel ? `${rel}/${entry.name}` : entry.name;
+      if (!rel && RECORDS.has(entry.name)) continue;
+      if (entry.isDirectory()) {
+        if (!entry.name.startsWith('.') && !ANY_LEVEL_SKIP.has(entry.name)) {
+          walk(child);
+        }
+      } else if (entry.isFile() && isCodeFile(entry.name)) {
+        found.code.push(child);
+      } else {
+        found.other.push(child);
+      }
+    }
+  };
+  if (fs.existsSync(taskDir)) walk('');
+  found.code.sort();
+  found.other.sort();
+  return found;
+}
+
+/**
+ * @param {string} dir
+ * @param {string} file
+ * @returns {string} `file` with its size and modification time, read without
+ *   opening it (large files, secrets), or `-` when it is gone
+ */
+const statLine = (dir, file) => {
+  const stat = fs.statSync(path.join(dir, file), { throwIfNoEntry: false });
+  return `\0${file}:${stat ? `${stat.size}:${stat.mtimeMs}` : '-'}`;
+};
+
+/**
  * A fingerprint of everything a verify run depends on: the verify commands,
  * the working tree of the workspace and of the task's repository (HEAD,
  * status, tracked changes, and each untracked file's size and time), and the
- * task's own code (git-ignored, so hashed by content). The inner loop skips a
- * verify that already passed on the same fingerprint. Null when git cannot
- * answer (no repository, a diff too large), which never matches.
+ * task folder (git-ignored): its code by content, every other file a verify
+ * can read (`taskInputs`) by size and time. The inner loop skips a verify
+ * that already passed on the same fingerprint. Null when git cannot answer
+ * (no repository, a diff too large), which never matches.
  *
  * @param {Pick<import('./deps.js').Deps, 'rootDir' | 'runGit'>} deps
  * @param {TaskState} state
@@ -225,12 +281,12 @@ export function workPrint(deps, state, taskDir) {
     if (answers.some((answer) => typeof answer !== 'string')) return null;
     hash.update(`\0${dir}\0${answers.join('\0')}`);
     for (const file of String(answers[3]).split('\n').filter(Boolean)) {
-      const stat = fs.statSync(path.join(dir, file), { throwIfNoEntry: false });
-      hash.update(`\0${file}:${stat ? `${stat.size}:${stat.mtimeMs}` : '-'}`);
+      hash.update(statLine(dir, file));
     }
   }
-  const code = fs.existsSync(taskDir) ? listCodeFiles(taskDir) : [];
+  const { code, other } = taskInputs(taskDir);
   hash.update(`\0${fingerprint(taskDir, code)}`);
+  for (const file of other) hash.update(statLine(taskDir, file));
   return hash.digest('hex').slice(0, 16);
 }
 

@@ -9,8 +9,9 @@
  * TRASH_KEEP_MS, so every removal can be undone with one `mv`.
  *
  * Refused: anything outside the scope, a scope root, `.git`, the task records
- * (`tasks/`, a task folder, its state.json/NOTES.md/plan.md, `tasks/.*`), and
- * files that look like secrets. Every path is checked before anything moves.
+ * (`tasks/`, a task folder, its state.json/NOTES.md/plan.md, `tasks/.*`),
+ * files that look like secrets, and a folder that holds a `.git` or secrets.
+ * Every path is checked before anything moves.
  */
 import fs from 'fs';
 import os from 'os';
@@ -35,6 +36,36 @@ const SECRET_NAME_RE = /^(?:\.env(?:\..*)?|credentials\.json|.*\.(?:pem|key))$/;
  */
 const inside = (rel) =>
   rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+
+/**
+ * The first entry inside `dir` that must not move with it: a `.git` (another
+ * repository's history, or a worktree's link to one) or something that looks
+ * like secrets. The trash is emptied after TRASH_KEEP_MS, so moving the
+ * folder would delete them for good. Symlinks are not followed, and
+ * `node_modules` is not searched (installed packages ship test keys).
+ *
+ * @param {string} dir
+ * @returns {{ rel: string, kind: 'git' | 'secret' } | null}
+ */
+function guardedEntry(dir) {
+  const pending = [''];
+  for (let rel = pending.pop(); rel !== undefined; rel = pending.pop()) {
+    const entries = fs.readdirSync(path.join(dir, rel), {
+      withFileTypes: true,
+    });
+    for (const entry of entries) {
+      const child = path.join(rel, entry.name);
+      if (entry.name === '.git') return { rel: child, kind: 'git' };
+      if (entry.name === 'secrets' || SECRET_NAME_RE.test(entry.name)) {
+        return { rel: child, kind: 'secret' };
+      }
+      if (entry.isDirectory() && entry.name !== 'node_modules') {
+        pending.push(child);
+      }
+    }
+  }
+  return null;
+}
 
 /**
  * Check one path and work out where it goes in the trash.
@@ -90,6 +121,16 @@ export function planRemoval({ rootDir, scopes, target, cwd }) {
   if (parts.includes('secrets') || SECRET_NAME_RE.test(path.basename(from))) {
     throw new Error(
       `${target} looks like secrets; pnpm task rm never touches them.`
+    );
+  }
+  const held = fs.lstatSync(from).isDirectory() ? guardedEntry(from) : null;
+  if (held) {
+    const what =
+      held.kind === 'git'
+        ? 'a git repository or worktree link'
+        : 'which looks like secrets';
+    throw new Error(
+      `${target} holds ${path.join(target, held.rel)}, ${what}; pnpm task rm never moves those, not even with their folder.\nFix: remove the other files one by one, or ask the user to delete the folder`
     );
   }
   return {

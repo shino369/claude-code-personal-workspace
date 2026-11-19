@@ -119,8 +119,9 @@ differs from the last note's), then continues from `Next`.
 The inner loop's count resets only on a pass, `pnpm task set --loop on`, or a prompt you type —
 never on a Stop event. It does not re-run a verify that already passed on the same work: each pass
 records a fingerprint of the verify commands, the working trees of the workspace and the task's
-repository, and the task's code, and a stop with the same fingerprint lets the session go
-quietly. Failures always run again. It decides from the task's state on disk, under the task
+repository, and every file in the task folder a verify can read (code by content; fixtures, docs,
+translations, and scratch by size and time; not the task records, `reviews/`, logs, or dependency
+and generated folders), and a stop with the same fingerprint lets the session go quietly. Failures always run again. It decides from the task's state on disk, under the task
 lock, so a change another agent makes while verify runs (the loop turned off, a review recorded)
 is kept. Unattended runs never touch the main checkout: from it, `pnpm loop` creates
 `../<repo>-wt/<task>` on branch `loop/<task>` and copies the task folder there. You review the
@@ -294,7 +295,8 @@ commands, the last verify to have passed.
   table only) by instruction, not by enforcement. The headless reviewers run read-only.
 - **Deleting files.** `rm` is denied to agents; `pnpm task rm <path>…` moves files inside the
   workspace or the task's repository to `tasks/.trash/<time>/` for 7 days instead, so agents clean
-  up without stopping to ask. It refuses `.git`, the task records, and secrets.
+  up without stopping to ask. It refuses `.git`, the task records, secrets, and folders that hold
+  a `.git` or secrets.
 - **Tasks in another repository** (`--repo`) work interactively; `pnpm loop` and `pnpm swarm`
   refuse them, because their worktrees are of this workspace.
 - **Claude hooks run only in Claude Code.** Other harnesses get the same state through

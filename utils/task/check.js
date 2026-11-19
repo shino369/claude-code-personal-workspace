@@ -77,6 +77,12 @@ export const CHROME_STUB_FILE = 'chrome-stub.d.ts';
 const hasExt = (file, extensions) => extensions.includes(path.extname(file));
 
 /**
+ * @param {string} file
+ * @returns {boolean} whether `pnpm task check` formats `file` (task code)
+ */
+export const isCodeFile = (file) => hasExt(file, FORMAT_EXT);
+
+/**
  * Every file under the task that `check` looks at, as sorted POSIX paths
  * relative to the task directory.
  *

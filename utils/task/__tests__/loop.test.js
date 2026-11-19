@@ -849,6 +849,70 @@ describe('workPrint', () => {
     expect(print()).not.toBe(first);
   });
 
+  /** @param {string} rel @param {string} content @param {number} [mtime] */
+  const write = (rel, content, mtime) => {
+    const file = path.join(root, 'tasks', NAME, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+    if (mtime !== undefined) fs.utimesSync(file, mtime, mtime);
+  };
+
+  test.each([
+    ['a text fixture', 'app/fixtures/input.txt'],
+    ['a yaml file', 'app/config.yaml'],
+    ['a translation', 'translated/README.ja.md'],
+    ['a doc', 'docs/spec.md'],
+    ['a scratch file', 'tmp/draft.txt'],
+    ['an image', 'app/logo.png'],
+    ['a dotfile', 'app/.env'],
+  ])('should change when %s in the task folder changes', (_label, rel) => {
+    write(rel, 'one', 1000);
+    const first = print();
+    write(rel, 'two', 2000);
+    expect(print()).not.toBe(first);
+  });
+
+  test('should change when a non-code task file is added', () => {
+    const first = print();
+    write('app/fixtures/new.csv', 'a,b');
+    expect(print()).not.toBe(first);
+  });
+
+  test.each([
+    ['the state', 'state.json'],
+    ['the notes', 'NOTES.md'],
+    ['the plan', 'plan.md'],
+    ['a review table', 'reviews/REVIEW_x-r1.md'],
+    ['a loop log', 'loop/run-1.log'],
+    ['a swarm log', 'swarm/s1.log'],
+    ['installed packages', 'app/node_modules/pkg/index.js'],
+    ['coverage output', 'app/coverage/lcov.info'],
+    ['a cache folder', 'app/.cache/blob'],
+  ])('should not change with %s', (_label, rel) => {
+    write(rel, 'one', 1000);
+    const first = print();
+    write(rel, 'two', 2000);
+    expect(print()).toBe(first);
+  });
+
+  test('should not change when code is rewritten with the same content', () => {
+    write('tmp/tsconfig.check.json', '{}\n', 1000);
+    const first = print();
+    write('tmp/tsconfig.check.json', '{}\n', 2000);
+    expect(print()).toBe(first);
+  });
+
+  test('should hash a symlink in the task folder by what it points to', () => {
+    const target = path.join(root, 'fixture-dir');
+    fs.mkdirSync(target);
+    fs.symlinkSync(
+      target,
+      path.join(root, 'tasks', NAME, 'app', 'data.js'),
+      'junction'
+    );
+    expect(print()).toMatch(/^[0-9a-f]{16}$/);
+  });
+
   test('should be null when git cannot answer', () => {
     outputs.diff = null;
     expect(print()).toBeNull();

@@ -129,7 +129,8 @@ Work
                                 findings become fix: steps
   rm <path>…                    Delete files or folders inside this workspace or the task's
                                 repo without asking: they move to tasks/.trash/<time>/ for
-                                7 days (refuses .git, task records, and secrets)
+                                7 days (refuses .git, task records, secrets, and
+                                folders that hold a .git or secrets)
   template review|study [--name <kebab>]
                                 Copy a REVIEW_/STUDIES_ template into the task
   done [-m "…"] [--force]       Close the task (needs every step done and a passing verify;

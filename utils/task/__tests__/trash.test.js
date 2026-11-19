@@ -126,6 +126,58 @@ describe('planRemoval', () => {
     expect(() => plan(target)).toThrow(message);
   });
 
+  test.each([
+    [
+      'an env file deep inside',
+      'app/deep/.env',
+      /app.deep.\.env, which looks like secrets/,
+    ],
+    [
+      'a key file',
+      'app/server.key',
+      /app.server\.key, which looks like secrets/,
+    ],
+    [
+      'a secrets folder',
+      'app/secrets/token.txt',
+      /app.secrets, which looks like secrets/,
+    ],
+    [
+      'a nested repository',
+      'app/vendor/.git/HEAD',
+      /app.vendor.\.git, a git repository/,
+    ],
+    ['a worktree link', 'app/wt/.git', /app.wt.\.git, a git repository/],
+  ])('should refuse a folder that holds %s', (_label, inner, message) => {
+    touch(path.join(root, 'app', 'ok.js'));
+    touch(path.join(root, inner));
+    expect(() => plan('app')).toThrow(message);
+  });
+
+  test('should name the fix when a folder holds something it never moves', () => {
+    touch(path.join(root, 'app', '.env'));
+    expect(() => plan('app')).toThrow(/Fix: .*one by one/);
+  });
+
+  test('should not search node_modules for secrets', () => {
+    touch(path.join(root, 'app', 'node_modules', 'pkg', 'test', 'fixture.pem'));
+    expect(plan('app').rel).toBe('app');
+  });
+
+  test('should not follow a symlinked folder inside the folder', () => {
+    const outside = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'trash-inner-link-'))
+    );
+    try {
+      touch(path.join(outside, '.env'));
+      touch(path.join(root, 'app', 'ok.js'));
+      fs.symlinkSync(outside, path.join(root, 'app', 'link'), 'junction');
+      expect(plan('app').rel).toBe('app');
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   test('should allow scratch files inside a task folder', () => {
     touch(path.join(root, 'tasks', 'demo-261117', 'tmp', 'scratch.txt'));
     expect(plan('tasks/demo-261117/tmp/scratch.txt').label).toBe('workspace');
