@@ -10,18 +10,22 @@ Everything above (AGENTS.md) applies. These notes cover only what is specific to
 - **Context:** quality degrades at 20–40% usage, long before the window is full. The
   `UserPromptSubmit` hook `.claude/hooks/context_monitor.js` injects `[Context Monitor]` warnings
   at 20/40/60% of the window (1M by default; set `CLAUDE_CONTEXT_WINDOW` to override), naming the
-  active task. Act on them: run `pnpm task note --done "…" --next "…"` (AGENTS.md §4.2), delegate
+  task this session works on. Act on them: run `pnpm task note --done "…" --next "…"` (AGENTS.md §4.2), delegate
   independent work to subagents, and suggest `/compact` or `/clear` at the URGENT level.
 - **Resume:** the `SessionStart` hook (`session_start.js`, on startup/resume/clear/compact)
-  injects the `pnpm task status` brief plus a `Tools:` line (AGENTS.md §12: other agents you can
-  call with `pnpm agent ask`), and the `PreCompact` hook (`pre_compact.js`) appends a
-  mechanical checkpoint to the active task's `NOTES.md`. When a `[Task]` brief is in context, do
-  not rediscover the task — continue from its `Next step`, after comparing its `Git:` line.
+  binds the session to the default task (dormant until a `pnpm task` command changes it; a
+  resumed or compacted session keeps its task) and injects that task's brief plus a `Tools:` line
+  (AGENTS.md §12: other agents you can call with `pnpm agent ask`). The `PreCompact` hook
+  (`pre_compact.js`) appends a mechanical checkpoint to the session's task's `NOTES.md`. When a
+  `[Task]` brief is in context, do not rediscover the task — continue from its `Next step`, after
+  comparing its `Git:` line (a `!` means the branch differs from the last note's).
 - **Inner loop:** with the loop on (the default for code tasks; `pnpm task set --loop on`), the
   `Stop` hook (`task_loop.js`) re-runs `pnpm task check` (once the task has code) and the task's
   fast verify at every stop and sends failures back, up to `--loop-max` (default 5), stopping early
-  on no progress. Stop events never reset the count; only a pass or a prompt you type does. Turn it
-  off with `pnpm task set --loop off`.
+  on no progress. It runs only for a task this session worked on, never for another session's,
+  and skips a verify that already passed on the same work (nothing changed since). Stop events
+  never reset the count; only a pass or a prompt you type does. Turn it off with
+  `pnpm task set --loop off`.
 - **Quality loop (code tasks, AGENTS.md §4.5):** once verify is green, the same hook moves you
   through the review: it blocks once per situation with the next action (run `pnpm task review`,
   finish the open round, fix the confirmed findings). Run the reviewer as an Agent subagent of type
