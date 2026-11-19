@@ -5,6 +5,7 @@ import fs from 'fs';
 import { vi } from 'vitest';
 import os from 'os';
 import path from 'path';
+import { writeSession } from '#utils/task/store.js';
 import {
   DEFAULT_CONTEXT_WINDOW,
   THRESHOLDS,
@@ -229,6 +230,20 @@ describe('context_monitor', () => {
       expect(getActiveTask(root)).toBe('demo-261117');
     });
 
+    test('should name only a task the session engaged', () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ctx-session-'));
+      tempDirs.push(root);
+      fs.mkdirSync(path.join(root, 'tasks', 'demo-261117'), {
+        recursive: true,
+      });
+      fs.writeFileSync(path.join(root, 'tasks', 'demo-261117', 'NOTES.md'), '');
+      writeSession(root, 'dormant', { task: 'demo-261117', engaged: false });
+      writeSession(root, 'engaged', { task: 'demo-261117', engaged: true });
+
+      expect(getActiveTask(root, 'dormant')).toBeNull();
+      expect(getActiveTask(root, 'engaged')).toBe('demo-261117');
+    });
+
     test('should return null when tasks/ is unreadable', () => {
       const spy = vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
         throw Object.assign(new Error('denied'), { code: 'EACCES' });
@@ -306,6 +321,13 @@ describe('context_monitor', () => {
         { activeTask }
       );
       expect(output?.systemMessage).toContain('tasks/demo-261117/NOTES.md');
+      expect(activeTask).toHaveBeenCalledWith(null);
+      processHookInput(
+        { transcript_path: warn, session_id: 'sess-1' },
+        {},
+        { activeTask }
+      );
+      expect(activeTask).toHaveBeenLastCalledWith('sess-1');
     });
 
     test('respects CLAUDE_CONTEXT_WINDOW', () => {

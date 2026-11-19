@@ -35,6 +35,17 @@ export const TASK_SUBDIRS = [
 export const tasksRoot = (rootDir) => path.join(rootDir, TASKS_DIR);
 
 /**
+ * The git repository a task works in: its `repo` (`--repo`), else this
+ * workspace. Git state, NOTES State lines, the start commit, and the review
+ * scope come from it.
+ *
+ * @param {string} rootDir
+ * @param {TaskState | null | undefined} state
+ * @returns {string}
+ */
+export const taskRepoDir = (rootDir, state) => state?.repo ?? rootDir;
+
+/**
  * @param {string} file
  * @returns {string | null}
  */
@@ -211,18 +222,198 @@ export function writeActive(rootDir, name) {
   writeFileAtomic(file, `${name}\n`);
 }
 
+/*
+ * Session bindings (`tasks/.sessions/<session>.json`).
+ *
+ * `tasks/.active` is one pointer for the whole checkout, but several agent
+ * sessions can work in one checkout at once. Each session therefore keeps its
+ * own binding: the task its commands resolve to, and whether it has worked on
+ * that task yet (`engaged`). Claude's SessionStart hook writes a dormant
+ * binding to the default task; the first `pnpm task` command that changes the
+ * task engages it; `new` and `switch` move it. Hooks act only on an engaged
+ * task, so a session that never touched a task never runs its loop or writes
+ * into its notes. `tasks/.active` stays the default for new sessions and for
+ * callers without a session id.
+ */
+
+export const SESSIONS_DIR = '.sessions';
+/** Session ids become file names: letters, digits, dot, dash, underscore. */
+export const SESSION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+/** Bindings untouched this long are removed (SessionStart prunes them). */
+export const SESSION_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+
 /**
- * Resolve a user query to a task directory name: the active task when the
- * query is empty, otherwise an exact name, the name without its date suffix,
- * or a unique prefix.
+ * @typedef {{ task: string | null, engaged: boolean, updatedAt: string }} SessionBinding
+ */
+
+/**
+ * The calling session: `$TASK_SESSION` (any harness can set it), else Claude
+ * Code's `$CLAUDE_CODE_SESSION_ID`. The first one set decides; null when it
+ * is not a safe id or neither is set.
+ *
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {string | null}
+ */
+export function sessionFromEnv(env) {
+  const id = env.TASK_SESSION || env.CLAUDE_CODE_SESSION_ID;
+  return id && SESSION_ID_RE.test(id) ? id : null;
+}
+
+/**
+ * @param {string} rootDir
+ * @param {string} session
+ */
+const sessionFile = (rootDir, session) =>
+  path.join(tasksRoot(rootDir), SESSIONS_DIR, `${session}.json`);
+
+/**
+ * @param {string | null | undefined} session
+ * @returns {session is string}
+ */
+const isSessionId = (session) =>
+  typeof session === 'string' && SESSION_ID_RE.test(session);
+
+/**
+ * A session's binding; null when there is none or it cannot be read.
+ *
+ * @param {string} rootDir
+ * @param {string | null | undefined} session
+ * @returns {SessionBinding | null}
+ */
+export function readSession(rootDir, session) {
+  if (!isSessionId(session)) return null;
+  const raw = readIfExists(sessionFile(rootDir, session));
+  if (raw === null) return null;
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    return null;
+  }
+  const task =
+    typeof data.task === 'string' && TASK_NAME_RE.test(data.task)
+      ? data.task
+      : data.task === null
+        ? null
+        : undefined;
+  if (task === undefined || typeof data.engaged !== 'boolean') return null;
+  return { task, engaged: data.engaged, updatedAt: String(data.updatedAt) };
+}
+
+/**
+ * Write a session's binding. Returns false (and writes nothing) for a
+ * missing or unsafe session id.
+ *
+ * @param {string} rootDir
+ * @param {string | null | undefined} session
+ * @param {{ task: string | null, engaged: boolean, now?: Date }} binding
+ * @returns {boolean}
+ */
+export function writeSession(
+  rootDir,
+  session,
+  { task, engaged, now = new Date() }
+) {
+  if (!isSessionId(session)) return false;
+  const file = sessionFile(rootDir, session);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  writeFileAtomic(
+    file,
+    `${JSON.stringify({ task, engaged, updatedAt: now.toISOString() }, null, 2)}\n`
+  );
+  return true;
+}
+
+/**
+ * @param {string} rootDir
+ * @param {string | null | undefined} session
+ */
+export function clearSession(rootDir, session) {
+  if (!isSessionId(session)) return;
+  fs.rmSync(sessionFile(rootDir, session), { force: true });
+}
+
+/**
+ * Remove bindings not written for `maxAgeMs`.
+ *
+ * @param {string} rootDir
+ * @param {{ now?: number, maxAgeMs?: number }} [options]
+ * @returns {number} how many were removed
+ */
+export function pruneSessions(
+  rootDir,
+  { now = Date.now(), maxAgeMs = SESSION_MAX_AGE_MS } = {}
+) {
+  const dir = path.join(tasksRoot(rootDir), SESSIONS_DIR);
+  if (!fs.existsSync(dir)) return 0;
+  let removed = 0;
+  for (const entry of fs.readdirSync(dir)) {
+    if (!entry.endsWith('.json')) continue;
+    const file = path.join(dir, entry);
+    if (now - fs.statSync(file).mtimeMs > maxAgeMs) {
+      fs.rmSync(file, { force: true });
+      removed++;
+    }
+  }
+  return removed;
+}
+
+/**
+ * The task a caller's commands resolve to: its session's bound task when
+ * that task exists, else the workspace default (`tasks/.active`).
+ *
+ * @param {string} rootDir
+ * @param {string | null} [session] default: from the environment
+ * @returns {string | null}
+ */
+export function currentTask(rootDir, session = sessionFromEnv(process.env)) {
+  const bound = readSession(rootDir, session)?.task;
+  if (bound && listTaskNames(rootDir).includes(bound)) return bound;
+  return readActive(rootDir);
+}
+
+/**
+ * The task a hook acts on for a session, and whether the session has worked
+ * on it. A session with a binding gets only its bound task (none when the
+ * binding names no task or a task that is gone). A session without one
+ * (started before bindings existed, or no session id) gets the workspace
+ * default, treated as engaged, which is how hooks behaved before sessions.
+ *
+ * @param {string} rootDir
+ * @param {string | null | undefined} session
+ * @returns {{ name: string, engaged: boolean } | null}
+ */
+export function sessionTask(rootDir, session) {
+  const binding = readSession(rootDir, session);
+  if (binding) {
+    return binding.task && listTaskNames(rootDir).includes(binding.task)
+      ? { name: binding.task, engaged: binding.engaged }
+      : null;
+  }
+  const name = readActive(rootDir);
+  return name ? { name, engaged: true } : null;
+}
+
+/**
+ * Resolve a user query to a task directory name: the caller's current task
+ * (`currentTask`) when the query is empty, otherwise an exact name, the name
+ * without its date suffix, or a unique prefix.
  *
  * @param {string} rootDir
  * @param {string | undefined} query
+ * @param {string | null} [session] default: from the environment
  * @returns {string}
  */
-export function resolveTaskName(rootDir, query) {
+export function resolveTaskName(
+  rootDir,
+  query,
+  session = sessionFromEnv(process.env)
+) {
   if (!query) {
-    const active = readActive(rootDir);
+    const active = currentTask(rootDir, session);
     if (active) return active;
     throw new Error(
       'No active task.\nFix: pnpm task list, then pnpm task switch <name> (or pnpm task new <name> --goal "…")'

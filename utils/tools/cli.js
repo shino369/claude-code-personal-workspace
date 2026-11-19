@@ -9,7 +9,7 @@
 import fs from 'fs';
 import path from 'path';
 import { runIfMain } from '../module-runner.js';
-import { readActive } from '../task/store.js';
+import { currentTask } from '../task/store.js';
 import { ROOT_DIR } from '../workspace-config.js';
 import { installHint, loadCatalog } from './catalog.js';
 import { formatList, formatShow } from './format.js';
@@ -395,10 +395,10 @@ export const COMMANDS = {
           }
         : {}),
       ...(options.notes ? { notes: options.notes } : {}),
-      ...((options.task ?? readActive(deps.rootDir))
+      ...((options.task ?? currentTask(deps.rootDir))
         ? {
             task:
-              options.task ?? /** @type {string} */ (readActive(deps.rootDir)),
+              options.task ?? /** @type {string} */ (currentTask(deps.rootDir)),
           }
         : {}),
     };

@@ -20,7 +20,11 @@ import { ROOT_DIR } from '../workspace-config.js';
 import { AGENTS, buildCommand, runAgent } from './adapters.js';
 import { fingerprint, runLoop } from './driver.js';
 import { runReviewLoop } from './review-loop.js';
-import { prepareWorktree, worktreePath } from './worktree.js';
+import {
+  assertWorkspaceRepo,
+  prepareWorktree,
+  worktreePath,
+} from './worktree.js';
 
 export const HELP = `Usage: pnpm loop [task] --agent ${AGENTS.join('|')} [options]
 
@@ -219,6 +223,7 @@ export function main({ argv = process.argv.slice(2), deps = {} } = {}) {
       `${name} has no verify commands, so the loop has no finish line.\nFix: pnpm task set --task ${name} --verify "pnpm check"`
     );
   }
+  assertWorkspaceRepo(name, state, 'pnpm loop');
   if (options.reviewer && !options.review) {
     throw new Error(
       `--reviewer only applies with --review.\nFix: pnpm loop ${name} --agent ${options.agent} --review --reviewer ${options.reviewer}`

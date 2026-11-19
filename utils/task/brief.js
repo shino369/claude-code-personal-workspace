@@ -3,6 +3,8 @@
  * task up cold (goal, next step, last notes, last verify, git state). Used by
  * `pnpm task status` and the Claude SessionStart hook. Pure functions.
  */
+import os from 'os';
+import path from 'path';
 import { formatGit } from './git.js';
 import { formatLocal, parseNotes, parsePlan } from './markdown.js';
 import { freshQuality, formatQuality } from './quality.js';
@@ -21,6 +23,7 @@ export const LINE_WIDTH = 220;
  *   goal: string,
  *   progress: { done: number, total: number },
  *   nextStep: { id: string | null, title: string, status: string, owner: string | null } | null,
+ *   waiting: Array<{ id: string, title: string, note: string | null }>,
  *   next: string | null,
  *   lastVerify: import('./state.js').VerifyResult | null,
  *   loop: import('./state.js').TaskState['loop'] | null,
@@ -30,6 +33,7 @@ export const LINE_WIDTH = 220;
  *   qualityLine: string | null,
  *   e2e: 'required' | 'no',
  *   branch: string | null,
+ *   repo: string | null,
  *   git: GitInfo,
  *   notes: Array<{ heading: string, body: string }>,
  * }} TaskSummary
@@ -50,6 +54,33 @@ function qualityOf(state) {
   if (state.kind !== 'code') return { quality: null, qualityLine: null };
   const quality = state.quality ?? freshQuality();
   return { quality, qualityLine: formatQuality(quality, state.steps) };
+}
+
+/**
+ * The branch the last NOTES entry with a State line saw (null when none
+ * names a branch). The brief compares it with the branch now.
+ *
+ * @param {Array<{ heading: string, body: string }>} notes
+ * @returns {string | null}
+ */
+export function notedBranch(notes) {
+  const branch = notes
+    .map((note) => note.body.match(/^State:\s*branch ([^;\s]+);/m)?.[1])
+    .findLast(Boolean);
+  return branch && branch !== '(detached)' ? branch : null;
+}
+
+/**
+ * A path for display, with the home folder as `~`.
+ *
+ * @param {string} file
+ * @returns {string}
+ */
+export function displayPath(file) {
+  const home = os.homedir();
+  return file.startsWith(`${home}${path.sep}`)
+    ? `~${file.slice(home.length)}`
+    : file;
 }
 
 /**
@@ -86,6 +117,9 @@ export function summarizeTask(task, git) {
             owner: step.owner,
           }
         : null,
+      waiting: state.steps
+        .filter((s) => s.status === 'waiting')
+        .map((s) => ({ id: s.id, title: s.title, note: s.note ?? null })),
       next: state.next ?? lastNext,
       lastVerify: state.lastVerify,
       loop: state.loop,
@@ -93,7 +127,8 @@ export function summarizeTask(task, git) {
       kind: state.kind ?? 'general',
       e2e: state.e2e ?? 'no',
       ...qualityOf(state),
-      branch: state.branch,
+      branch: notedBranch(notes) ?? state.branch,
+      repo: state.repo ?? null,
       git,
       notes,
     };
@@ -115,6 +150,7 @@ export function summarizeTask(task, git) {
     nextStep: open
       ? { id: null, title: open.title, status: 'todo', owner: null }
       : null,
+    waiting: [],
     next: lastNext,
     lastVerify: null,
     loop: null,
@@ -123,7 +159,8 @@ export function summarizeTask(task, git) {
     e2e: 'no',
     quality: null,
     qualityLine: null,
-    branch: null,
+    branch: notedBranch(notes),
+    repo: null,
     git,
     notes,
   };
@@ -185,6 +222,13 @@ export function formatBrief(summary, { active = false } = {}) {
         ? ` (in progress${step.owner ? `, ${step.owner}` : ''})`
         : '';
     lines.push(`Next step: ${id}${step.title}${state}`);
+  } else if (
+    summary.waiting.length > 0 &&
+    summary.progress.done + summary.waiting.length === summary.progress.total
+  ) {
+    lines.push(
+      'Next step: none for you — the rest waits on someone else (below); when it happens: pnpm task step <id> done'
+    );
   } else {
     lines.push(
       summary.progress.total > 0 &&
@@ -192,6 +236,9 @@ export function formatBrief(summary, { active = false } = {}) {
         ? 'Next step: none ready — remaining steps are blocked (pnpm task status --json)'
         : 'Next step: none listed — add one: pnpm task step add "…"'
     );
+  }
+  for (const s of summary.waiting) {
+    lines.push(`Waiting: ${s.id}. ${s.title}${s.note ? ` — ${s.note}` : ''}`);
   }
   if (summary.next) lines.push(`Next (last note): ${summary.next}`);
 
@@ -209,9 +256,14 @@ export function formatBrief(summary, { active = false } = {}) {
       `Loop: on — iteration ${summary.loop.iteration}/${summary.loop.max}; each stop re-runs the fast verify (off: pnpm task set --loop off)`
     );
   }
+  if (summary.repo) {
+    lines.push(
+      `Repo: ${displayPath(summary.repo)} (git state, State lines, and review scope come from it)`
+    );
+  }
   const mismatch =
     summary.branch && git.branch && summary.branch !== git.branch
-      ? ` — ! task branch is ${summary.branch}; switch or confirm with the user`
+      ? ` — ! the last note was on ${summary.branch}; switch or confirm with the user`
       : '';
   lines.push(`Git: ${formatGit(git)}${mismatch}`);
 

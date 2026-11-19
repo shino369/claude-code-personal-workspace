@@ -210,6 +210,28 @@ describe('main', () => {
     );
   });
 
+  test('should refuse a task that works in another repository', () => {
+    const dir = path.join(tasksRoot(repo), NAME);
+    fs.mkdirSync(dir, { recursive: true });
+    const other = path.resolve(repo, '..', 'other-repo');
+    saveState(
+      dir,
+      createState({
+        name: NAME,
+        goal: 'G',
+        verify: ['pnpm test'],
+        now: NOW,
+        repo: other,
+      })
+    );
+    expect(() => run([NAME, '--agent', 'codex'])).toThrow(
+      new RegExp(
+        `works in ${other.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}, not this workspace.*\nFix: work on it interactively`,
+        's'
+      )
+    );
+  });
+
   test('should print the plan on a dry run and start nothing', () => {
     seedTask(repo);
     const { code, out, runAgent } = run(['--agent', 'dsh', '--dry-run']);

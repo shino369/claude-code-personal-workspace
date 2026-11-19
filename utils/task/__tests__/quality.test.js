@@ -234,6 +234,17 @@ describe('decideQuality', () => {
     );
   });
 
+  test('should ask for the review when only steps waiting on someone else are left', () => {
+    const result = decide(
+      code({}, [
+        { id: 's1', status: 'done' },
+        { id: 's2', status: 'waiting' },
+      ])
+    );
+    expect(result.action).toBe('block');
+    expect(result.reason).toContain('run review round 1/2');
+  });
+
   test('should allow a stop while a step is blocked or work is open', () => {
     expect(decide(code({}, [{ id: 's1', status: 'blocked' }])).action).toBe(
       'allow'

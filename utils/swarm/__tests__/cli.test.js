@@ -242,6 +242,19 @@ describe('main', () => {
     );
   });
 
+  test('should refuse a task that works in another repository', async () => {
+    task(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'x']);
+    const file = path.join(repo, 'tasks', TASK, 'state.json');
+    const saved = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ ...saved, repo: path.resolve(repo, '..', 'elsewhere') })
+    );
+    await expect(run(['demo', '--agent', 'claude'])).rejects.toThrow(
+      /works in .*elsewhere, not this workspace/
+    );
+  });
+
   test('should print a dry run', async () => {
     task(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'v']);
     const { code, out } = await run([

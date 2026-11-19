@@ -277,7 +277,10 @@ export function decideQuality({ state, fingerprint }) {
       'Fix each test-first, run pnpm task verify, and mark the step done (pnpm task step <id> done).',
     ]);
   }
-  if (state.steps.some((s) => s.status !== 'done')) return allow();
+  // Steps waiting on someone else do not hold back a review of finished work.
+  if (state.steps.some((s) => s.status !== 'done' && s.status !== 'waiting')) {
+    return allow();
+  }
   if (fingerprint === null) return allow();
   if (rounds < max && fingerprint !== quality.reviewedDiff) {
     return nudge(`review round ${rounds + 1}`, [

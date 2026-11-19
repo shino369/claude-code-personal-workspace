@@ -388,7 +388,9 @@ export function runReviewLoop({
     if (state.steps.some((s) => s.status === 'blocked')) {
       return finish('blocked', 'a step is blocked; the user decides.');
     }
-    const open = state.steps.filter((s) => s.status !== 'done');
+    const open = state.steps.filter(
+      (s) => s.status !== 'done' && s.status !== 'waiting'
+    );
     if (open.length > 0) {
       return finish(
         'steps-open',

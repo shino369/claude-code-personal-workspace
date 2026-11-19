@@ -16,7 +16,7 @@
  */
 import fs from 'fs';
 import { runIfMain } from '#utils/module-runner.js';
-import { readActive } from '#utils/task/store.js';
+import { sessionTask } from '#utils/task/store.js';
 import { ROOT_DIR } from '#utils/workspace-config.js';
 
 export const DEFAULT_CONTEXT_WINDOW = 1_000_000;
@@ -107,14 +107,17 @@ export function getUsageFromTranscript(transcriptPath) {
 }
 
 /**
- * The active task name, or null when none is set or tasks/ is unreadable.
+ * The task this session works on (see `sessionTask`), or null when it has
+ * none or tasks/ is unreadable.
  *
  * @param {string} [rootDir]
+ * @param {string | null} [session] the hook's session id
  * @returns {string | null}
  */
-export function getActiveTask(rootDir = ROOT_DIR) {
+export function getActiveTask(rootDir = ROOT_DIR, session = null) {
   try {
-    return readActive(rootDir);
+    const found = sessionTask(rootDir, session);
+    return found?.engaged ? found.name : null;
   } catch {
     return null;
   }
@@ -168,15 +171,15 @@ export function buildMessage(
 /**
  * Convert hook input into hook output, or null when no warning is needed.
  *
- * @param {{ transcript_path?: string }} [input]
+ * @param {{ transcript_path?: string, session_id?: string }} [input]
  * @param {NodeJS.ProcessEnv} [env]
- * @param {{ activeTask?: () => string | null }} [options]
+ * @param {{ activeTask?: (session: string | null) => string | null }} [options]
  * @returns {HookOutput | null}
  */
 export function processHookInput(
   input,
   env = process.env,
-  { activeTask = getActiveTask } = {}
+  { activeTask = (session) => getActiveTask(ROOT_DIR, session) } = {}
 ) {
   const usage = getUsageFromTranscript(input?.transcript_path);
   if (!usage) return null;
@@ -186,7 +189,7 @@ export function processHookInput(
   const message = buildMessage(
     usagePct,
     contextWindow,
-    usagePct >= THRESHOLDS.warn ? activeTask() : null
+    usagePct >= THRESHOLDS.warn ? activeTask(input?.session_id ?? null) : null
   );
   if (!message) return null;
 

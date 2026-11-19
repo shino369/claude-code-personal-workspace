@@ -1,3 +1,4 @@
+import { spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -14,10 +15,14 @@ import {
   parseFindings,
   recordFindings,
   defaultBranch,
+  hasProductCode,
+  productFiles,
   reviewBase,
   reviewFiles,
   reviewScope,
+  scopeRoot,
   splitRow,
+  taskReviewScope,
 } from '../review.js';
 import { createState, makeSteps } from '../state.js';
 
@@ -158,6 +163,200 @@ describe('reviewBase', () => {
     expect(reviewBase({ quality, taskDir: taskDir() })).toBe('main');
     withCode();
     expect(reviewBase({ quality, taskDir: taskDir() })).toBeNull();
+  });
+
+  test('should not count task scripts as the code under review', () => {
+    fs.mkdirSync(path.join(taskDir(), 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(taskDir(), 'scripts', 'build.mjs'), '');
+    expect(reviewBase({ quality: freshQuality(), taskDir: taskDir() })).toBe(
+      'main'
+    );
+  });
+
+  test('should review the repository of a repo task, even with task code', () => {
+    withCode();
+    expect(
+      reviewBase({
+        quality: freshQuality(),
+        taskDir: taskDir(),
+        repo: '/work/other',
+      })
+    ).toBe('main');
+  });
+});
+
+describe('productFiles', () => {
+  test('should list nothing for a missing task folder', () => {
+    expect(productFiles(path.join(root, 'missing'))).toEqual([]);
+    expect(hasProductCode(path.join(root, 'missing'))).toBe(false);
+  });
+
+  test('should count only JavaScript or TypeScript as product code', () => {
+    const taskDir = path.join(root, 'tasks', NAME);
+    fs.mkdirSync(taskDir, { recursive: true });
+    fs.writeFileSync(path.join(taskDir, 'data.json'), '{}');
+    expect(hasProductCode(taskDir)).toBe(false);
+    fs.writeFileSync(path.join(taskDir, 'main.ts'), '');
+    expect(hasProductCode(taskDir)).toBe(true);
+  });
+
+  test('should list task code outside scripts/', () => {
+    const taskDir = path.join(root, 'tasks', NAME);
+    fs.mkdirSync(path.join(taskDir, 'scripts'), { recursive: true });
+    fs.mkdirSync(path.join(taskDir, 'app'), { recursive: true });
+    fs.writeFileSync(path.join(taskDir, 'scripts', 'x.mjs'), '');
+    fs.writeFileSync(path.join(taskDir, 'app', 'a.js'), '');
+    expect(productFiles(taskDir)).toEqual(['app/a.js']);
+  });
+});
+
+describe('taskReviewScope', () => {
+  test("should fall back to a task's scripts when they are its only work", () => {
+    const taskDir = path.join(root, 'tasks', NAME);
+    fs.mkdirSync(path.join(taskDir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(taskDir, 'scripts', 'x.mjs'), '');
+    const runGit = vi.fn((/** @type {string[]} */ args) =>
+      args[0] === 'merge-base' && args[1] !== '--is-ancestor' ? 'abc' : null
+    );
+
+    expect(
+      taskReviewScope({ rootDir: root, taskDir, state: codeState(), runGit })
+    ).toEqual({
+      base: null,
+      since: null,
+      files: [`tasks/${NAME}/scripts/x.mjs`],
+    });
+  });
+
+  test('should keep an empty git scope when an explicit base was given', () => {
+    const taskDir = path.join(root, 'tasks', NAME);
+    fs.mkdirSync(path.join(taskDir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(taskDir, 'scripts', 'x.mjs'), '');
+    const runGit = vi.fn(() => 'abc');
+
+    expect(
+      taskReviewScope({
+        rootDir: root,
+        taskDir,
+        state: codeState(),
+        base: 'dev',
+        runGit: (args) =>
+          args[0] === 'diff' || args[0] === 'ls-files' ? '' : runGit(),
+      }).files
+    ).toEqual([]);
+  });
+});
+
+describe('scopeRoot', () => {
+  test("should read task code from the workspace and git scopes from the task's repo", () => {
+    const state = { ...codeState(), repo: '/work/other' };
+    expect(scopeRoot(root, state, { base: null, since: null, files: [] })).toBe(
+      root
+    );
+    expect(
+      scopeRoot(root, state, { base: 'main', since: 'a', files: [] })
+    ).toBe('/work/other');
+    expect(
+      scopeRoot(root, codeState(), { base: 'main', since: 'a', files: [] })
+    ).toBe(root);
+  });
+});
+
+describe('reviewScope with real git', () => {
+  /** @type {string} */
+  let repo;
+  /** @param {string[]} args */
+  const git = (args) =>
+    String(
+      spawnSync(
+        'git',
+        [
+          '-c',
+          'user.name=t',
+          '-c',
+          'user.email=t@example.com',
+          '-c',
+          'core.hooksPath=',
+          '-c',
+          'commit.gpgsign=false',
+          ...args,
+        ],
+        { cwd: repo, encoding: 'utf-8' }
+      ).stdout
+    ).trim();
+  /** @param {string} file */
+  const commit = (file) => {
+    fs.writeFileSync(path.join(repo, file), file);
+    git(['add', file]);
+    git(['commit', '-q', '-m', file]);
+    return git(['rev-parse', 'HEAD']);
+  };
+  /** @param {string | null} startCommit */
+  const scope = (startCommit) =>
+    reviewScope({
+      rootDir: root,
+      taskDir: path.join(root, 'tasks', NAME),
+      base: 'main',
+      startCommit,
+      repoDir: repo,
+    });
+
+  beforeEach(() => {
+    repo = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'scope-git-'))
+    );
+    git(['init', '-q', '-b', 'main']);
+    commit('base.js');
+  });
+
+  afterEach(() => {
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  test("should start at the task's first commit on a branch that carries other work", () => {
+    git(['switch', '-q', '-c', 'feat/shared']);
+    commit('other-task.js');
+    const start = git(['rev-parse', 'HEAD']);
+    commit('this-task.js');
+
+    expect(scope(start)).toMatchObject({
+      base: start,
+      since: start,
+      files: ['this-task.js'],
+    });
+  });
+
+  test('should use the branch point when the task started before it', () => {
+    const start = git(['rev-parse', 'HEAD']);
+    commit('merged-elsewhere.js');
+    git(['switch', '-q', '-c', 'feat/late']);
+    commit('this-task.js');
+
+    expect(scope(start)).toMatchObject({
+      base: 'main',
+      files: ['this-task.js'],
+    });
+  });
+
+  test('should use the branch point when the start commit is not in history', () => {
+    git(['switch', '-q', '-c', 'feat/abandoned']);
+    const start = commit('abandoned.js');
+    git(['switch', '-q', 'main']);
+    git(['switch', '-q', '-c', 'feat/fresh']);
+    commit('this-task.js');
+
+    expect(scope(start)).toMatchObject({
+      base: 'main',
+      files: ['this-task.js'],
+    });
+  });
+
+  test('should keep a repo folder named tasks/ in the scope', () => {
+    fs.mkdirSync(path.join(repo, 'tasks'));
+    git(['switch', '-q', '-c', 'feat/x']);
+    commit(path.join('tasks', 'job.js'));
+
+    expect(scope(null).files).toEqual(['tasks/job.js']);
   });
 });
 
@@ -345,6 +544,16 @@ describe('openRound', () => {
       steps: [...codeState().steps, { ...makeSteps(['fix: x'])[0], id: 's2' }],
     });
     expect(open(fixOpen).round).toBe(1);
+  });
+
+  test('should not wait for steps that wait on someone else', () => {
+    const waiting = codeState({
+      steps: [
+        ...codeState().steps,
+        { ...makeSteps(['Upload'])[0], id: 's2', status: 'waiting' },
+      ],
+    });
+    expect(open(waiting).round).toBe(1);
   });
 });
 

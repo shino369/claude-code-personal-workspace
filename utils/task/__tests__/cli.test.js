@@ -6,13 +6,22 @@ import {
   COMMANDS,
   HELP,
   detectAgent,
+  doneBlockers,
   listTasks,
   main,
   parseArgs,
   sessionBrief,
   stateLine,
 } from '../cli.js';
-import { TEMPLATES_DIR, loadTask, readActive, tasksRoot } from '../store.js';
+import {
+  TEMPLATES_DIR,
+  loadTask,
+  readActive,
+  readSession,
+  tasksRoot,
+  updateState,
+  writeSession,
+} from '../store.js';
 
 /** @type {string} */
 let root;
@@ -418,6 +427,259 @@ describe('status, switch, and sessionBrief', () => {
   });
 });
 
+describe('sessions', () => {
+  /** @param {string} session */
+  const as = (session) => ({
+    env: { TASK_AGENT: 'tester', TASK_SESSION: session },
+  });
+  const binding = (/** @type {string} */ session) => readSession(root, session);
+
+  test('should bind the session that creates a task, engaged', () => {
+    run(['new', 'alpha', '--goal', 'A', '--step', 'One'], as('sess-a'));
+    expect(binding('sess-a')).toMatchObject({
+      task: 'alpha-261117',
+      engaged: true,
+    });
+    expect(readActive(root)).toBe('alpha-261117');
+  });
+
+  test("should keep each session's commands on its own task when another session creates one", () => {
+    run(['new', 'alpha', '--goal', 'A', '--step', 'One'], as('sess-a'));
+    run(['new', 'beta', '--goal', 'B', '--step', 'One'], as('sess-b'));
+    expect(readActive(root)).toBe('beta-261117');
+
+    run(['step', 's1', 'done'], as('sess-a'));
+    run(['set', '--verify', 'pytest'], as('sess-a'));
+
+    const alpha = loadTask(root, 'alpha-261117').state;
+    const beta = loadTask(root, 'beta-261117').state;
+    expect(alpha?.steps[0].status).toBe('done');
+    expect(alpha?.verify).toEqual(['pytest']);
+    expect(beta?.steps[0].status).toBe('todo');
+    expect(beta?.verify).toEqual([]);
+  });
+
+  test('should resolve a dormant binding without engaging it on read-only commands', async () => {
+    newTask();
+    writeSession(root, 'sess-c', { task: NAME, engaged: false });
+    expect(run(['status'], as('sess-c')).out).toContain(
+      `[Task] ${NAME} (active task)`
+    );
+    run(['next'], as('sess-c'));
+    const runCheck = vi.fn(async () => ({
+      ok: true,
+      skipped: true,
+      parts: [],
+    }));
+    await run(['check'], { ...as('sess-c'), runCheck }).code;
+    expect(binding('sess-c')?.engaged).toBe(false);
+  });
+
+  test('should engage the binding on a command that changes the task', () => {
+    newTask();
+    writeSession(root, 'sess-c', { task: NAME, engaged: false });
+    run(['note', '--done', 'x', '--next', 'y'], as('sess-c'));
+    expect(binding('sess-c')).toMatchObject({ task: NAME, engaged: true });
+  });
+
+  test('should bind an unbound session to the default task on its first change', () => {
+    newTask();
+    run(['step', 's1', 'start'], as('sess-new'));
+    expect(binding('sess-new')).toMatchObject({ task: NAME, engaged: true });
+  });
+
+  test('should leave the binding alone for --task and an already engaged task', () => {
+    newTask();
+    legacyTask();
+    writeSession(root, 'sess-d', { task: NAME, engaged: true, now: NOW });
+    run(['note', '-m', 'x', '--task', 'old'], as('sess-d'));
+    run(['note', '-m', 'y'], as('sess-d'));
+    expect(binding('sess-d')).toEqual({
+      task: NAME,
+      engaged: true,
+      updatedAt: NOW.toISOString(),
+    });
+  });
+
+  test('should move the binding and the default on switch', () => {
+    newTask();
+    legacyTask();
+    run(['switch', 'old'], as('sess-e'));
+    expect(binding('sess-e')).toMatchObject({
+      task: 'old-251101',
+      engaged: true,
+    });
+    expect(readActive(root)).toBe('old-251101');
+  });
+
+  test('should unbind the session and clear the default when its task is closed', () => {
+    newTask(['--kind', 'general']);
+    run(['step', 's1', 'done'], as('sess-f'));
+    run(['step', 's2', 'done'], as('sess-f'));
+    run(['done'], as('sess-f'));
+    expect(binding('sess-f')).toMatchObject({ task: null, engaged: false });
+    expect(readActive(root)).toBeNull();
+  });
+
+  test("should keep another session's binding when closing a task by name", () => {
+    newTask(['--kind', 'general']);
+    legacyTask();
+    writeSession(root, 'sess-g', { task: 'old-251101', engaged: true });
+    run(['step', 's1', 'done', '--task', NAME]);
+    run(['step', 's2', 'done', '--task', NAME]);
+    run(['done', NAME], as('sess-g'));
+    expect(binding('sess-g')?.task).toBe('old-251101');
+  });
+
+  test("should mark the session's task as active in list and the brief", () => {
+    newTask();
+    legacyTask();
+    writeSession(root, 'sess-h', { task: 'old-251101', engaged: false });
+    expect(run(['list'], as('sess-h')).out).toMatch(
+      /^\* old-251101 {2}\[open, untracked, active task\]/m
+    );
+    /** @type {any} */
+    const deps = { rootDir: root, git: () => GIT, env: {} };
+    expect(sessionBrief(deps, 'sess-h')).toContain('[Task] old-251101');
+    expect(sessionBrief(deps)).toContain(`[Task] ${NAME}`);
+  });
+});
+
+describe('repo', () => {
+  /** @type {string} */
+  let repo;
+  /** @type {import('../review.js').RunGit} */
+  const runGit = (args, cwd) => {
+    if (args.join(' ') === 'rev-parse --show-toplevel') {
+      return fs.existsSync(path.join(cwd, '.git')) ? cwd : null;
+    }
+    if (args.join(' ') === 'rev-parse HEAD') {
+      return cwd === repo ? 'repohead' : 'roothead';
+    }
+    return null;
+  };
+  /** @param {string} cwd */
+  const git = (cwd) =>
+    cwd === repo
+      ? { branch: 'feat/r', changed: 3, diffStat: null }
+      : { branch: 'feat/x', changed: 0, diffStat: null };
+  const deps = { runGit, git };
+
+  beforeEach(() => {
+    repo = fs.mkdtempSync(path.join(os.tmpdir(), 'task-repo-'));
+    fs.mkdirSync(path.join(repo, '.git'));
+    fs.mkdirSync(path.join(root, '.git'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  test('should record the repo with its branch and start commit', () => {
+    run(['new', 'demo', '--goal', 'G', '--repo', repo], deps);
+    expect(state()).toMatchObject({
+      repo,
+      branch: 'feat/r',
+      startCommit: 'repohead',
+    });
+  });
+
+  test('should take git state for status and notes from the repo', () => {
+    run(['new', 'demo', '--goal', 'G', '--repo', repo], deps);
+    const { out } = run(['status'], deps);
+    expect(out).toContain(`Repo: ${repo}`);
+    expect(out).toContain('Git: branch feat/r; uncommitted yes (3 files)');
+    run(['note', '--done', 'x', '--next', 'y'], deps);
+    expect(read('NOTES.md')).toContain(
+      'State: branch feat/r; uncommitted yes (3 files); verify not run'
+    );
+  });
+
+  test('should treat the workspace itself as no repo', () => {
+    run(['new', 'demo', '--goal', 'G', '--repo', root], deps);
+    expect(state()).not.toHaveProperty('repo');
+    expect(state().startCommit).toBe('roothead');
+  });
+
+  test('should refuse a missing folder or one outside git', () => {
+    const plain = path.join(repo, 'plain');
+    fs.mkdirSync(plain);
+    expect(() =>
+      run(
+        ['new', 'demo', '--goal', 'G', '--repo', path.join(repo, 'nope')],
+        deps
+      )
+    ).toThrow(/--repo .*nope: no such folder/);
+    expect(() =>
+      run(['new', 'demo', '--goal', 'G', '--repo', plain], {
+        ...deps,
+        runGit: () => null,
+      })
+    ).toThrow(/is not in a git repository/);
+  });
+
+  test('should expand ~ and resolve a relative path from where the command ran', () => {
+    vi.spyOn(os, 'homedir').mockReturnValue(path.dirname(repo));
+    run(
+      ['new', 'demo', '--goal', 'G', '--repo', `~/${path.basename(repo)}`],
+      deps
+    );
+    expect(state().repo).toBe(repo);
+    run(['set', '--repo', path.basename(repo)], {
+      ...deps,
+      env: { TASK_AGENT: 'tester', INIT_CWD: path.dirname(repo) },
+    });
+    expect(state().repo).toBe(repo);
+  });
+
+  test('should set and clear the repo, restarting the start commit and review base', () => {
+    newTask(['--verify', 'pnpm test']);
+    updateState(root, NAME, (s) => ({
+      ...s,
+      quality: {
+        .../** @type {import('../quality.js').Quality} */ (s.quality),
+        base: 'roothead',
+      },
+    }));
+
+    const { out } = run(['set', '--repo', repo], deps);
+    expect(out).toContain(`Repo: ${repo} (start commit repohead)`);
+    expect(state()).toMatchObject({
+      repo,
+      branch: 'feat/r',
+      startCommit: 'repohead',
+      quality: { base: null },
+    });
+
+    run(['set', '--repo', 'none'], deps);
+    expect(state()).toMatchObject({ repo: null, startCommit: 'roothead' });
+  });
+
+  test('should refuse to change the repo while a review round is open', () => {
+    newTask(['--verify', 'pnpm test']);
+    updateState(root, NAME, (s) => ({
+      ...s,
+      quality: {
+        .../** @type {import('../quality.js').Quality} */ (s.quality),
+        phase: 'review',
+        reviewRounds: 1,
+      },
+    }));
+    expect(() => run(['set', '--repo', repo], deps)).toThrow(
+      /Review round 1 is open/
+    );
+  });
+
+  test('should adopt a hand-written task with a repo', () => {
+    legacyTask();
+    run(['init', 'old', '--repo', repo], deps);
+    expect(loadTask(root, 'old-251101').state).toMatchObject({
+      repo,
+      startCommit: 'repohead',
+    });
+  });
+});
+
 describe('next', () => {
   test('should print the next step and how to start or finish it', () => {
     newTask();
@@ -503,6 +765,111 @@ describe('step', () => {
     );
     expect(() => run(['step', 's1'])).toThrow(/Usage: pnpm task step s1 start/);
     expect(() => run(['step', 's1', 'finish'])).toThrow(/start\|done/);
+  });
+});
+
+describe('step waiting and remove', () => {
+  test('should mark a step waiting with what it waits for, and note it', () => {
+    newTask();
+    const { out } = run(['step', 's2', 'waiting', '-m', 'the user signs in']);
+    expect(out).toContain('s2. Two → waiting');
+    expect(state().steps[1]).toMatchObject({
+      status: 'waiting',
+      note: 'the user signs in',
+    });
+    expect(read('NOTES.md')).toContain(
+      '(step s2 waiting)\n\ns2. Two → waiting: the user signs in'
+    );
+  });
+
+  test('should say no step is left for the agent when the rest waits on someone else', () => {
+    newTask();
+    run(['step', 's1', 'done']);
+    expect(
+      run(['step', 's2', 'waiting', '-m', 'the user signs in']).out
+    ).toContain(
+      'No step left for you: s2 waits on someone else. When it happens: pnpm task step s2 done'
+    );
+  });
+
+  test('should remove a step with a reason and note it', () => {
+    newTask();
+    const { out } = run(['step', 's2', 'remove', '-m', 'written by mistake']);
+    expect(out).toBe('Removed s2. Two (written by mistake)');
+    expect(state().steps.map((s) => s.id)).toEqual(['s1']);
+    expect(read('NOTES.md')).toContain(
+      '(step s2 removed)\n\ns2. Two removed: written by mistake'
+    );
+  });
+
+  test('should need a reason to remove a step', () => {
+    newTask();
+    expect(() => run(['step', 's2', 'remove'])).toThrow(
+      /Removing a step needs a reason: -m "why"/
+    );
+  });
+
+  test('should name a waiting step without a note', () => {
+    newTask(['--kind', 'general']);
+    const s = state();
+    expect(
+      doneBlockers({
+        ...s,
+        steps: s.steps.map((step) => ({ ...step, status: 'waiting' })),
+      })[0]
+    ).toMatch(/^s1 waits on someone else \(no note\)\./);
+  });
+
+  test('should keep a waiting step from closing the task, with how to finish it', () => {
+    newTask(['--kind', 'general']);
+    run(['step', 's1', 'done']);
+    run(['step', 's2', 'waiting', '-m', 'store review']);
+    expect(() => run(['done'])).toThrow(
+      /s2 waits on someone else \(store review\)\. When it happens: pnpm task step s2 done/
+    );
+  });
+});
+
+describe('rm', () => {
+  test("should move paths to the trash, inside the workspace and the task's repo", () => {
+    const repo = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'rm-repo-'))
+    );
+    try {
+      fs.mkdirSync(path.join(repo, '.git'));
+      fs.writeFileSync(path.join(root, 'stale.txt'), 'x');
+      fs.writeFileSync(path.join(repo, 'old.js'), 'y');
+      /** @type {import('../review.js').RunGit} */
+      const runGit = (args, cwd) =>
+        args.join(' ') === 'rev-parse --show-toplevel' ? cwd : null;
+      run(['new', 'demo', '--goal', 'G', '--repo', repo], { runGit });
+
+      const { out } = run(['rm', 'stale.txt', path.join(repo, 'old.js')]);
+
+      expect(out).toMatch(
+        /^Moved 2 path\(s\) to tasks\/\.trash\/\d{8}-\d{6}\/ \(kept 7 days\)\./
+      );
+      expect(out).toContain('Restore: mv ');
+      expect(fs.existsSync(path.join(root, 'stale.txt'))).toBe(false);
+      expect(fs.existsSync(path.join(repo, 'old.js'))).toBe(false);
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test('should work without any task, in the workspace only', () => {
+    fs.writeFileSync(path.join(root, 'stale.txt'), 'x');
+    const parsed = JSON.parse(run(['rm', 'stale.txt', '--json']).out);
+    expect(parsed).toMatchObject({
+      ok: true,
+      moved: [{ from: expect.stringContaining('stale.txt') }],
+    });
+  });
+
+  test('should use the repo of the task given with --task', () => {
+    newTask();
+    fs.writeFileSync(path.join(root, 'stale.txt'), 'x');
+    expect(run(['rm', 'stale.txt', '--task', 'demo']).code).toBe(0);
   });
 });
 
@@ -594,6 +961,18 @@ describe('verify', () => {
       ok: false,
       failed: 'pnpm test',
     });
+  });
+
+  test('should record what the passing verify ran on, except with --no-check', () => {
+    newTask(['--verify', 'pnpm test']);
+    /** @type {import('../review.js').RunGit} */
+    const runGit = (args) =>
+      ({ 'rev-parse': 'h', status: '', diff: '', 'ls-files': '' })[args[0]] ??
+      null;
+    run(['verify'], { runGit });
+    expect(state().lastVerify?.print).toMatch(/^[0-9a-f]{16}$/);
+    run(['verify', '--no-check'], { runGit });
+    expect(state().lastVerify).not.toHaveProperty('print');
   });
 
   test('should use the fast list with --fast, and fall back without one', () => {
@@ -796,7 +1175,7 @@ describe('review', () => {
     expect(state().quality?.base).toBe('start123');
   });
 
-  test('should review the whole feature branch, not only since the task started', () => {
+  test('should review only since the task started on a branch that already had other work', () => {
     run(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'v'], {
       runGit: fakeGit({ head: 'mid789', mergeBase: 'fork000' }),
     });
@@ -804,11 +1183,74 @@ describe('review', () => {
     run(['verify']);
     const runGit = fakeGit({ head: 'tip999', mergeBase: 'fork000' });
     const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
-    expect(parsed.scope).toMatchObject({ base: 'main', since: 'fork000' });
+    expect(parsed.scope).toMatchObject({ base: 'mid789', since: 'mid789' });
     expect(runGit).toHaveBeenCalledWith(
-      ['diff', '--name-only', 'fork000'],
+      ['diff', '--name-only', 'mid789'],
       root
     );
+  });
+
+  test('should review the whole branch with an explicit --base', () => {
+    run(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'v'], {
+      runGit: fakeGit({ head: 'mid789', mergeBase: 'fork000' }),
+    });
+    run(['step', 's1', 'done']);
+    run(['verify']);
+    const runGit = fakeGit({ head: 'tip999', mergeBase: 'fork000' });
+    const parsed = JSON.parse(
+      run(['review', '--json', '--base', 'main'], { runGit }).out
+    );
+    expect(parsed.scope).toMatchObject({ base: 'main', since: 'fork000' });
+  });
+
+  test("should review a repo task's changes in its repository", () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'review-repo-'));
+    try {
+      fs.writeFileSync(path.join(repo, 'a.js'), 'v1');
+      /** @type {import('../review.js').RunGit} */
+      const runGit = vi.fn((args, cwd) =>
+        args.join(' ') === 'rev-parse --show-toplevel'
+          ? cwd
+          : args[0] === 'rev-parse'
+            ? cwd === repo
+              ? 'r-start'
+              : 'w-head'
+            : args[0] === 'merge-base'
+              ? args[1] === '--is-ancestor'
+                ? ''
+                : 'r-fork'
+              : args[0] === 'diff' && cwd === repo
+                ? 'a.js\ntasks/t.js'
+                : ''
+      );
+      run(['new', 'demo', '--goal', 'G', '--step', 'One', '--verify', 'v'], {
+        runGit,
+      });
+      run(['set', '--repo', repo], { runGit });
+      run(['step', 's1', 'done']);
+      run(['verify']);
+
+      const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
+
+      expect(parsed.scope).toEqual({
+        base: 'r-start',
+        since: 'r-start',
+        files: ['a.js', 'tasks/t.js'],
+      });
+      expect(runGit).toHaveBeenCalledWith(
+        ['diff', '--name-only', 'r-start'],
+        repo
+      );
+      const brief = fs.readFileSync(
+        path.join(tasksRoot(root), NAME, 'reviews', `BRIEF_${NAME}-r1.md`),
+        'utf-8'
+      );
+      expect(brief).toContain(`Repository: ${repo}`);
+      expect(brief).toContain(`git -C ${repo} diff r-start -- <file>`);
+      expect(state().quality?.reviewedDiff).toMatch(/^[0-9a-f]{16}$/);
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
   });
 
   test("should review against the repository's default branch", () => {
@@ -1370,6 +1812,7 @@ test('COMMANDS should list every documented command', () => {
       'new',
       'next',
       'review',
+      'rm',
       'note',
       'set',
       'status',

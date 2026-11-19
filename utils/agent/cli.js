@@ -16,7 +16,7 @@ import { isLinkedWorktree } from '../loop/worktree.js';
 import { runIfMain } from '../module-runner.js';
 import { INNER_LOOP_ENV } from '../task/loop.js';
 import { formatLocal } from '../task/markdown.js';
-import { readActive, resolveTaskName, tasksRoot } from '../task/store.js';
+import { currentTask, resolveTaskName, tasksRoot } from '../task/store.js';
 import { commandFor } from '../tools/registry.js';
 import { ROOT_DIR } from '../workspace-config.js';
 import { relPosix } from '../paths.js';
@@ -158,7 +158,7 @@ function stamp(date) {
  */
 export function recordPath({ rootDir, agent, out, task, now }) {
   if (out) return path.resolve(rootDir, out);
-  const name = task ? resolveTaskName(rootDir, task) : readActive(rootDir);
+  const name = task ? resolveTaskName(rootDir, task) : currentTask(rootDir);
   const id = stamp(now);
   if (name) {
     return path.join(

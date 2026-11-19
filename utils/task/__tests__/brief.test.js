@@ -47,6 +47,37 @@ describe('summarizeTask', () => {
     });
   });
 
+  test('should take the expected branch from the last note with a State line', () => {
+    const task = makeTask({
+      notes: notes(
+        '## a — x\n\nState: branch feat/old; uncommitted no; verify pass',
+        '## b — x\n\nState: branch feat/new; uncommitted yes (2 files); verify fail',
+        '## c — x (step s1 done)\n\ns1. One → done'
+      ),
+    });
+    expect(summarizeTask(task, GIT).branch).toBe('feat/new');
+  });
+
+  test('should fall back to the recorded branch without a usable State line', () => {
+    const detached = makeTask({
+      notes: notes('## a — x\n\nState: branch (detached); uncommitted no'),
+    });
+    const none = makeTask({
+      notes: notes('## a — x\n\nState: not a git repo'),
+    });
+    expect(summarizeTask(detached, GIT).branch).toBe('feat/x');
+    expect(summarizeTask(none, GIT).branch).toBe('feat/x');
+  });
+
+  test('should carry the task repo, or null', () => {
+    const task = makeTask();
+    const state = /** @type {import('../state.js').TaskState} */ (task.state);
+    expect(summarizeTask(task, GIT).repo).toBeNull();
+    expect(
+      summarizeTask({ ...task, state: { ...state, repo: '/w/r' } }, GIT).repo
+    ).toBe('/w/r');
+  });
+
   test('should treat a state.json written before kinds existed as general', () => {
     const task = makeTask();
     const {
@@ -240,11 +271,44 @@ describe('formatBrief', () => {
     ).toContain('Last verify: FAIL at 2026-11-17 08:09 — `pnpm x`');
   });
 
-  test('should flag a branch mismatch', () => {
+  test('should flag a branch that differs from the last note', () => {
     expect(brief({ branch: 'feat/other' })).toContain(
-      '! task branch is feat/other'
+      'Git: branch feat/x; uncommitted no — ! the last note was on feat/other; switch or confirm with the user'
     );
     expect(brief({ git: { ...GIT, branch: null } })).not.toContain('!');
+  });
+
+  test('should list steps waiting on someone else, and say none is for the agent', () => {
+    const task = makeTask();
+    const state = /** @type {import('../state.js').TaskState} */ (task.state);
+    const steps = state.steps.map((s, i) => ({
+      ...s,
+      status:
+        i === 0
+          ? /** @type {const} */ ('done')
+          : /** @type {const} */ ('waiting'),
+      ...(i === 1 ? { note: 'the user submits it' } : {}),
+    }));
+    const text = formatBrief(
+      summarizeTask({ ...task, state: { ...state, steps } }, GIT)
+    );
+    expect(text).toContain(
+      'Next step: none for you — the rest waits on someone else'
+    );
+    expect(text).toContain('Waiting: s2. Two — the user submits it');
+    const bare = steps.map(({ note: _n, ...s }) => s);
+    expect(
+      formatBrief(
+        summarizeTask({ ...task, state: { ...state, steps: bare } }, GIT)
+      )
+    ).toContain('Waiting: s2. Two\n');
+  });
+
+  test('should name the repo the task works in', () => {
+    expect(brief({ repo: '/work/other-repo' })).toContain(
+      'Repo: /work/other-repo (git state, State lines, and review scope come from it)'
+    );
+    expect(brief({})).not.toContain('Repo:');
   });
 
   test('should show the last note, truncation, and earlier headings', () => {

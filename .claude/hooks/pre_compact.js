@@ -5,17 +5,17 @@
  * size at that moment. The summary that survives compaction may drop
  * details; this entry keeps a timestamped checkpoint on disk.
  *
- * No active task means nothing to do. Fails open: errors exit 0 silently.
+ * No task the session worked on (see `sessionTask`) means nothing to do. Fails open: errors exit 0 silently.
  */
 import { runIfMain } from '#utils/module-runner.js';
 import { stateLine, writeNote } from '#utils/task/cli.js';
 import { gitInfo } from '#utils/task/git.js';
 import { defaultDeps } from '#utils/task/deps.js';
-import { loadTask, readActive } from '#utils/task/store.js';
+import { loadTask, sessionTask, taskRepoDir } from '#utils/task/store.js';
 import { ROOT_DIR } from '#utils/workspace-config.js';
 
 /**
- * @typedef {{ trigger?: string }} HookInput
+ * @typedef {{ trigger?: string, session_id?: string }} HookInput
  * @typedef {import('#utils/task/git.js').GitInfo} GitInfo
  */
 
@@ -29,12 +29,14 @@ export function processHookInput(
   { rootDir = ROOT_DIR, now = new Date(), git = (cwd) => gitInfo(cwd) } = {}
 ) {
   try {
-    const name = readActive(rootDir);
-    if (!name) return null;
+    // Only the task this session worked on: never another session's notes.
+    const found = sessionTask(rootDir, input?.session_id);
+    if (!found?.engaged) return null;
+    const { name } = found;
 
     const deps = defaultDeps({ rootDir, git });
     const task = loadTask(rootDir, name);
-    const info = git(rootDir);
+    const info = git(taskRepoDir(rootDir, task.state));
     writeNote(deps, task, {
       at: now,
       agent: 'claude',

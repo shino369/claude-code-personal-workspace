@@ -7,9 +7,11 @@
  * sit next to it. Run `pnpm task help` for commands.
  */
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { runIfMain } from '../module-runner.js';
 import {
+  displayPath,
   formatBrief,
   formatNoActiveBrief,
   statusLabel,
@@ -34,6 +36,7 @@ import {
   idleReason,
   makeSteps,
   nextStep,
+  removeStep,
   setStepStatus,
   taskDirName,
   TASK_NAME_RE,
@@ -42,18 +45,23 @@ import {
 import {
   STATE_FILE,
   appendNotes,
+  currentTask,
   listTaskNames,
   loadTask,
   readActive,
+  readSession,
   resolveTaskName,
   saveState,
   scaffoldTask,
+  sessionFromEnv,
+  taskRepoDir,
   tasksRoot,
   updateState,
   writeActive,
+  writeSession,
 } from './store.js';
 import { formatCheck, withCheck } from './check.js';
-import { FRESH_LOOP, parseMax } from './loop.js';
+import { FRESH_LOOP, parseMax, workPrint } from './loop.js';
 import { countFindings, freshQuality, toFix } from './quality.js';
 import {
   findingsTemplate,
@@ -63,8 +71,10 @@ import {
   parseFindings,
   recordFindings,
   reviewFiles,
+  scopeRoot,
   taskReviewScope,
 } from './review.js';
+import { trashPaths } from './trash.js';
 import { summarize, tail } from './verify.js';
 import { relPosix } from '../paths.js';
 
@@ -76,10 +86,12 @@ Start / resume
   switch <name>                 Make <name> the active task
   new <name> --goal "…"         Create tasks/<name>-<yymmdd>/ and make it active
       [--acceptance "…"] [--step "…"]… [--verify "cmd"]… [--verify-fast "cmd"]…
-      [--kind code|general] [--e2e required|no]
+      [--kind code|general] [--e2e required|no] [--repo <path>]
                                 --kind code (the default when --verify is given): the
-                                inner loop starts on and pnpm task check runs before verify
-  init [name] [--goal "…"] [--verify "cmd"]… [--kind …] [--e2e …]
+                                inner loop starts on and pnpm task check runs before verify;
+                                --repo: the git repository the task works in, when it is
+                                not this workspace (git state, notes, review scope)
+  init [name] [--goal "…"] [--verify "cmd"]… [--kind …] [--e2e …] [--repo <path>]
                                 Add state.json to a hand-written task (steps from plan.md)
 
 Work
@@ -87,9 +99,11 @@ Work
   claim [id]                    Atomically take the next ready step (or <id>) for --agent;
                                 exit 2 when nothing is ready (prints why)
   step add "title" [--deps s1,s2]
-  step <id> start|done|blocked|todo [-m "…"] [--force]
-                                Update a step (blocked needs -m "reason"; todo releases a
+  step <id> start|done|blocked|waiting|todo [-m "…"] [--force]
+                                Update a step (blocked needs -m "reason"; waiting = on
+                                someone else, needs -m "who does what"; todo releases a
                                 claim; --force takes over a step another agent claimed)
+  step <id> remove -m "why"     Remove a step written by mistake
   note --done "…" --next "…" [--open "…"] [-m "…"]
                                 Append a NOTES.md entry (State line is filled in for you)
   check [--fix]                 Lint (ESLint), format-check (Prettier), and typecheck (tsc)
@@ -100,6 +114,7 @@ Work
                                 Change the goal or replace the verify command lists
   set --kind code|general [--e2e required|no]
                                 Change the task kind (code turns the loop on) or e2e mode
+  set --repo <path>|none         Change the task's repository (restarts its start commit)
   set --loop on|off [--loop-max N]
                                 Inner loop (Claude Stop hook): keep working until the
                                 fast verify passes, at most N times (default 5)
@@ -112,6 +127,9 @@ Work
                                 an explicit --base is used as given)
   review record [file]          Read the triaged findings table; CONFIRMED must-fix/high
                                 findings become fix: steps
+  rm <path>…                    Delete files or folders inside this workspace or the task's
+                                repo without asking: they move to tasks/.trash/<time>/ for
+                                7 days (refuses .git, task records, and secrets)
   template review|study [--name <kebab>]
                                 Copy a REVIEW_/STUDIES_ template into the task
   done [-m "…"] [--force]       Close the task (needs every step done and a passing verify;
@@ -143,6 +161,7 @@ const VALUE_FLAGS = {
   '--kind': 'kind',
   '--e2e': 'e2e',
   '--base': 'base',
+  '--repo': 'repo',
 };
 const REPEATABLE = new Set(['step', 'verify', 'verifyFast']);
 const BOOLEAN_FLAGS = {
@@ -162,6 +181,7 @@ const BOOLEAN_FLAGS = {
  *   goal?: string, acceptance?: string, deps?: string, message?: string,
  *   done?: string, next?: string, open?: string, agent?: string, task?: string, name?: string,
  *   loop?: string, loopMax?: string, kind?: string, e2e?: string, base?: string,
+ *   repo?: string,
  *   step: string[], verify: string[], verifyFast: string[],
  *   json: boolean, fast: boolean, all: boolean, force: boolean, help: boolean,
  *   fix: boolean, noCheck: boolean,
@@ -254,7 +274,7 @@ function updatedAt(task) {
  * @returns {Array<{ name: string, status: string, tracked: boolean, active: boolean, next: string, updated: string, updatedMs: number }>}
  */
 export function listTasks(deps) {
-  const active = readActive(deps.rootDir);
+  const active = currentTask(deps.rootDir, sessionOf(deps));
   return listTaskNames(deps.rootDir)
     .map((name) => {
       const task = loadTask(deps.rootDir, name);
@@ -279,19 +299,22 @@ export function listTasks(deps) {
 }
 
 /**
- * The brief shown on session start: the active task, or a pick list.
- * Returns null when there are no tasks at all.
+ * The brief shown on session start: the session's task (its binding, else
+ * the workspace default), or a pick list. Returns null when there are no
+ * tasks at all.
  *
  * @param {Deps} deps
+ * @param {string | null} [session] default: from deps.env
  * @returns {string | null}
  */
-export function sessionBrief(deps) {
-  const active = readActive(deps.rootDir);
+export function sessionBrief(deps, session = sessionOf(deps)) {
+  const active = currentTask(deps.rootDir, session);
   if (active) {
     const task = loadTask(deps.rootDir, active);
-    return formatBrief(summarizeTask(task, deps.git(deps.rootDir)), {
-      active: true,
-    });
+    return formatBrief(
+      summarizeTask(task, deps.git(taskRepoDir(deps.rootDir, task.state))),
+      { active: true }
+    );
   }
   const tasks = listTasks(deps);
   return tasks.length === 0 ? null : formatNoActiveBrief(tasks);
@@ -307,7 +330,7 @@ export function sessionBrief(deps) {
 export function stateLine(deps, task) {
   const verify = task.state?.lastVerify;
   const result = verify ? (verify.ok ? 'pass' : 'fail') : 'not run';
-  return `${formatGit(deps.git(deps.rootDir))}; verify ${result}`;
+  return `${formatGit(deps.git(taskRepoDir(deps.rootDir, task.state)))}; verify ${result}`;
 }
 
 /**
@@ -322,12 +345,49 @@ export function writeNote(deps, task, entry) {
 }
 
 /**
+ * The calling session (`$TASK_SESSION`, else Claude Code's session id).
+ *
+ * @param {Deps} deps
+ * @returns {string | null}
+ */
+const sessionOf = (deps) => sessionFromEnv(deps.env ?? {});
+
+/**
+ * Mark `name` as the task the session works on, so the session's hooks
+ * (inner loop, pre-compact note) apply to it. No write when it already is.
+ *
+ * @param {Deps} deps
+ * @param {string | null} session
+ * @param {string} name
+ */
+function bindSession(deps, session, name) {
+  const binding = readSession(deps.rootDir, session);
+  if (binding?.task === name && binding.engaged) return;
+  writeSession(deps.rootDir, session, {
+    task: name,
+    engaged: true,
+    now: deps.now(),
+  });
+}
+
+/**
+ * The task a command acts on. A name given with --task (or, for commands
+ * that take one, as the first argument) is a one-off: the session's binding
+ * stays as it is. Otherwise it is the session's current task, and a command
+ * that changes the task (`engage`) binds the session to it.
+ *
  * @param {Options} options
  * @param {Deps} deps
+ * @param {{ engage: boolean, positional?: boolean }} mode
  * @returns {string}
  */
-function targetName(options, deps) {
-  return resolveTaskName(deps.rootDir, options.task ?? options.positionals[1]);
+function pickTask(options, deps, { engage, positional = false }) {
+  const explicit =
+    options.task ?? (positional ? options.positionals[1] : undefined);
+  const session = sessionOf(deps);
+  const name = resolveTaskName(deps.rootDir, explicit, session);
+  if (!explicit && engage) bindSession(deps, session, name);
+  return name;
 }
 
 /**
@@ -419,8 +479,9 @@ export function doneBlockers(state) {
   const quality = state.quality ?? freshQuality();
   // Fix steps of open findings are reported with the findings below.
   const fixSteps = new Set(toFix(quality).map((f) => f.step));
+  const waiting = state.steps.filter((s) => s.status === 'waiting');
   const unfinished = state.steps.filter(
-    (s) => s.status !== 'done' && !fixSteps.has(s.id)
+    (s) => s.status !== 'done' && s.status !== 'waiting' && !fixSteps.has(s.id)
   );
   /** @type {string[]} */
   const blockers =
@@ -429,6 +490,11 @@ export function doneBlockers(state) {
           `${unfinished.length} step(s) not done: ${unfinished.map((s) => `${s.id} (${s.status})`).join(', ')}. Fix: finish them (pnpm task next), or drop what is out of scope: pnpm task step <id> done -m "dropped: <why>"`,
         ]
       : [];
+  for (const s of waiting) {
+    blockers.push(
+      `${s.id} waits on someone else (${s.note ?? 'no note'}). When it happens: pnpm task step ${s.id} done; if it no longer applies: pnpm task step ${s.id} done -m "dropped: <why>"`
+    );
+  }
   if (state.kind !== 'code') return blockers;
   if (quality.reviewRounds === 0) {
     blockers.push(
@@ -478,6 +544,50 @@ export function defaultAcceptance(options, { kind, e2e }) {
   return parts.join('; ');
 }
 
+/**
+ * The repository a `--repo` value names: the top level of its git
+ * repository, or null for this workspace (and for `none`). `~` is the home
+ * folder; a relative path is resolved from where the command ran.
+ *
+ * @param {Deps} deps
+ * @param {string} value
+ * @returns {string | null}
+ */
+export function resolveRepo(deps, value) {
+  if (value === 'none') return null;
+  const home = /^~(?=$|[\\/])/.test(value);
+  const dir = path.resolve(
+    deps.env.INIT_CWD ?? deps.rootDir,
+    home ? path.join(os.homedir(), value.slice(1)) : value
+  );
+  if (!fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory()) {
+    throw new Error(`--repo ${value}: no such folder (${dir}).`);
+  }
+  const top = deps.runGit(['rev-parse', '--show-toplevel'], dir);
+  if (!top) {
+    throw new Error(
+      `--repo ${value}: ${dir} is not in a git repository.\nFix: pass a folder inside a git repository`
+    );
+  }
+  const real = (/** @type {string} */ file) => fs.realpathSync(file);
+  return real(top) === real(deps.rootDir) ? null : path.resolve(top);
+}
+
+/**
+ * Where a task starts, read from its repository: the branch and HEAD.
+ *
+ * @param {Deps} deps
+ * @param {string | null} repo
+ * @returns {{ branch: string | null, startCommit: string | null }}
+ */
+function repoStart(deps, repo) {
+  const dir = repo ?? deps.rootDir;
+  return {
+    branch: deps.git(dir).branch,
+    startCommit: deps.runGit(['rev-parse', 'HEAD'], dir),
+  };
+}
+
 /** @type {Record<string, (options: Options, deps: Deps) => number | Promise<number>>} */
 export const COMMANDS = {
   help(_options, deps) {
@@ -495,16 +605,18 @@ export const COMMANDS = {
     const name = taskDirName(raw, now);
     const agent = detectAgent(options, deps.env);
     const mode = resolveKind(options);
+    const repo =
+      options.repo === undefined ? null : resolveRepo(deps, options.repo);
     const state = createState({
       name,
       goal: options.goal,
       steps: makeSteps(options.step),
       verify: options.verify,
       verifyFast: options.verifyFast,
-      branch: deps.git(deps.rootDir).branch,
       agent,
       now,
-      startCommit: deps.runGit(['rev-parse', 'HEAD'], deps.rootDir),
+      ...repoStart(deps, repo),
+      repo,
       ...mode,
     });
     const dir = scaffoldTask({
@@ -516,6 +628,7 @@ export const COMMANDS = {
       templatesDir: deps.templatesDir,
     });
     writeActive(deps.rootDir, name);
+    bindSession(deps, sessionOf(deps), name);
     output(
       deps,
       options,
@@ -532,7 +645,7 @@ export const COMMANDS = {
   },
 
   init(options, deps) {
-    const name = targetName(options, deps);
+    const name = pickTask(options, deps, { engage: true, positional: true });
     const task = loadTask(deps.rootDir, name);
     if (task.state) {
       throw new Error(`${name} already has ${STATE_FILE}.`);
@@ -542,17 +655,19 @@ export const COMMANDS = {
     if (!goal) {
       throw new Error(`${name}/plan.md has no Goal: line. Pass --goal "…".`);
     }
+    const repo =
+      options.repo === undefined ? null : resolveRepo(deps, options.repo);
     const state = createState({
       name,
       goal,
       steps: makeSteps(plan.steps),
       verify: options.verify,
       verifyFast: options.verifyFast,
-      branch: deps.git(deps.rootDir).branch,
       agent: detectAgent(options, deps.env),
       now: deps.now(),
-      // Adopted now: on main, later reviews cover the changes from here on.
-      startCommit: deps.runGit(['rev-parse', 'HEAD'], deps.rootDir),
+      // Adopted now: later reviews cover the changes from here on.
+      ...repoStart(deps, repo),
+      repo,
       ...resolveKind(options),
     });
     saveState(task.dir, state);
@@ -589,16 +704,19 @@ export const COMMANDS = {
   },
 
   status(options, deps) {
-    const name = targetName(options, deps);
+    const name = pickTask(options, deps, { engage: false, positional: true });
+    const task = loadTask(deps.rootDir, name);
     const summary = summarizeTask(
-      loadTask(deps.rootDir, name),
-      deps.git(deps.rootDir)
+      task,
+      deps.git(taskRepoDir(deps.rootDir, task.state))
     );
     output(
       deps,
       options,
       summary,
-      formatBrief(summary, { active: name === readActive(deps.rootDir) })
+      formatBrief(summary, {
+        active: name === currentTask(deps.rootDir, sessionOf(deps)),
+      })
     );
     return 0;
   },
@@ -606,8 +724,9 @@ export const COMMANDS = {
   switch(options, deps) {
     const query = options.positionals[1] ?? options.task;
     if (!query) throw new Error('Usage: pnpm task switch <name>');
-    const name = resolveTaskName(deps.rootDir, query);
+    const name = resolveTaskName(deps.rootDir, query, sessionOf(deps));
     writeActive(deps.rootDir, name);
+    bindSession(deps, sessionOf(deps), name);
     output(
       deps,
       options,
@@ -618,7 +737,7 @@ export const COMMANDS = {
   },
 
   next(options, deps) {
-    const name = targetName(options, deps);
+    const name = pickTask(options, deps, { engage: false, positional: true });
     const { state } = loadTask(deps.rootDir, name);
     if (!state) {
       throw new Error(
@@ -638,7 +757,7 @@ export const COMMANDS = {
   },
 
   claim(options, deps) {
-    const name = resolveTaskName(deps.rootDir, options.task);
+    const name = pickTask(options, deps, { engage: true });
     const agent = detectAgent(options, deps.env);
     const now = deps.now();
     const id = options.positionals[1];
@@ -675,7 +794,7 @@ export const COMMANDS = {
         `Usage: pnpm task step add "title" | pnpm task step <id> ${STEP_STATUSES.join('|')}`
       );
     }
-    const name = resolveTaskName(deps.rootDir, options.task);
+    const name = pickTask(options, deps, { engage: true });
     const agent = detectAgent(options, deps.env);
     const now = deps.now();
 
@@ -712,16 +831,18 @@ export const COMMANDS = {
     }
 
     const action = second;
+    if (action === 'remove') return removeStepCommand(options, deps, name);
     /** @type {Record<string, import('./state.js').StepStatus>} */
     const actions = {
       start: 'in_progress',
       done: 'done',
       blocked: 'blocked',
+      waiting: 'waiting',
       todo: 'todo',
     };
     if (!action || !Object.hasOwn(actions, action)) {
       throw new Error(
-        `Usage: pnpm task step ${first} start|done|blocked|todo [-m "…"]`
+        `Usage: pnpm task step ${first} start|done|blocked|waiting|todo|remove [-m "…"]`
       );
     }
     /** @type {import('./state.js').Step | undefined} */
@@ -745,7 +866,7 @@ export const COMMANDS = {
     );
     const step = /** @type {import('./state.js').Step} */ (changed);
 
-    if (action === 'done' || action === 'blocked') {
+    if (action === 'done' || action === 'blocked' || action === 'waiting') {
       const task = loadTask(deps.rootDir, name);
       writeNote(deps, task, {
         at: now,
@@ -756,6 +877,9 @@ export const COMMANDS = {
     }
 
     const following = nextStep(state);
+    const waitingIds = state.steps
+      .filter((s) => s.status === 'waiting')
+      .map((s) => s.id);
     output(
       deps,
       options,
@@ -764,7 +888,9 @@ export const COMMANDS = {
         `${step.id}. ${step.title} → ${step.status}`,
         following
           ? `Next step: ${following.id}. ${following.title}`
-          : 'No ready step left. When verify passes: pnpm task done',
+          : waitingIds.length > 0
+            ? `No step left for you: ${waitingIds.join(', ')} waits on someone else. When it happens: pnpm task step ${waitingIds[0]} done`
+            : 'No ready step left. When verify passes: pnpm task done',
       ].join('\n')
     );
     return 0;
@@ -776,7 +902,7 @@ export const COMMANDS = {
         'Usage: pnpm task note --done "what changed" --next "the single next action" [--open "…"]'
       );
     }
-    const name = resolveTaskName(deps.rootDir, options.task);
+    const name = pickTask(options, deps, { engage: true });
     const agent = detectAgent(options, deps.env);
     const now = deps.now();
     const task = loadTask(deps.rootDir, name);
@@ -806,7 +932,7 @@ export const COMMANDS = {
   },
 
   verify(options, deps) {
-    const name = resolveTaskName(deps.rootDir, options.task);
+    const name = pickTask(options, deps, { engage: true });
     const task = loadTask(deps.rootDir, name);
     if (!task.state) {
       throw new Error(
@@ -833,7 +959,15 @@ export const COMMANDS = {
       },
     });
     const now = deps.now();
-    const lastVerify = summarize(results, now);
+    // What the run saw, so the inner loop does not repeat a pass (not when the
+    // check was skipped: the inner loop always runs it).
+    const print = options.noCheck
+      ? null
+      : workPrint(deps, task.state, task.dir);
+    const lastVerify = {
+      ...summarize(results, now),
+      ...(print ? { print } : {}),
+    };
     updateState(deps.rootDir, name, (state) => ({ ...state, lastVerify }), {
       now,
       agent: detectAgent(options, deps.env),
@@ -867,12 +1001,16 @@ export const COMMANDS = {
       options.loop === undefined &&
       options.loopMax === undefined &&
       options.kind === undefined &&
-      options.e2e === undefined
+      options.e2e === undefined &&
+      options.repo === undefined
     ) {
       throw new Error(
-        'Usage: pnpm task set [--goal "…"] [--verify "cmd"]… [--verify-fast "cmd"]… (each list replaces the old one) [--loop on|off] [--loop-max N] [--kind code|general] [--e2e required|no]'
+        'Usage: pnpm task set [--goal "…"] [--verify "cmd"]… [--verify-fast "cmd"]… (each list replaces the old one) [--loop on|off] [--loop-max N] [--kind code|general] [--e2e required|no] [--repo <path>|none]'
       );
     }
+    const repo =
+      options.repo === undefined ? undefined : resolveRepo(deps, options.repo);
+    const start = repo === undefined ? null : repoStart(deps, repo);
     const mode = parseKind(options);
     if (options.loop !== undefined && !['on', 'off'].includes(options.loop)) {
       throw new Error(`--loop must be on or off (got "${options.loop}")`);
@@ -881,7 +1019,7 @@ export const COMMANDS = {
       options.loopMax === undefined
         ? undefined
         : parseMax(options.loopMax, '--loop-max');
-    const name = resolveTaskName(deps.rootDir, options.task);
+    const name = pickTask(options, deps, { engage: true });
     const state = updateState(
       deps.rootDir,
       name,
@@ -901,8 +1039,23 @@ export const COMMANDS = {
             `${name} has no verify commands, so the loop has no finish line.\nFix: pnpm task set --verify "<test command>" ${becomesCode ? '--kind code' : '--loop on'}`
           );
         }
+        if (start && current.quality?.phase === 'review') {
+          throw new Error(
+            `Review round ${current.quality.reviewRounds} is open, and its scope comes from the task's repository.\nFix: finish the round (pnpm task review record), then change the repo`
+          );
+        }
         return {
           ...current,
+          ...(start
+            ? {
+                repo: /** @type {string | null} */ (repo),
+                ...start,
+                // The old base is a commit of the old repository.
+                ...(current.quality
+                  ? { quality: { ...current.quality, base: null } }
+                  : {}),
+              }
+            : {}),
           ...(mode.kind ? { kind: mode.kind } : {}),
           ...(becomesCode && !current.quality
             ? { quality: freshQuality() }
@@ -928,6 +1081,11 @@ export const COMMANDS = {
       { ok: true, task: name, state },
       [
         `Updated ${name}: verify = ${state.verify.join(' && ') || '(none)'}; fast = ${state.verifyFast.join(' && ') || '(same as verify)'}`,
+        ...(start
+          ? [
+              `Repo: ${state.repo ? displayPath(state.repo) : 'this workspace'} (start commit ${String(state.startCommit).slice(0, 12)})`,
+            ]
+          : []),
         state.loop.enabled
           ? `Inner loop: on (max ${state.loop.max}) — in Claude Code, each stop re-runs the fast verify until it passes. Turn off: pnpm task set --loop off`
           : 'Inner loop: off',
@@ -945,7 +1103,7 @@ export const COMMANDS = {
         'Usage: pnpm task review [--base <ref>] [--force] | pnpm task review record [file]'
       );
     }
-    const name = resolveTaskName(deps.rootDir, options.task);
+    const name = pickTask(options, deps, { engage: true });
     const task = loadTask(deps.rootDir, name);
     if (!task.state) {
       throw new Error(
@@ -970,7 +1128,10 @@ export const COMMANDS = {
         `Nothing to review for ${name}: no files changed since ${scope.base} (commit ${String(scope.since).slice(0, 7)}).${noStart} If the work is already committed there, review against the commit before it.\nFix: pnpm task review --base <the commit before the task's first commit>`
       );
     }
-    const print = fingerprint(deps.rootDir, scope.files);
+    const print = fingerprint(
+      scopeRoot(deps.rootDir, task.state, scope),
+      scope.files
+    );
     const now = deps.now();
     const agent = detectAgent(options, deps.env);
     let round = 0;
@@ -1049,7 +1210,7 @@ export const COMMANDS = {
         'Usage: pnpm task template review|study [--name <kebab>]'
       );
     }
-    const name = resolveTaskName(deps.rootDir, options.task);
+    const name = pickTask(options, deps, { engage: true });
     const label = options.name ?? name.replace(DATE_SUFFIX_RE, '');
     if (!TASK_NAME_RE.test(label)) {
       throw new Error(`Invalid --name "${label}": use lowercase kebab-case`);
@@ -1080,8 +1241,36 @@ export const COMMANDS = {
     return 0;
   },
 
+  rm(options, deps) {
+    const paths = options.positionals.slice(1);
+    // The operation scope: this workspace, plus the repository of the task
+    // this session works on (or the one named with --task).
+    const name = options.task
+      ? resolveTaskName(deps.rootDir, options.task, sessionOf(deps))
+      : currentTask(deps.rootDir, sessionOf(deps));
+    const repo = name ? loadTask(deps.rootDir, name).state?.repo : null;
+    const { batch, moved } = trashPaths({
+      rootDir: deps.rootDir,
+      scopes: [deps.rootDir, ...(repo ? [repo] : [])],
+      paths,
+      cwd: deps.env.INIT_CWD ?? deps.rootDir,
+      now: deps.now(),
+    });
+    output(
+      deps,
+      options,
+      { ok: true, batch, moved },
+      [
+        `Moved ${moved.length} path(s) to ${relPosix(deps.rootDir, batch)}/ (kept 7 days).`,
+        ...moved.map(({ from }) => `  ${displayPath(from)}`),
+        `Restore: mv "${moved[0].to}" "${moved[0].from}" (same for the others)`,
+      ].join('\n')
+    );
+    return 0;
+  },
+
   async check(options, deps) {
-    const name = targetName(options, deps);
+    const name = pickTask(options, deps, { engage: false, positional: true });
     const task = loadTask(deps.rootDir, name);
     const result = await deps.runCheck({
       rootDir: deps.rootDir,
@@ -1093,7 +1282,7 @@ export const COMMANDS = {
   },
 
   done(options, deps) {
-    const name = targetName(options, deps);
+    const name = pickTask(options, deps, { engage: false, positional: true });
     const task = loadTask(deps.rootDir, name);
     if (!task.state) {
       throw new Error(
@@ -1136,10 +1325,63 @@ export const COMMANDS = {
       state: stateLine(deps, task),
     });
     if (readActive(deps.rootDir) === name) writeActive(deps.rootDir, null);
+    const session = sessionOf(deps);
+    if (readSession(deps.rootDir, session)?.task === name) {
+      writeSession(deps.rootDir, session, {
+        task: null,
+        engaged: false,
+        now,
+      });
+    }
     output(deps, options, { ok: true, task: name }, `Closed ${name}.`);
     return 0;
   },
 };
+
+/**
+ * `pnpm task step <id> remove -m "why"`: drop a step written by mistake.
+ *
+ * @param {Options} options
+ * @param {Deps} deps
+ * @param {string} name
+ * @returns {number}
+ */
+function removeStepCommand(options, deps, name) {
+  const id = options.positionals[1];
+  if (!options.message) {
+    throw new Error(
+      `Removing a step needs a reason: -m "why" (pnpm task step ${id} remove -m "…")`
+    );
+  }
+  const now = deps.now();
+  const agent = detectAgent(options, deps.env);
+  /** @type {import('./state.js').Step | undefined} */
+  let removed;
+  updateState(
+    deps.rootDir,
+    name,
+    (current) => {
+      const result = removeStep(current, id);
+      removed = result.step;
+      return result.state;
+    },
+    { now, agent }
+  );
+  const step = /** @type {import('./state.js').Step} */ (removed);
+  writeNote(deps, loadTask(deps.rootDir, name), {
+    at: now,
+    agent,
+    label: `step ${step.id} removed`,
+    message: `${step.id}. ${step.title} removed: ${options.message}`,
+  });
+  output(
+    deps,
+    options,
+    { ok: true, task: name, removed: step },
+    `Removed ${step.id}. ${step.title} (${options.message})`
+  );
+  return 0;
+}
 
 /**
  * `pnpm task review record [file]`: close the open round with its findings.
@@ -1149,7 +1391,7 @@ export const COMMANDS = {
  * @returns {number}
  */
 function recordReview(options, deps) {
-  const name = resolveTaskName(deps.rootDir, options.task);
+  const name = pickTask(options, deps, { engage: true });
   const task = loadTask(deps.rootDir, name);
   if (!task.state) {
     throw new Error(

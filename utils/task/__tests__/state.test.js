@@ -1,16 +1,19 @@
+import path from 'path';
+import { freshQuality } from '../quality.js';
 import {
-  STATE_VERSION,
   addStep,
   assertValidState,
   claimStep,
   createState,
-  idleReason,
   formatYymmdd,
+  idleReason,
   makeSteps,
   nextStep,
   progress,
   readySteps,
+  removeStep,
   setStepStatus,
+  STATE_VERSION,
   taskDirName,
   validateState,
 } from '../state.js';
@@ -105,6 +108,20 @@ describe('validateState', () => {
     expect(validateState(state)).toEqual([]);
   });
 
+  test('should accept a work print on lastVerify and reject a non-string one', () => {
+    const lastVerify = { at: 'x', ok: true, failed: null, summary: 's' };
+    expect(
+      validateState(makeState({ lastVerify: { ...lastVerify, print: 'ab12' } }))
+    ).toEqual([]);
+    expect(
+      validateState(
+        makeState({
+          lastVerify: { ...lastVerify, print: /** @type {any} */ (7) },
+        })
+      )
+    ).toEqual(['lastVerify must be null or { at, ok, failed, summary }']);
+  });
+
   test('should reject a non-object lastVerify and loop', () => {
     const errors = validateState({ ...makeState(), lastVerify: 'x', loop: [] });
     expect(errors).toEqual([
@@ -166,6 +183,20 @@ describe('validateState', () => {
     );
   });
 
+  test('should accept an absolute repo path or null and reject anything else', () => {
+    const repo = path.resolve('/work/other-repo');
+    expect(validateState({ ...makeState(), repo })).toEqual([]);
+    expect(validateState({ ...makeState(), repo: null })).toEqual([]);
+    expect(validateState({ ...makeState(), repo: 'relative/dir' })).toEqual([
+      'repo must be an absolute path or null',
+    ]);
+    expect(validateState({ ...makeState(), repo: 3 })).toEqual([
+      'repo must be an absolute path or null',
+    ]);
+    expect(createState({ name: 'x', goal: 'G', repo }).repo).toBe(repo);
+    expect(createState({ name: 'x', goal: 'G' })).not.toHaveProperty('repo');
+  });
+
   test('should reject an unknown kind or e2e mode', () => {
     expect(validateState({ ...makeState(), kind: 'app', e2e: 'yes' })).toEqual([
       'kind must be one of code, general',
@@ -202,7 +233,7 @@ describe('validateState', () => {
       'steps[0] must be an object',
       'steps[1].id must be a string',
       'steps[1].title must be a string',
-      'steps[1].status must be one of todo, in_progress, blocked, done',
+      'steps[1].status must be one of todo, in_progress, blocked, waiting, done',
       'steps[1].deps must be a string array',
       'steps[1].owner must be a string or null',
       'steps[1].note must be a string',
@@ -418,6 +449,86 @@ describe('readySteps', () => {
     expect(readySteps(state).map((s) => s.id)).toEqual(['s1', 's3']);
     state.steps[0].status = 'done';
     expect(readySteps(state).map((s) => s.id)).toEqual(['s2', 's3']);
+  });
+});
+
+describe('waiting steps', () => {
+  test('should need to say what the step waits for', () => {
+    expect(() =>
+      setStepStatus(makeState(), { id: 's1', status: 'waiting' })
+    ).toThrow(/A waiting step needs to say what it waits for/);
+  });
+
+  test('should never be the next or a claimable step', () => {
+    const state = makeState();
+    const { state: next } = setStepStatus(state, {
+      id: 's1',
+      status: 'waiting',
+      note: 'the user uploads the build',
+    });
+    expect(next.steps[0]).toMatchObject({
+      status: 'waiting',
+      note: 'the user uploads the build',
+    });
+    expect(readySteps(next).map((s) => s.id)).toEqual(['s2', 's3']);
+    expect(nextStep(next)?.id).toBe('s2');
+  });
+
+  test('should be listed by idleReason', () => {
+    const state = makeState();
+    for (const step of state.steps) step.status = 'done';
+    state.steps[2].status = 'waiting';
+    expect(idleReason(state)).toBe('waiting on someone else: s3');
+  });
+});
+
+describe('removeStep', () => {
+  test('should remove a step and return it', () => {
+    const { state, step } = removeStep(makeState(), 's2');
+    expect(step.id).toBe('s2');
+    expect(state.steps.map((s) => s.id)).toEqual(['s1', 's3']);
+  });
+
+  test('should refuse an unknown step', () => {
+    expect(() => removeStep(makeState(), 's9')).toThrow(
+      /Unknown step "s9" \(steps: s1, s2, s3\)/
+    );
+    expect(() => removeStep(makeState({ steps: [] }), 's1')).toThrow(
+      /\(steps: none\)/
+    );
+  });
+
+  test('should refuse a step another step depends on', () => {
+    const state = makeState();
+    state.steps[2].deps = ['s2'];
+    expect(() => removeStep(state, 's2')).toThrow(/s3 depends on s2.*\nFix: /s);
+  });
+
+  test('should refuse a step that fixes a review finding', () => {
+    const state = {
+      ...makeState(),
+      quality: {
+        ...freshQuality(),
+        reviewRounds: 1,
+        findings: [
+          {
+            id: 'r1-1',
+            round: 1,
+            file: 'a.js',
+            line: null,
+            severity: /** @type {const} */ ('high'),
+            claim: 'c',
+            scenario: 's',
+            verdict: /** @type {const} */ ('CONFIRMED'),
+            reason: 'r',
+            step: 's1',
+          },
+        ],
+      },
+    };
+    expect(() => removeStep(state, 's1')).toThrow(
+      /s1 fixes review finding r1-1/
+    );
   });
 });
 
