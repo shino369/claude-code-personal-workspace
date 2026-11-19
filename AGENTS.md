@@ -108,21 +108,22 @@ In `plan.md`, edit the Goal, Acceptance, and Decisions by hand. The Steps block 
 
 ### 4.2 Work and log progress
 
-| When                                 | Run                                                         |
-| ------------------------------------ | ----------------------------------------------------------- |
-| Pick up the next step                | `pnpm task next`, then `pnpm task step <id> start`          |
-| Another agent works on the same task | `pnpm task claim` (atomic: takes the next free ready step)  |
-| A step is finished                   | `pnpm task step <id> done -m "what changed"`                |
-| A step cannot continue               | `pnpm task step <id> blocked -m "why"`                      |
-| A step waits on the user or others   | `pnpm task step <id> waiting -m "who does what"`            |
-| A step was added by mistake          | `pnpm task step <id> remove -m "why"`                       |
-| New work appears                     | `pnpm task step add "title" [--deps s1,s2]`                 |
-| Check the work                       | `pnpm task verify` (`--fast` for the quick subset)          |
-| Change the goal or verify commands   | `pnpm task set --verify "pnpm check" [--verify-fast "…"]`   |
-| Keep working until verify passes     | `pnpm task set --loop on [--loop-max N]` (Claude Stop hook) |
-| End of every session (required)      | `pnpm task note --done "…" --next "…" [--open "…"]`         |
-| Write a review or study              | `pnpm task template review` / `pnpm task template study`    |
-| Every step done and verify passes    | `pnpm task done` (refuses open steps; `--force` overrides)  |
+| When                                 | Run                                                           |
+| ------------------------------------ | ------------------------------------------------------------- |
+| Pick up the next step                | `pnpm task next`, then `pnpm task step <id> start`            |
+| Another agent works on the same task | `pnpm task claim` (atomic: takes the next free ready step)    |
+| A step is finished                   | `pnpm task step <id> done -m "what changed"`                  |
+| A step cannot continue               | `pnpm task step <id> blocked -m "why"`                        |
+| A step waits on the user or others   | `pnpm task step <id> waiting -m "who does what"`              |
+| A step was added by mistake          | `pnpm task step <id> remove -m "why"`                         |
+| New work appears                     | `pnpm task step add "title" [--deps s1,s2]`                   |
+| Check the work                       | `pnpm task verify` (`--fast` for the quick subset)            |
+| Change the goal or verify commands   | `pnpm task set --verify "pnpm check" [--verify-fast "…"]`     |
+| Keep working until verify passes     | `pnpm task set --loop on [--loop-max N]` (Claude Stop hook)   |
+| End of every session (required)      | `pnpm task note --done "…" --next "…" [--open "…"]`           |
+| Write a review or study              | `pnpm task template review` / `pnpm task template study`      |
+| Every step done and verify passes    | `pnpm task done` (refuses open steps; `--force` overrides)    |
+| Reopen a closed task                 | `pnpm task reopen <name> -m "why"`, then `pnpm task step add` |
 
 `pnpm task note` appends (never rewrites) this entry to `NOTES.md` and fills in `State:` for you.
 Write the same shape by hand only when the CLI cannot run:
@@ -156,7 +157,8 @@ yourself.
 
 1. Run `pnpm task status`. It prints the active task's goal, progress, next step, last verify,
    git state, and last note. No active task? `pnpm task list`, pick the task the user means (ask if
-   unclear), then `pnpm task switch <name>`.
+   unclear), then `pnpm task switch <name>`. The work continues a closed task? Find it with
+   `pnpm task list --all` and run `pnpm task reopen <name> -m "why"`.
 2. Compare the `Git:` line with the last note's `State:`. If they differ (branch, uncommitted
    files), report the difference to the user first.
 3. Do the `Next step` (or `Next (last note)`).

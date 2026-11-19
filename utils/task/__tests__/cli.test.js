@@ -1800,6 +1800,146 @@ describe('done', () => {
   });
 });
 
+describe('reopen', () => {
+  const statePath = () => path.join(tasksRoot(root), NAME, 'state.json');
+  /** @param {(s: any) => void} edit */
+  const patch = (edit) => {
+    const s = JSON.parse(fs.readFileSync(statePath(), 'utf-8'));
+    edit(s);
+    fs.writeFileSync(statePath(), JSON.stringify(s, null, 2));
+  };
+  /** A closed code task that had `rounds` review rounds. */
+  const closedCode = (rounds = 2) => {
+    newTask(['--verify', 'pnpm test']);
+    run(['step', 's1', 'done']);
+    run(['step', 's2', 'done']);
+    run(['verify']);
+    patch((s) => {
+      s.quality.reviewRounds = rounds;
+      s.quality.phase = 'complete';
+      s.quality.reviewedDiff = 'old-print';
+      s.quality.base = 'abc123';
+      s.quality.nudged = 'old-nudge';
+      s.loop.iteration = 3;
+      s.loop.halted = true;
+    });
+    run(['done']);
+  };
+  const runGit = (/** @type {string[]} */ args) =>
+    args[0] === 'rev-parse' ? 'f00dcafe' : null;
+
+  test('should refuse without a reason', () => {
+    closedCode();
+    expect(() => run(['reopen', 'demo'])).toThrow(
+      /Reopening a task needs a reason: -m "why" \(pnpm task reopen demo-261117 -m "…"\)/
+    );
+    expect(state().status).toBe('done');
+  });
+
+  test('should refuse a task that is not closed', () => {
+    newTask();
+    expect(() => run(['reopen', '-m', 'more'])).toThrow(
+      /demo-261117 is not closed \(active\)\.\nFix: pnpm task switch demo-261117/
+    );
+  });
+
+  test('should point a hand-written task at init', () => {
+    legacyTask();
+    expect(() => run(['reopen', 'old', '-m', 'more'])).toThrow(
+      /pnpm task init old-251101/
+    );
+  });
+
+  test('should need a name once the task is closed and no task is active', () => {
+    closedCode();
+    expect(() => run(['reopen', '-m', 'more'])).toThrow(/No active task/);
+  });
+
+  test('should make the task active again with a clean loop and no stale verify', () => {
+    closedCode();
+    const { out } = run(['reopen', 'demo', '-m', 'Store asked for changes'], {
+      runGit,
+    });
+    expect(out).toBe(
+      `Reopened ${NAME} (active task). Next: pnpm task step add "…" for the new work, then pnpm task next`
+    );
+    expect(state()).toMatchObject({
+      status: 'active',
+      next: null,
+      lastVerify: null,
+      startCommit: 'f00dcafe',
+      branch: GIT.branch,
+      loop: { enabled: true, iteration: 0, halted: false },
+    });
+    expect(readActive(root)).toBe(NAME);
+    expect(read('NOTES.md')).toContain(
+      '— tester (reopened)\n\nTask reopened: Store asked for changes\nState:'
+    );
+  });
+
+  test('should continue the review rounds and allow new ones', () => {
+    closedCode(2);
+    run(['reopen', 'demo', '-m', 'follow-up'], { runGit });
+    expect(state().quality).toMatchObject({
+      phase: 'build',
+      reviewRounds: 2,
+      roundsBefore: 2,
+      maxRounds: 4,
+      reviewedDiff: null,
+      base: null,
+      nudged: null,
+    });
+  });
+
+  test('should start the review rounds of a task closed before they existed', () => {
+    closedCode();
+    patch((s) => {
+      delete s.quality;
+    });
+    run(['reopen', 'demo', '-m', 'old task']);
+    expect(state().quality).toMatchObject({
+      phase: 'build',
+      reviewRounds: 0,
+      roundsBefore: 0,
+      maxRounds: 2,
+    });
+  });
+
+  test('should bind the calling session to the reopened task', () => {
+    closedCode();
+    run(['new', 'other', '--goal', 'O', '--step', 'One']);
+    run(['reopen', 'demo', '-m', 'more'], {
+      env: { TASK_AGENT: 'tester', TASK_SESSION: 'sess-r' },
+    });
+    expect(readSession(root, 'sess-r')).toMatchObject({
+      task: NAME,
+      engaged: true,
+    });
+    expect(readActive(root)).toBe(NAME);
+  });
+
+  test('should print JSON', () => {
+    closedCode();
+    expect(
+      JSON.parse(run(['reopen', 'demo', '-m', 'more', '--json']).out)
+    ).toEqual({ ok: true, task: NAME, status: 'active' });
+  });
+
+  test('should keep a reopened code task open until a round runs after it', () => {
+    closedCode(2);
+    run(['reopen', 'demo', '-m', 'more']);
+    run(['verify']);
+    expect(() => run(['done'])).toThrow(
+      /No review round ran since the task was reopened\. Fix: pnpm task review/
+    );
+    patch((s) => {
+      s.quality.reviewRounds = 3;
+      s.quality.phase = 'complete';
+    });
+    expect(run(['done']).out).toBe(`Closed ${NAME}.`);
+  });
+});
+
 test('COMMANDS should list every documented command', () => {
   expect(Object.keys(COMMANDS).sort()).toEqual(
     [
@@ -1811,6 +1951,7 @@ test('COMMANDS should list every documented command', () => {
       'list',
       'new',
       'next',
+      'reopen',
       'review',
       'rm',
       'note',

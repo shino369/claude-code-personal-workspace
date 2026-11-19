@@ -43,8 +43,11 @@ export const DEFAULT_MAX_ROUNDS = 2;
  *   reviewedDiff: string | null,
  *   base?: string | null,
  *   nudged?: string | null,
+ *   roundsBefore?: number,
  *   findings: Finding[],
  * }} Quality
+ *   roundsBefore: the rounds run before the task was last reopened; a code
+ *   task needs a round after them before it can close again.
  */
 
 /** @returns {Quality} */
@@ -130,6 +133,13 @@ export function validateQuality(quality, stepIds) {
   }
   if (q.nudged !== undefined && q.nudged !== null && !isString(q.nudged)) {
     errors.push('quality.nudged must be a string or null');
+  }
+  if (
+    q.roundsBefore !== undefined &&
+    (!isCount(q.roundsBefore) ||
+      Number(q.roundsBefore) > Number(q.reviewRounds))
+  ) {
+    errors.push('quality.roundsBefore must be an int from 0 to reviewRounds');
   }
   if (!Array.isArray(q.findings)) {
     errors.push('quality.findings must be an array');

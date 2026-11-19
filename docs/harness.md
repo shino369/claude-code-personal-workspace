@@ -203,7 +203,8 @@ plan ─▶ build test-first ─▶ e2e (if required) ─▶ review round N ─�
 **The `done` gate.** `pnpm task done` refuses any task with a step not done (drop out-of-scope
 steps with `pnpm task step <id> done -m "dropped: …"`), and a code task until:
 
-- at least one review round has been recorded;
+- at least one review round has been recorded (after a `pnpm task reopen`: one since the
+  reopen; reopening also clears the last verify and allows two more rounds);
 - no round is still open;
 - every CONFIRMED must-fix/high finding is fixed;
 - with `e2e: required`, a verify command mentions `e2e` or `playwright` (a name match only).
