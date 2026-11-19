@@ -62,7 +62,12 @@ import {
 } from './store.js';
 import { formatCheck, withCheck } from './check.js';
 import { FRESH_LOOP, parseMax, workPrint } from './loop.js';
-import { countFindings, freshQuality, toFix } from './quality.js';
+import {
+  DEFAULT_MAX_ROUNDS,
+  countFindings,
+  freshQuality,
+  toFix,
+} from './quality.js';
 import {
   findingsTemplate,
   fingerprint,
@@ -135,6 +140,9 @@ Work
                                 Copy a REVIEW_/STUDIES_ template into the task
   done [-m "…"] [--force]       Close the task (needs every step done and a passing verify;
                                 code tasks also a finished review loop; --force overrides)
+  reopen [name] -m "why"        Reopen a closed task: active again and bound to this session;
+                                verify and the inner loop start over, and its reviews cover
+                                the work from now on (2 more rounds)
 
 Options
   --task <name>   Act on <name> instead of the active task
@@ -497,9 +505,10 @@ export function doneBlockers(state) {
     );
   }
   if (state.kind !== 'code') return blockers;
-  if (quality.reviewRounds === 0) {
+  const before = quality.roundsBefore ?? 0;
+  if (quality.reviewRounds <= before) {
     blockers.push(
-      'No review round ran. Fix: pnpm task review, then the reviewer and the triage in clean contexts, then pnpm task review record'
+      `No review round ran${before > 0 ? ' since the task was reopened' : ''}. Fix: pnpm task review, then the reviewer and the triage in clean contexts, then pnpm task review record`
     );
   } else if (quality.phase === 'review') {
     blockers.push(
@@ -1335,6 +1344,73 @@ export const COMMANDS = {
       });
     }
     output(deps, options, { ok: true, task: name }, `Closed ${name}.`);
+    return 0;
+  },
+
+  reopen(options, deps) {
+    const name = pickTask(options, deps, { engage: false, positional: true });
+    const task = loadTask(deps.rootDir, name);
+    if (!task.state) {
+      throw new Error(
+        `${name} has no ${STATE_FILE}.\nFix: pnpm task init ${name}`
+      );
+    }
+    if (task.state.status !== 'done') {
+      throw new Error(
+        `${name} is not closed (${task.state.status}).\nFix: pnpm task switch ${name} to work on it`
+      );
+    }
+    if (!options.message) {
+      throw new Error(
+        `Reopening a task needs a reason: -m "why" (pnpm task reopen ${name} -m "…")`
+      );
+    }
+    const now = deps.now();
+    const agent = detectAgent(options, deps.env);
+    // The new work starts here: its review covers what changes from now on.
+    const start = repoStart(deps, task.state.repo ?? null);
+    updateState(
+      deps.rootDir,
+      name,
+      (state) => {
+        const quality = state.quality ?? freshQuality();
+        return {
+          ...state,
+          ...start,
+          status: 'active',
+          next: null,
+          // A pass from before the reopen says nothing about the new work.
+          lastVerify: null,
+          loop: { ...state.loop, ...FRESH_LOOP },
+          // Rounds keep their numbers (their files stay), with a fresh budget.
+          quality: {
+            ...quality,
+            phase: 'build',
+            roundsBefore: quality.reviewRounds,
+            maxRounds: quality.reviewRounds + DEFAULT_MAX_ROUNDS,
+            reviewedDiff: null,
+            base: null,
+            nudged: null,
+          },
+        };
+      },
+      { now, agent }
+    );
+    writeNote(deps, task, {
+      at: now,
+      agent,
+      label: 'reopened',
+      message: `Task reopened: ${options.message}`,
+      state: stateLine(deps, loadTask(deps.rootDir, name)),
+    });
+    writeActive(deps.rootDir, name);
+    bindSession(deps, sessionOf(deps), name);
+    output(
+      deps,
+      options,
+      { ok: true, task: name, status: 'active' },
+      `Reopened ${name} (active task). Next: pnpm task step add "…" for the new work, then pnpm task next`
+    );
     return 0;
   },
 };

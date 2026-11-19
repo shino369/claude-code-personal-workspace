@@ -97,6 +97,18 @@ describe('validateQuality', () => {
     ]);
   });
 
+  test('should accept rounds before a reopen up to the rounds run', () => {
+    expect(
+      validateQuality(quality({ reviewRounds: 2, roundsBefore: 2 }), STEPS)
+    ).toEqual([]);
+    expect(
+      validateQuality(quality({ reviewRounds: 2, roundsBefore: 3 }), STEPS)
+    ).toEqual(['quality.roundsBefore must be an int from 0 to reviewRounds']);
+    expect(validateQuality(quality({ roundsBefore: -1 }), STEPS)).toEqual([
+      'quality.roundsBefore must be an int from 0 to reviewRounds',
+    ]);
+  });
+
   test('should report every invalid finding field', () => {
     expect(
       validateQuality(
