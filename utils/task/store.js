@@ -400,16 +400,16 @@ export function pruneSessions(
 
 /**
  * The task a caller's commands resolve to: its session's bound task when
- * that task exists, else the workspace default (`tasks/.active`).
+ * that task exists, none when the session is bound to no task or a task
+ * that is gone (another session may have moved `tasks/.active` since), and
+ * the workspace default only for a caller without a binding.
  *
  * @param {string} rootDir
  * @param {string | null} [session] default: from the environment
  * @returns {string | null}
  */
 export function currentTask(rootDir, session = sessionFromEnv(process.env)) {
-  const bound = readSession(rootDir, session)?.task;
-  if (bound && listTaskNames(rootDir).includes(bound)) return bound;
-  return readActive(rootDir);
+  return sessionTask(rootDir, session)?.name ?? null;
 }
 
 /**

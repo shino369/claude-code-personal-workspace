@@ -189,7 +189,10 @@ a new session, dormant, to the default task (`tasks/.active`); `new` and `switch
 binding (and the default); the first `pnpm task` command that changes a task engages it. The
 `Stop`, `PreCompact`, and context-monitor hooks act only on an engaged task, so a session that
 only talks, or works on something else, never runs another task's verify or writes into its notes.
-A caller without a session id uses `tasks/.active`, as before.
+A session bound to no task (none was active when it started) or to a task that is gone has no
+current task: its `pnpm task` and `pnpm memory` commands do not follow `tasks/.active` when another
+session moves it; `pnpm task switch <name>` (or `reopen`, `new`, `--task <name>`) picks one. A
+caller without a session id, or a session with no binding yet, uses `tasks/.active`, as before.
 
 **The task's repository.** `--repo <path>` (on `new`, `init`, or `set`) records the git
 repository the task works in, when that is not this workspace. The brief's `Git:` line, NOTES

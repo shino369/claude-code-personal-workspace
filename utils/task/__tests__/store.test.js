@@ -374,12 +374,22 @@ describe('session bindings', () => {
     expect(currentTask(root, 'sess-1')).toBe('b-task');
   });
 
-  test('should fall back to the default when the bound task is gone or unset', () => {
+  test("should not give a session bound to no task, or a gone task, another session's default", () => {
+    // Another session's `new` or `switch` moves tasks/.active; a session
+    // bound to nothing must not write into that task.
     writeActive(root, 'a-task');
     writeSession(root, 'gone', { task: 'gone-task', engaged: true });
     writeSession(root, 'empty', { task: null, engaged: false });
-    expect(currentTask(root, 'gone')).toBe('a-task');
-    expect(currentTask(root, 'empty')).toBe('a-task');
+    expect(currentTask(root, 'gone')).toBeNull();
+    expect(currentTask(root, 'empty')).toBeNull();
+  });
+
+  test('should refuse a task command in a session bound to no task', () => {
+    writeActive(root, 'a-task');
+    writeSession(root, 'empty', { task: null, engaged: false });
+    expect(() => resolveTaskName(root, undefined, 'empty')).toThrow(
+      /No active task/
+    );
   });
 
   test('should read the session from the environment by default', () => {
