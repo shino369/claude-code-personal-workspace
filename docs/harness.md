@@ -329,16 +329,29 @@ plan ─▶ build test-first ─▶ e2e (if required) ─▶ review round N ─�
    plan, standards files, the files in scope, the severity rubric, and earlier refuted or fixed
    findings. It also writes an empty findings table in `reviews/REVIEW_<task>-rN.md`. The scope:
    - a task with a `--repo`: the git changes in that repository;
-   - else the task's own code in its folder (no git: `tasks/` is ignored), minus `scripts/`, whose
-     helpers would otherwise hide the work they support;
+   - else the task's own code in its folder (no git: `tasks/` is ignored): code in any language
+     (an allowlist of extensions and names such as `Dockerfile`) and its config, `docs/` included,
+     minus `scripts/`, whose helpers would otherwise hide the work they support. Prose, data, and
+     images never count as code, so a design doc in `docs/` keeps a workspace task on its git
+     changes;
    - else the git changes in the workspace; else the task's scripts.
+
+   The brief marks scope files `pnpm task check` does not lint or format (other languages, pages
+   in `docs/`) and lists the folder's code the scope leaves out (helper scripts, or the folder
+   beside a git scope). Never in a scope or that list: dot-folders, dependency and build folders
+   (`node_modules`, `venv`, `dist`, `build`, `coverage`, …), file kinds outside the allowlist, and
+   config named like credentials (`credentials.json`, `secrets.yaml`, a service-account key), which
+   a reviewer agent must not read. Code is reviewed whatever its name (`secrets.py`, `tokens.ts`):
+   a hardcoded key is found only by reading the code.
 
    Git changes count from the commit the task started from (recorded by `pnpm task new`, `init`,
    or `set --repo`) when that commit is in HEAD's history after the branch point, so work that was
    already on the branch (another task's) is not reviewed again, or when the work is on the
    default branch itself. Otherwise they count from the branch point with the default branch
    (`origin/HEAD` as last fetched, else `main`). An explicit `--base` is used as given
-   (`--base main` reviews the whole branch). An empty scope refuses to open a round.
+   (`--base main` reviews the whole branch). `--folder` reviews the task folder instead, and later
+   rounds stay on it (for an open task whose earlier round went to git; `pnpm task reopen` already
+   lets the next round choose again). An empty scope refuses to open a round.
 
 2. **Reviewer** (`.claude/agents/reviewer.md`): a fresh agent that works from the brief only. Each
    finding needs a concrete failure scenario: inputs or state → wrong result.
@@ -450,10 +463,10 @@ commands, the last verify to have passed.
 
 - **`tasks/` is git-ignored.** Task-folder code is never committed. Unattended runs copy the task
   folder into their worktree, and you copy it back.
-- **`pnpm swarm` and the `implement-plan` workflow refuse tasks with code in their folder.** The
-  swarm moves work between workers only through git commits and merges, so that code would never
-  reach other workers. Put product code that needs parallel workers in a git-tracked place, or use
-  `pnpm loop`.
+- **`pnpm swarm` and the `implement-plan` workflow refuse tasks with code in their folder** (in any
+  language, `docs/` included). The swarm moves work between workers only through git commits and
+  merges, so that code would never reach other workers. Put product code that needs parallel
+  workers in a git-tracked place, or use `pnpm loop`.
 - **Only must-fix and high findings get fixed, in at most 2 rounds.** Everything else goes to
   NOTES "Open". That is deliberate: reviews always find something, and unbounded rounds burn time
   on style.

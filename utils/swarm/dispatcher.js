@@ -14,7 +14,7 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { listCodeFiles } from '../task/check.js';
+import { isSourceFile, listCodeFiles, listReviewFiles } from '../task/check.js';
 import { formatGit } from '../task/git.js';
 import {
   appendSeparator,
@@ -161,15 +161,22 @@ export function releaseStaleClaims(rootDir, name, now) {
 }
 
 /**
- * Refuse a task that keeps code in its git-ignored task folder: the swarm
- * moves work between workers only through git, so that code would never
- * leave the worker that wrote it (decision 15).
+ * Refuse a task that keeps code in its git-ignored task folder (what `pnpm
+ * task check` looks at, plus code in any language, `docs/` included; a spec
+ * or data file in `docs/` alone is not code): the swarm moves work between
+ * workers only through git, so that code would never leave the worker that
+ * wrote it (decision 15).
  *
  * @param {string} taskDir
  * @param {string} name
  */
 export function assertNoTaskCode(taskDir, name) {
-  const code = listCodeFiles(taskDir);
+  const code = [
+    ...new Set([
+      ...listCodeFiles(taskDir),
+      ...listReviewFiles(taskDir).filter(isSourceFile),
+    ]),
+  ].sort();
   if (code.length > 0) {
     throw new Error(
       [

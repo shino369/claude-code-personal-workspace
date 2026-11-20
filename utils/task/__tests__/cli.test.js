@@ -22,6 +22,7 @@ import {
   updateState,
   writeSession,
 } from '../store.js';
+import { FOLDER_BASE } from '../review.js';
 import { DEFAULT_CONFIG, writeConfig } from '../../memory/config.js';
 import { loadNotes, memoryDir } from '../../memory/store.js';
 
@@ -587,6 +588,8 @@ describe('repo', () => {
   });
 
   test('should take git state for status and notes from the repo', () => {
+    // The temp dir can sit under the real home (Windows), which would print ~.
+    vi.spyOn(os, 'homedir').mockReturnValue(path.join(root, 'home'));
     run(['new', 'demo', '--goal', 'G', '--repo', repo], deps);
     const { out } = run(['status'], deps);
     expect(out).toContain(`Repo: ${repo}`);
@@ -644,6 +647,8 @@ describe('repo', () => {
       },
     }));
 
+    // The temp dir can sit under the real home (Windows), which would print ~.
+    vi.spyOn(os, 'homedir').mockReturnValue(path.join(root, 'home'));
     const { out } = run(['set', '--repo', repo], deps);
     expect(out).toContain(`Repo: ${repo} (start commit repohead)`);
     expect(state()).toMatchObject({
@@ -1114,6 +1119,18 @@ describe('review', () => {
     expect(read('NOTES.md')).toContain('Review round 1/2 opened: 1 file(s)');
   });
 
+  test('should refuse --folder or --base while a round is open', () => {
+    greenCodeTask();
+    run(['review']);
+
+    expect(() => run(['review', '--folder'])).toThrow(
+      /Round 1 is open with its own scope[^]*Fix: finish it/
+    );
+    expect(() => run(['review', '--base', 'main'])).toThrow(
+      /Round 1 is open with its own scope/
+    );
+  });
+
   test('should reprint an open round without touching the findings file', () => {
     greenCodeTask();
     run(['review']);
@@ -1140,6 +1157,78 @@ describe('review', () => {
       files: ['utils/x.js'],
     });
     expect(state().quality?.base).toBe('main');
+  });
+
+  test('should review a page in docs/ and Python from the task folder, not unrelated git changes', () => {
+    newTask(['--verify', 'pnpm test']);
+    finishSteps();
+    for (const rel of ['docs/index.html', 'app/clean.py', 'scripts/gen.sh']) {
+      fs.mkdirSync(path.dirname(path.join(taskDir(), rel)), {
+        recursive: true,
+      });
+      fs.writeFileSync(path.join(taskDir(), rel), '\n');
+    }
+    run(['verify']);
+    /** @type {import('../review.js').RunGit} */
+    const runGit = (args) =>
+      args[0] === 'merge-base'
+        ? 'abc'
+        : args[0] === 'diff'
+          ? 'skills-lock.json'
+          : '';
+
+    const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
+
+    expect(parsed.scope).toEqual({
+      base: null,
+      since: null,
+      files: [`tasks/${NAME}/app/clean.py`, `tasks/${NAME}/docs/index.html`],
+    });
+    const brief = read(`reviews/BRIEF_${NAME}-r1.md`);
+    expect(brief).toContain(
+      `- tasks/${NAME}/docs/index.html — pnpm task check does not lint or format it`
+    );
+    expect(brief).toContain(`- tasks/${NAME}/scripts/gen.sh`);
+    expect(brief).not.toContain('skills-lock.json');
+  });
+
+  test('should review the task folder with --folder and keep later rounds on it', () => {
+    newTask(['--verify', 'pnpm test']);
+    finishSteps();
+    fs.mkdirSync(path.join(taskDir(), 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(taskDir(), 'scripts', 'gen.py'), 'print(1)\n');
+    run(['verify']);
+    /** @type {import('../review.js').RunGit} */
+    const runGit = (args) =>
+      args[0] === 'merge-base' ? 'abc' : args[0] === 'diff' ? 'utils/x.js' : '';
+    const folder = {
+      base: null,
+      since: null,
+      files: [`tasks/${NAME}/scripts/gen.py`],
+    };
+
+    const first = JSON.parse(
+      run(['review', '--folder', '--json'], { runGit }).out
+    );
+    run(['review', 'record'], { runGit });
+    const second = JSON.parse(run(['review', '--json'], { runGit }).out);
+
+    expect(first.scope).toEqual(folder);
+    expect(second).toMatchObject({ round: 2, scope: folder });
+    expect(state().quality?.base).toBe(FOLDER_BASE);
+  });
+
+  test('should refuse --folder with --base, or for a folder without code', () => {
+    newTask(['--verify', 'pnpm test']);
+    finishSteps();
+    run(['verify']);
+
+    expect(() => run(['review', '--folder', '--base', 'main'])).toThrow(
+      /--folder or --base, not both/
+    );
+    expect(() => run(['review', '--folder'])).toThrow(
+      `Nothing to review for ${NAME}: its task folder has no code`
+    );
   });
 
   /**

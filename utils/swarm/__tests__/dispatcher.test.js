@@ -10,6 +10,7 @@ import {
   LOCK_FILE,
   SWARM_OWNER_RE,
   acquireSwarmLock,
+  assertNoTaskCode,
   releaseStaleClaims,
   runSwarm,
 } from '../dispatcher.js';
@@ -279,6 +280,45 @@ describe('releaseStaleClaims', () => {
       's3:in_progress',
     ]);
     expect(SWARM_OWNER_RE.test('dsh/swarm-w12')).toBe(true);
+  });
+});
+
+describe('assertNoTaskCode', () => {
+  /** @type {string} */
+  let dir;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-code-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  const put = (/** @type {string} */ rel) => {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), '');
+  };
+
+  test('should allow notes, docs, specs, and scratch in the task folder', () => {
+    for (const rel of [
+      'plan.md',
+      'docs/design.md',
+      'docs/openapi.yaml',
+      'tmp/x.py',
+    ]) {
+      put(rel);
+    }
+    expect(() => assertNoTaskCode(dir, 'demo')).not.toThrow();
+  });
+
+  test('should refuse task-folder code in any language, docs/ included', () => {
+    put('docs/index.html');
+    expect(() => assertNoTaskCode(dir, 'demo')).toThrow(
+      /demo keeps code in its task folder \(docs\/index\.html\)/
+    );
+    fs.rmSync(path.join(dir, 'docs'), { recursive: true });
+    put('scripts/clean.py');
+    expect(() => assertNoTaskCode(dir, 'demo')).toThrow(
+      /\(scripts\/clean\.py\)/
+    );
   });
 });
 

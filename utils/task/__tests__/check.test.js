@@ -14,8 +14,10 @@ import {
   formatCheck,
   globalsFor,
   hasTaskCode,
+  isSourceFile,
   lintOverrides,
   listCodeFiles,
+  listReviewFiles,
   runEslint,
   runPrettier,
   runTaskCheck,
@@ -64,6 +66,8 @@ describe('listCodeFiles', () => {
       'studies/s.js': '',
       'app/node_modules/m.js': '',
       'app/coverage/c.js': '',
+      'app/venv/lib/v.js': '',
+      'app/__pycache__/p.js': '',
       'app/.cache/x.js': '',
       '.hidden.js': '',
       'app/README.md': '#',
@@ -89,6 +93,93 @@ describe('listCodeFiles', () => {
     linkDir(path.join(taskDir, 'real'), path.join(taskDir, 'linked'));
 
     expect(listCodeFiles(taskDir)).toEqual(['real/a.js']);
+  });
+});
+
+describe('isSourceFile', () => {
+  test('should take code in any language and build files', () => {
+    for (const file of [
+      'a.py',
+      'run.sh',
+      'stats.R',
+      'app/main.go',
+      'docs/index.html',
+      'ui/App.tsx',
+      'nb.ipynb',
+      'Dockerfile',
+      'sub/Makefile',
+    ]) {
+      expect(isSourceFile(file), file).toBe(true);
+    }
+  });
+
+  test('should leave out prose, data, config, media, and outputs', () => {
+    for (const file of [
+      'README.md',
+      'data.json',
+      'conf.yaml',
+      'shot.png',
+      'notes.txt',
+      'model.pkl',
+      'run.log',
+      'LICENSE',
+    ]) {
+      expect(isSourceFile(file), file).toBe(false);
+    }
+  });
+});
+
+describe('listReviewFiles', () => {
+  test('should list source in any language and config, docs/ included', () => {
+    write({
+      'state.json': '{}',
+      'plan.md': '#',
+      'NOTES.md': '#',
+      'tmp/a.py': '',
+      'reviews/r.js': '',
+      'studies/s.py': '',
+      'translated/t.html': '',
+      'loop/l.js': '',
+      'swarm/w.js': '',
+      'docs/index.html': '',
+      'docs/design.md': '#',
+      'docs/shot.png': '',
+      'app/main.py': '',
+      'app/pyproject.toml': '',
+      'app/data.json': '{}',
+      'app/__pycache__/main.cpython-312.pyc': '',
+      'venv/lib/site.py': '',
+      '.venv/lib/site.py': '',
+      'scripts/gen.sh': '',
+    });
+
+    expect(listReviewFiles(taskDir)).toEqual([
+      'app/data.json',
+      'app/main.py',
+      'app/pyproject.toml',
+      'docs/index.html',
+      'scripts/gen.sh',
+    ]);
+  });
+});
+
+describe('listReviewFiles secrets', () => {
+  test('should keep config files named like credentials out, but not code or look-alikes', () => {
+    write({
+      'app/credentials.json': '{}',
+      'app/client_secret_123.json': '{}',
+      'config/secrets.yaml': '',
+      'gcp-service-account.json': '{}',
+      'app/token.json': '{}',
+      'app/api-keys.toml': '',
+      'app/tokenizer.json': '{}',
+      'app/secrets.py': '',
+    });
+
+    expect(listReviewFiles(taskDir)).toEqual([
+      'app/secrets.py',
+      'app/tokenizer.json',
+    ]);
   });
 });
 
@@ -254,10 +345,14 @@ describe('lintOverrides', () => {
 });
 
 describe('runEslint', () => {
-  /** A workspace-like config: ignores tasks/, like the real one. */
+  /**
+   * A workspace-like config: ignores tasks/, like the real one. `.mjs`, so
+   * Node never guesses its module type from a package.json above the temp
+   * dir (MODULE_TYPELESS_PACKAGE_JSON under a Windows home).
+   */
   const config = (/** @type {string} */ level) =>
     fs.writeFileSync(
-      path.join(root, 'eslint.config.js'),
+      path.join(root, 'eslint.config.mjs'),
       `export default [{ ignores: ['**/tasks/**'] }, { files: ['**/*.js'], rules: { 'prefer-const': '${level}', 'no-undef': 'error' } }];\n`
     );
   const lint = (

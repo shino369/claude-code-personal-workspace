@@ -6,6 +6,7 @@ import { vi } from 'vitest';
 import { freshQuality } from '../quality.js';
 import {
   FINDINGS_HEADER,
+  FOLDER_BASE,
   SEVERITY_RUBRIC,
   defaultRunGit,
   findingsTemplate,
@@ -20,8 +21,10 @@ import {
   reviewBase,
   reviewFiles,
   reviewScope,
+  roundBase,
   scopeRoot,
   splitRow,
+  taskFolderNotes,
   taskReviewScope,
 } from '../review.js';
 import { createState, makeSteps } from '../state.js';
@@ -82,6 +85,18 @@ const table = (/** @type {string[]} */ ...rows) =>
     '',
     'Trailing text',
   ].join('\n');
+
+/**
+ * @param {string} dir
+ * @param {...string} files empty files to create, relative to `dir`
+ */
+function touch(dir, ...files) {
+  for (const rel of files) {
+    const file = path.join(dir, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, '');
+  }
+}
 
 /** @type {string} */
 let root;
@@ -165,6 +180,33 @@ describe('reviewBase', () => {
     expect(reviewBase({ quality, taskDir: taskDir() })).toBeNull();
   });
 
+  test('should stay on the task folder once a round chose it with --folder', () => {
+    const stored = { ...freshQuality(), reviewRounds: 1, base: FOLDER_BASE };
+    expect(
+      reviewBase({ quality: { ...stored, phase: 'fix' }, taskDir: taskDir() })
+    ).toBeNull();
+    expect(
+      reviewBase({
+        quality: { ...stored, phase: 'review' },
+        taskDir: taskDir(),
+      })
+    ).toBeNull();
+    expect(reviewBase({ quality: stored, taskDir: taskDir(), base: 'x' })).toBe(
+      'x'
+    );
+  });
+
+  test('should review a page in docs/ from the task folder, but not a design doc', () => {
+    touch(taskDir(), 'docs/design.md', 'docs/shot.png', 'data.json');
+    expect(reviewBase({ quality: freshQuality(), taskDir: taskDir() })).toBe(
+      'main'
+    );
+    touch(taskDir(), 'docs/index.html');
+    expect(
+      reviewBase({ quality: freshQuality(), taskDir: taskDir() })
+    ).toBeNull();
+  });
+
   test('should not count task scripts as the code under review', () => {
     fs.mkdirSync(path.join(taskDir(), 'scripts'), { recursive: true });
     fs.writeFileSync(path.join(taskDir(), 'scripts', 'build.mjs'), '');
@@ -191,22 +233,31 @@ describe('productFiles', () => {
     expect(hasProductCode(path.join(root, 'missing'))).toBe(false);
   });
 
-  test('should count only JavaScript or TypeScript as product code', () => {
+  test('should count code in any language as product code, not config, docs, or data', () => {
     const taskDir = path.join(root, 'tasks', NAME);
-    fs.mkdirSync(taskDir, { recursive: true });
-    fs.writeFileSync(path.join(taskDir, 'data.json'), '{}');
+    touch(taskDir, 'data.json', 'app/config.yaml', 'docs/design.md');
     expect(hasProductCode(taskDir)).toBe(false);
-    fs.writeFileSync(path.join(taskDir, 'main.ts'), '');
+    touch(taskDir, 'app/main.py');
     expect(hasProductCode(taskDir)).toBe(true);
   });
 
-  test('should list task code outside scripts/', () => {
+  test('should list task code and its config outside scripts/, docs/ included', () => {
     const taskDir = path.join(root, 'tasks', NAME);
-    fs.mkdirSync(path.join(taskDir, 'scripts'), { recursive: true });
-    fs.mkdirSync(path.join(taskDir, 'app'), { recursive: true });
-    fs.writeFileSync(path.join(taskDir, 'scripts', 'x.mjs'), '');
-    fs.writeFileSync(path.join(taskDir, 'app', 'a.js'), '');
-    expect(productFiles(taskDir)).toEqual(['app/a.js']);
+    touch(
+      taskDir,
+      'scripts/x.mjs',
+      'app/a.js',
+      'app/main.py',
+      'app/config.yaml',
+      'docs/index.html',
+      'docs/notes.md'
+    );
+    expect(productFiles(taskDir)).toEqual([
+      'app/a.js',
+      'app/config.yaml',
+      'app/main.py',
+      'docs/index.html',
+    ]);
   });
 });
 
@@ -228,6 +279,55 @@ describe('taskReviewScope', () => {
     });
   });
 
+  test('should fall back to helper scripts in any language, with their data', () => {
+    const taskDir = path.join(root, 'tasks', NAME);
+    touch(taskDir, 'scripts/clean.py', 'data.json');
+    const runGit = vi.fn((/** @type {string[]} */ args) =>
+      args[0] === 'merge-base' && args[1] !== '--is-ancestor' ? 'abc' : null
+    );
+
+    expect(
+      taskReviewScope({ rootDir: root, taskDir, state: codeState(), runGit })
+    ).toEqual({
+      base: null,
+      since: null,
+      files: [`tasks/${NAME}/data.json`, `tasks/${NAME}/scripts/clean.py`],
+    });
+  });
+
+  test('should keep the task folder that --folder chose, beside git changes', () => {
+    const taskDir = path.join(root, 'tasks', NAME);
+    touch(taskDir, 'scripts/clean.py');
+    const runGit = vi.fn((/** @type {string[]} */ args) =>
+      args[0] === 'merge-base' ? 'abc' : args[0] === 'diff' ? 'utils/x.js' : ''
+    );
+    const state = codeState({
+      quality: {
+        ...freshQuality(),
+        phase: 'complete',
+        reviewRounds: 1,
+        base: FOLDER_BASE,
+      },
+    });
+
+    expect(taskReviewScope({ rootDir: root, taskDir, state, runGit })).toEqual({
+      base: null,
+      since: null,
+      files: [`tasks/${NAME}/scripts/clean.py`],
+    });
+  });
+
+  test('should keep an empty git scope when the task folder has no code', () => {
+    const taskDir = path.join(root, 'tasks', NAME);
+    const runGit = vi.fn((/** @type {string[]} */ args) =>
+      args[0] === 'merge-base' && args[1] !== '--is-ancestor' ? 'abc' : null
+    );
+
+    expect(
+      taskReviewScope({ rootDir: root, taskDir, state: codeState(), runGit })
+    ).toEqual({ base: 'main', since: 'abc', files: [] });
+  });
+
   test('should keep an empty git scope when an explicit base was given', () => {
     const taskDir = path.join(root, 'tasks', NAME);
     fs.mkdirSync(path.join(taskDir, 'scripts'), { recursive: true });
@@ -244,6 +344,65 @@ describe('taskReviewScope', () => {
           args[0] === 'diff' || args[0] === 'ls-files' ? '' : runGit(),
       }).files
     ).toEqual([]);
+  });
+});
+
+describe('roundBase', () => {
+  const folderScope = { base: null, since: null, files: ['a.js'] };
+
+  test("should record a git scope's base as it is", () => {
+    const scope = { base: 'main', since: 'abc', files: [] };
+    expect(roundBase(scope, freshQuality(), true)).toBe('main');
+  });
+
+  test('should record a folder chosen now or by an earlier round', () => {
+    expect(roundBase(folderScope, freshQuality(), true)).toBe(FOLDER_BASE);
+    expect(
+      roundBase(folderScope, { ...freshQuality(), base: FOLDER_BASE })
+    ).toBe(FOLDER_BASE);
+  });
+
+  test('should leave an automatic folder scope unrecorded', () => {
+    expect(roundBase(folderScope, freshQuality())).toBeNull();
+  });
+});
+
+describe('taskFolderNotes', () => {
+  const taskDir = () => path.join(root, 'tasks', NAME);
+  const at = (/** @type {string} */ file) => `tasks/${NAME}/${file}`;
+
+  test('should mark scope files pnpm task check skips and list the scripts left out', () => {
+    touch(taskDir(), 'app/a.js', 'app/main.py', 'docs/index.html');
+    touch(taskDir(), 'scripts/gen.sh');
+    const scope = reviewScope({
+      rootDir: root,
+      taskDir: taskDir(),
+      base: null,
+    });
+
+    expect(
+      taskFolderNotes({ rootDir: root, taskDir: taskDir(), scope })
+    ).toEqual({
+      unchecked: [at('app/main.py'), at('docs/index.html')],
+      aside: [at('scripts/gen.sh')],
+    });
+  });
+
+  test('should list the folder code beside a git scope, without marks', () => {
+    touch(taskDir(), 'scripts/gen.py', 'docs/notes.md');
+    const scope = { base: 'main', since: 'abc', files: ['utils/a.js'] };
+
+    expect(
+      taskFolderNotes({ rootDir: root, taskDir: taskDir(), scope })
+    ).toEqual({ unchecked: [], aside: [at('scripts/gen.py')] });
+  });
+
+  test('should say nothing for a missing task folder', () => {
+    const scope = { base: 'main', since: 'abc', files: [] };
+
+    expect(
+      taskFolderNotes({ rootDir: root, taskDir: taskDir(), scope })
+    ).toEqual({ unchecked: [], aside: [] });
   });
 });
 
@@ -404,6 +563,15 @@ describe('reviewScope', () => {
     expect(
       reviewScope({ rootDir: root, taskDir: root, base: 'main', runGit }).files
     ).toEqual([]);
+  });
+
+  test('should refuse a base that git would read as an option', () => {
+    const runGit = vi.fn(() => 'abc');
+
+    expect(() =>
+      reviewScope({ rootDir: root, taskDir: root, base: '--all', runGit })
+    ).toThrow(/--all is not a git ref[^]*--base <ref>/);
+    expect(runGit).not.toHaveBeenCalled();
   });
 
   test('should explain a base ref git cannot resolve', () => {
@@ -583,6 +751,34 @@ describe('formatReviewBrief', () => {
     expect(text).toContain(`tasks/${NAME}/reviews/REVIEW_${NAME}-r1.md`);
     expect(text).toContain('3. Record: pnpm task review record');
     expect(text).not.toContain('## Earlier rounds');
+    expect(text).not.toContain('pnpm task check does not');
+    expect(text).not.toContain('## Also in the task folder');
+  });
+
+  test('should mark files pnpm task check skips and list code left out of scope', () => {
+    const text = formatReviewBrief({
+      state: codeState(),
+      round: 1,
+      scope: {
+        base: null,
+        since: null,
+        files: [`tasks/${NAME}/a.js`, `tasks/${NAME}/main.py`],
+      },
+      taskRel: `tasks/${NAME}`,
+      folder: {
+        unchecked: [`tasks/${NAME}/main.py`],
+        aside: [`tasks/${NAME}/scripts/gen.sh`],
+      },
+    });
+
+    expect(text).toContain(`- tasks/${NAME}/a.js\n`);
+    expect(text).toContain(
+      `- tasks/${NAME}/main.py — pnpm task check does not lint or format it`
+    );
+    expect(text).toContain(
+      `## Also in the task folder (not in scope)\n\nCode the scope leaves out`
+    );
+    expect(text).toContain(`- tasks/${NAME}/scripts/gen.sh\n`);
   });
 
   test('should describe a git scope and an empty one', () => {

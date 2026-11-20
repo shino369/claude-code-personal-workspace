@@ -86,9 +86,14 @@ describe('packTar and unpackTar', () => {
         ])
       );
 
-      const listed = spawnSync('tar', ['-tf', file], { encoding: 'utf-8' });
+      // A relative name: GNU tar (Git Bash) reads `C:\…` as a remote host.
+      const listed = spawnSync('tar', ['-tf', path.basename(file)], {
+        cwd: dir,
+        encoding: 'utf-8',
+      });
 
-      expect(listed.status).toBe(0);
+      expect(listed.error, listed.error?.message).toBeUndefined();
+      expect(listed.status, listed.stderr).toBe(0);
       expect(listed.stdout).toContain(`notes/${'n'.repeat(110)}.txt`);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

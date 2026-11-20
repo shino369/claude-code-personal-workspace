@@ -37,6 +37,7 @@ import {
   memoryDir,
 } from '../store.js';
 import { packTar } from '../tar.js';
+import { linkDir } from '../../__tests__/support/links.js';
 
 /** @type {string} */
 let tmp;
@@ -105,7 +106,9 @@ function seedSource() {
   write(source, 'tasks/.trash/x.md', 'trash\n');
   write(source, 'tasks/.active', 'alpha-261120\n');
   write(source, 'resources/img/logo.txt', 'logo\n');
-  fs.symlinkSync('/etc/hosts', path.join(source, 'resources', 'hosts'));
+  const linkTarget = path.join(tmp, 'link-target');
+  fs.mkdirSync(linkTarget, { recursive: true });
+  linkDir(linkTarget, path.join(source, 'resources', 'hosts'));
 }
 
 beforeEach(() => {
@@ -952,7 +955,7 @@ describe('planImport and applyImport', () => {
     const outside = path.join(tmp, 'outside');
     fs.mkdirSync(path.join(target, 'resources'), { recursive: true });
     fs.mkdirSync(outside);
-    fs.symlinkSync(outside, path.join(target, 'resources', 'img'));
+    linkDir(outside, path.join(target, 'resources', 'img'));
     const { archive, plan: p } = plan({ include: ['resources'] });
 
     const result = applyImport(target, archive, p, { now: NOW, detail: 'x' });
@@ -967,7 +970,7 @@ describe('planImport and applyImport', () => {
     seedSource();
     const outside = path.join(tmp, 'outside');
     fs.mkdirSync(outside);
-    fs.symlinkSync(outside, path.join(target, 'tasks'));
+    linkDir(outside, path.join(target, 'tasks'));
     const { archive, plan: p } = plan({ include: ['tasks'] });
 
     const result = applyImport(target, archive, p, { now: NOW, detail: 'x' });
