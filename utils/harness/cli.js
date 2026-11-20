@@ -23,6 +23,7 @@ import {
   renderHooksConfig,
 } from './hooks.js';
 import { readPermissions, renderCodexRules } from './permissions.js';
+import { codexRoleFiles } from './roles.js';
 
 const MANIFEST = 'utils/harness/hooks.js';
 const CLAUDE_SETTINGS = '.claude/settings.json';
@@ -78,6 +79,7 @@ export function generatedFiles({ specs = HOOKS, rootDir = ROOT_DIR } = {}) {
       },
     });
   }
+  files.push(...codexRoleFiles(rootDir));
   const settings = readSettings(rootDir);
   if (settings) {
     files.push({
