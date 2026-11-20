@@ -32,6 +32,12 @@ Everything above (AGENTS.md) applies. These notes cover only what is specific to
   `reviewer` and the triage as a `verifier` subagent in triage mode, each given only the brief
   path, never your own summary of the change. If subagents are not available, say so and stop; the
   reminder is not repeated.
+- **Memory** (AGENTS.md §13): `CLAUDE.local.md` imports `AGENTS.local.md`, so the core block is
+  already loaded; there is nothing to read at start. `utils/memory/hook.js` recalls notes on
+  UserPromptSubmit, PreToolUse (triggers), and PostToolUseFailure, announces background saves at
+  SessionStart, and queues the session at SessionEnd for extraction (a detached `claude -p`, no
+  tools). It stays silent for the `reviewer` and `verifier` subagents. Save notes yourself with
+  `pnpm memory add` as §13 says; the extraction only catches what you missed.
 - **Hooks** (`.claude/settings.json`): `audit_logger.js` appends redacted tool calls to
   `logs/<YYYYMMDD>/logging.jsonl`, and `auto_format.js` runs Prettier after Edit/Write. These run
   only in Claude Code; the git hooks from `pnpm workspace:setup` cover every harness.

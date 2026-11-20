@@ -14,6 +14,7 @@ gate.
 - [Getting Started](#getting-started)
 - [Repository Layout](#repository-layout)
   - [Tasks](#tasks)
+  - [Memory](#memory)
 - [Skills](#skills)
   - [Project-owned skills](#project-owned-skills)
   - [Third-party skills](#third-party-skills)
@@ -134,6 +135,26 @@ after startup, `/clear`, and `/compact`; other harnesses run `pnpm task status` 
 The full procedure is in `AGENTS.md` §4; `pnpm task help` lists every command. How the pieces fit
 together, with a worked example: `docs/harness.md`. `tasks/` and
 `logs/` are git-ignored — tasks are personal to each machine.
+
+### Memory
+
+Agents remember lasting facts across sessions and harnesses, on this machine only (`memory/`,
+`AGENTS.local.md`, and `CLAUDE.local.md` are git-ignored; nothing is synced):
+
+```bash
+pnpm memory init                    # once (pnpm workspace:setup runs it)
+pnpm memory                         # status: notes, core block, saving on/off, extraction queue
+pnpm memory add "The user prefers design first, then review." --scope user --type preference --tags design,review
+pnpm memory recall "how do I merge this PR"   # what the hooks would inject
+pnpm memory personalize --presets   # how agents talk to you (conversation only)
+pnpm memory off --session           # an incognito session
+pnpm memory export                  # back up or move: a checksummed .tar.gz; import <file> --dry-run
+```
+
+Agents save what they learn as they go and say so; in Claude Code a background job also extracts
+what they missed from each finished session. Every session loads a small core block (your
+settings, pinned notes, recent tasks), and hooks recall the notes that match each prompt or failed
+command. Agent rules: `AGENTS.md` §13; how it works: `docs/harness.md`.
 
 ## Skills
 
@@ -309,14 +330,15 @@ pnpm swarm my-task --agent claude --workers 2           # parallel workers, one 
 
 ## Hooks
 
-| Hook                 | Event                         | Purpose                                           |
-| -------------------- | ----------------------------- | ------------------------------------------------- |
-| `session_start.js`   | `SessionStart`                | Injects the active task's resume brief.           |
-| `pre_compact.js`     | `PreCompact`                  | Appends a checkpoint to the task's `NOTES.md`.    |
-| `task_loop.js`       | `Stop`, `UserPromptSubmit`    | Inner loop: verify, then the review loop (code).  |
-| `context_monitor.js` | `UserPromptSubmit`            | Warns at 20/40/60% of the context window.         |
-| `audit_logger.js`    | `PostToolUse` (`*`)           | Logs tool use to `logs/<YYYYMMDD>/logging.jsonl`. |
-| `auto_format.js`     | `PostToolUse` (`Edit\|Write`) | Runs Prettier on edited files.                    |
+| Hook                   | Event                                                                                | Purpose                                                       |
+| ---------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| `session_start.js`     | `SessionStart`                                                                       | Injects the active task's resume brief.                       |
+| `pre_compact.js`       | `PreCompact`                                                                         | Appends a checkpoint to the task's `NOTES.md`.                |
+| `task_loop.js`         | `Stop`, `UserPromptSubmit`                                                           | Inner loop: verify, then the review loop (code).              |
+| `context_monitor.js`   | `UserPromptSubmit`                                                                   | Warns at 20/40/60% of the context window.                     |
+| `audit_logger.js`      | `PostToolUse` (`*`)                                                                  | Logs tool use to `logs/<YYYYMMDD>/logging.jsonl`.             |
+| `auto_format.js`       | `PostToolUse` (`Edit\|Write`)                                                        | Runs Prettier on edited files.                                |
+| `utils/memory/hook.js` | `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUseFailure`, `SessionEnd` | Memory: recall, announcements, extraction queue (also Codex). |
 
 The context monitor defaults to a 1M window; set `CLAUDE_CONTEXT_WINDOW` to override it.
 
