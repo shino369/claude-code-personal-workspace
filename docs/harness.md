@@ -150,6 +150,15 @@ these limits:
   `agent ask` strip these ids from the agents they start.
 - **Shell reads are not path-checked.** `cat .env` passes the read rules in Codex and DSH, as it
   does in Claude Code; AGENTS.md §1 forbids it.
+- **Command wrappers are matched only when known.** An agent set up for
+  [rtk](https://github.com/rtk-ai/rtk) runs every command as `rtk <cmd>` or `rtk proxy <cmd>`
+  (`apply_patch` too). The guard and the edit detection skip `rtk`, its flags, and a pass-through
+  subcommand (`proxy`, `bypass`, `err`, `test`, `summary`), and open `rtk run '<line>'`. The
+  generated Codex rules cover `rtk <cmd>` and `rtk <pass-through> <cmd>`, but not rtk's flags:
+  `rtk -v rm` does not match them. Another wrapper of this kind needs the same treatment.
+
+The formatter formats files in this workspace and in the session task's `--repo` repository,
+running Prettier in that root so its ignore files apply; edits anywhere else are left alone.
 
 ## Building blocks
 
