@@ -35,7 +35,8 @@
     "swarm": "node utils/swarm/cli.js",
     "agent": "node utils/agent/cli.js",
     "tools": "node utils/tools/cli.js",
-    "harness": "node utils/harness/cli.js"
+    "harness": "node utils/harness/cli.js",
+    "kyoten": "node utils/kyoten/cli.js"
   },
   "keywords": [],
   "author": "shino369",
