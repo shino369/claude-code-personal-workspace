@@ -377,7 +377,8 @@ export function processAlive(pid) {
 }
 
 /**
- * @typedef {{ now?: () => number, pid?: number, isAlive?: (pid: number) => boolean, staleMs?: number }} LockOptions
+ * @typedef {{ now?: () => number, pid?: number, isAlive?: (pid: number) => boolean, staleMs?: number, create?: (file: string, content: string) => void }} LockOptions
+ *   `create`: writes the lock file, failing with EEXIST when it exists
  */
 
 /** @param {string} dir */
@@ -426,13 +427,14 @@ export function tryLock(
     pid = process.pid,
     isAlive = processAlive,
     staleMs = WORKER_STALE_MS,
+    create = (file, content) => fs.writeFileSync(file, content, { flag: 'wx' }),
   } = {}
 ) {
   const file = lockFile(dir);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const content = JSON.stringify({ pid, at: new Date(now()).toISOString() });
   try {
-    fs.writeFileSync(file, content, { flag: 'wx' });
+    create(file, content);
   } catch (error) {
     if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'EEXIST') {
       throw error;

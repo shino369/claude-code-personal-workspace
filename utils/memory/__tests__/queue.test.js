@@ -370,14 +370,13 @@ describe('tryLock', () => {
   });
 
   test('should rethrow errors other than an existing lock', () => {
-    const extract = path.join(dir, EXTRACT_DIR);
-    fs.mkdirSync(extract, { recursive: true });
-    fs.chmodSync(extract, 0o500);
-    try {
-      expect(() => tryLock(dir)).toThrow();
-    } finally {
-      fs.chmodSync(extract, 0o700);
-    }
+    const create = () => {
+      throw Object.assign(new Error('EACCES: permission denied'), {
+        code: 'EACCES',
+      });
+    };
+
+    expect(() => tryLock(dir, { create })).toThrow(/EACCES/);
   });
 });
 
