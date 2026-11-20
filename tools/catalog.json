@@ -64,13 +64,6 @@
       "docs": "https://git-scm.com/downloads"
     },
     {
-      "name": "rtk",
-      "kind": "cli",
-      "purpose": "Rust Token Killer: token-optimized command output proxy (see ~/.claude/RTK.md)",
-      "check": ["rtk", "--version"],
-      "notes": "Name collision: reachingforthejack/rtk (Rust Type Kit) is a different tool; `rtk gain` must work."
-    },
-    {
       "name": "browser-use",
       "kind": "cli",
       "purpose": "Drive the user's real Chrome, autonomous or cloud browsing",
