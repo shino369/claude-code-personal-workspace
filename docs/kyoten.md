@@ -71,11 +71,13 @@ The home is the first match of:
 
 1. `--home <dir>`
 2. `$KYOTEN_HOME`
-3. a kyoten workspace that contains the current directory (so `pnpm kyoten` in a clone uses the clone)
+3. the clone kyoten runs from, when the current directory is inside it (`pnpm kyoten` in a clone)
 4. `"home"` in the config file
 5. `~/.kyoten`
 
-Every launch prints which one it used. The agent always runs with the home as its working
+Every launch prints which one it used. Any other folder is used only when you name it: a repository
+can look like a kyoten workspace, and kyoten runs the home's pnpm scripts and starts agents with its
+config. The agent always runs with the home as its working
 directory, so the workspace's hooks, tasks, and memory work as they do in a clone. To work on
 another repository, start a task for it from the home: `pnpm task new <name> --repo <path>`.
 kyoten passes the directory you started it from as `KYOTEN_CALLER_DIR`, and the session brief
@@ -112,8 +114,16 @@ kyoten dscc             # start
 The profile is `dscc.env` in the config folder, or the file named by `$DSCC_PROFILE`. It is
 outside every workspace, written with mode 0600 on macOS and Linux, and parsed, never executed:
 one literal `KEY=value` per line, `#` comments. It sets the DeepSeek base URL, the key, and the
-model mapping. An `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` inherited from your shell is
-dropped, so it cannot pick the account or the endpoint.
+model mapping.
+
+The key goes only where the profile says:
+
+- Every `ANTHROPIC_*` variable inherited from your shell is dropped, and so are the Bedrock,
+  Vertex, and Foundry switches (`CLAUDE_CODE_USE_*`, `CLAUDE_CODE_SKIP_*_AUTH`).
+- The profile may set only `ANTHROPIC_*`, `CLAUDE_CODE_*`, and `API_TIMEOUT_MS`; other lines
+  are skipped with a warning.
+- `ANTHROPIC_BASE_URL` must be an `https` URL, or dscc refuses to start. A host other than
+  `api.deepseek.com` starts with a warning that the key is sent there.
 
 `--set-key` reads one line from stdin when stdin is not a terminal (`kyoten dscc --set-key < key.txt`).
 In Git Bash's mintty, which is not a terminal to Windows programs, pipe the key or run

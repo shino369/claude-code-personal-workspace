@@ -251,6 +251,46 @@ describe('buildEnv', () => {
     expect(env.HOME).toBe('/h');
   });
 
+  test('should drop names matching a trailing-star prefix', () => {
+    const env = buildEnv({
+      env: {
+        ANTHROPIC_BASE_URL: 'x',
+        ANTHROPIC_CUSTOM_HEADERS: 'x',
+        ANTHROPIC: 'kept',
+        MY_ANTHROPIC_X: 'kept',
+        anthropic_lower: 'kept',
+      },
+      home: '/h',
+      cwd: '/c',
+      platform: 'linux',
+      drop: ['ANTHROPIC_*'],
+    });
+
+    expect(env).toEqual({
+      ANTHROPIC: 'kept',
+      MY_ANTHROPIC_X: 'kept',
+      anthropic_lower: 'kept',
+      KYOTEN_HOME: '/h',
+      KYOTEN_CALLER_DIR: '/c',
+    });
+  });
+
+  test('should match a prefix case-insensitively on Windows', () => {
+    const env = buildEnv({
+      env: { anthropic_base_url: 'x', Path: 'p' },
+      home: 'H',
+      cwd: 'C',
+      platform: 'win32',
+      drop: ['ANTHROPIC_*'],
+    });
+
+    expect(env).toEqual({
+      Path: 'p',
+      KYOTEN_HOME: 'H',
+      KYOTEN_CALLER_DIR: 'C',
+    });
+  });
+
   test('should skip undefined values', () => {
     const env = buildEnv({
       env: { EMPTY: undefined },

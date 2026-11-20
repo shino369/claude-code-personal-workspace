@@ -150,6 +150,65 @@ describe('initHome', () => {
     expect(fs.existsSync(path.join(home, 'package.json'))).toBe(true);
   });
 
+  test.each([
+    ['git init', 'init'],
+    ['commit-tree', 'commit-tree'],
+  ])(
+    'should leave no home or temporary folder when %s fails, then succeed on a re-run',
+    (_name, failing) => {
+      const home = newHome();
+      const { run: real } = fakeRun();
+      /** @type {import('../../spawn.js').Spawn} */
+      const broken = (bin, args, options) =>
+        bin === 'git' && args.includes(failing)
+          ? { status: 1, stdout: '', stderr: 'boom' }
+          : real(bin, args, options);
+
+      expect(() =>
+        initHome({
+          home,
+          source: sourceAt(first),
+          log: vi.fn(),
+          run: broken,
+          setup: false,
+        })
+      ).toThrow();
+      expect(fs.existsSync(home)).toBe(false);
+      expect(
+        fs
+          .readdirSync(tmp)
+          .filter((n) => n.startsWith(`.${path.basename(home)}.`))
+      ).toEqual([]);
+
+      const result = initHome({
+        home,
+        source: sourceAt(first),
+        log: vi.fn(),
+        run: real,
+        setup: false,
+      });
+
+      expect(result.created).toBe(true);
+      expect(readHomeInfo(home)?.version).toBe('1.0.0');
+      expect(fs.existsSync(path.join(home, '.git'))).toBe(true);
+    }
+  );
+
+  test('should create a home in a missing parent folder', () => {
+    const home = path.join(newHome(), 'deeper', 'home');
+
+    const result = initHome({
+      home,
+      source: sourceAt(first),
+      log: vi.fn(),
+      run: fakeRun().run,
+      setup: false,
+    });
+
+    expect(result.created).toBe(true);
+    expect(readHomeInfo(home)?.managed).toBe(true);
+  });
+
   test('should run pnpm install then workspace:setup in the home', () => {
     const home = newHome();
     const { run, calls } = fakeRun();

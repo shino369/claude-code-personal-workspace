@@ -24,8 +24,25 @@ export const TOKEN_KEY = 'ANTHROPIC_AUTH_TOKEN';
  * set either back on purpose.
  */
 export const TOKEN_KEYS = [TOKEN_KEY, 'ANTHROPIC_API_KEY'];
+/**
+ * What a dscc launch removes from the caller's environment: every
+ * ANTHROPIC_* name (endpoint, headers, account) and the switches that send
+ * Claude Code to a cloud provider. Entries ending in `*` are name prefixes.
+ */
+export const DSCC_DROP = [
+  'ANTHROPIC_*',
+  'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX',
+  'CLAUDE_CODE_USE_FOUNDRY',
+  'CLAUDE_CODE_SKIP_BEDROCK_AUTH',
+  'CLAUDE_CODE_SKIP_VERTEX_AUTH',
+];
+const BASE_URL_KEY = 'ANTHROPIC_BASE_URL';
+const DEEPSEEK_HOST = 'api.deepseek.com';
+const DEEPSEEK_URL = `https://${DEEPSEEK_HOST}/anthropic`;
 
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const ALLOWED_RE = /^(ANTHROPIC_|CLAUDE_CODE_)|^API_TIMEOUT_MS$/;
 
 /**
  * @typedef {import('./home.js').UserDirs} UserDirs
@@ -57,9 +74,10 @@ export function parseLine(raw) {
 
 /**
  * @param {string} text
+ * @param {(name: string) => boolean} [allow]  names outside it are skipped with a warning
  * @returns {Profile}
  */
-export function parseProfile(text) {
+export function parseProfile(text, allow) {
   /** @type {Map<string, string>} */
   const pairs = new Map();
   /** @type {string[]} */
@@ -70,6 +88,12 @@ export function parseProfile(text) {
     if (parsed.invalid) {
       warnings.push(
         `line ${index + 1} skipped: not a variable name: ${parsed.key}`
+      );
+      return;
+    }
+    if (allow && !allow(parsed.key)) {
+      warnings.push(
+        `line ${index + 1} skipped: ${parsed.key} is not an ANTHROPIC_*, CLAUDE_CODE_*, or API_TIMEOUT_MS setting`
       );
       return;
     }
@@ -188,13 +212,33 @@ export function setKey({ file, key, template = TEMPLATE_FILE }) {
  * @returns {{ drop: string[], set: Record<string, string>, warnings: string[] }}
  */
 export function dsccEnv(file) {
-  const { pairs, warnings } = parseProfile(readProfileText(file));
+  const { pairs, warnings } = parseProfile(readProfileText(file), (name) =>
+    ALLOWED_RE.test(name)
+  );
+  /** @type {URL | null} */
+  let url = null;
+  try {
+    url = new URL(pairs.get(BASE_URL_KEY) ?? '');
+  } catch {
+    // Missing or malformed: refused below.
+  }
+  if (url?.protocol !== 'https:') {
+    throw new Error(
+      `${BASE_URL_KEY} in ${file} must be an https URL (DeepSeek: ${DEEPSEEK_URL}).\nFix: set it in the profile, then try again`
+    );
+  }
   if (tokenUnset(pairs.get(TOKEN_KEY))) {
     throw new Error(
       `${TOKEN_KEY} is not set in ${file}.\nFix: kyoten dscc --set-key`
     );
   }
-  return { drop: TOKEN_KEYS, set: Object.fromEntries(pairs), warnings };
+  if (url.hostname !== DEEPSEEK_HOST) {
+    warnings.push(
+      `${BASE_URL_KEY} points at ${url.hostname}, not ${DEEPSEEK_HOST}: the key is sent there`
+    );
+  }
+  const set = Object.fromEntries(pairs);
+  return { drop: DSCC_DROP, set, warnings };
 }
 
 /**

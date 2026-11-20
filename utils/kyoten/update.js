@@ -17,6 +17,7 @@ import {
   checkNode,
   checkTool,
   commitTree,
+  compareVersions,
   mergeEnv,
   updateBlocker,
   writeTree,
@@ -103,6 +104,11 @@ export function updateHome({
   if (!info) {
     throw new Error(
       `${home} was not created by kyoten init (a clone?), so kyoten does not update it.\nFix: update it with git pull`
+    );
+  }
+  if (compareVersions(source.version, info.version) < 0) {
+    throw new Error(
+      `this kyoten (${source.version}) is older than the home (${info.version}); updating would take the home back.\nFix: npx kyoten@latest update`
     );
   }
   const blocker = updateBlocker({ run, home });

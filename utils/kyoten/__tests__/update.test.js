@@ -137,6 +137,35 @@ describe('updateHome', () => {
     );
   });
 
+  test('should refuse a kyoten older than the home and change nothing', () => {
+    const home = makeHome();
+    const upstream = git(['rev-parse', 'kyoten/upstream'], home);
+    const head = git(['rev-parse', 'HEAD'], home);
+    const info = fs.readFileSync(path.join(home, HOME_INFO), 'utf-8');
+    const seen = /** @type {string[]} */ ([]);
+    const { run } = fakeRun();
+    /** @type {import('../../spawn.js').Spawn} */
+    const spy = (bin, args, options) => {
+      seen.push(bin);
+      return run(bin, args, options);
+    };
+
+    expect(() =>
+      updateHome({
+        home,
+        source: sourceAt(second, '0.9.0'),
+        log: vi.fn(),
+        run: spy,
+      })
+    ).toThrow(
+      /this kyoten \(0\.9\.0\) is older than the home \(1\.0\.0\); updating would take the home back\.\nFix: npx kyoten@latest update/
+    );
+    expect(seen).toEqual([]);
+    expect(git(['rev-parse', 'kyoten/upstream'], home)).toBe(upstream);
+    expect(git(['rev-parse', 'HEAD'], home)).toBe(head);
+    expect(fs.readFileSync(path.join(home, HOME_INFO), 'utf-8')).toBe(info);
+  });
+
   test('should refuse a home with uncommitted tracked changes', () => {
     const home = makeHome();
     fs.writeFileSync(path.join(home, 'a.txt'), 'edited\n');

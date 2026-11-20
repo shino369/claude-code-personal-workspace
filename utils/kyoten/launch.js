@@ -95,7 +95,7 @@ export function buildArgv({ agent, command, args, defaults = [] }) {
 /**
  * The agent's environment: the caller's, without the harness session ids (a
  * kyoten started inside an agent session must not act as that session in
- * `pnpm task`) and without `drop`, plus `KYOTEN_HOME`, `KYOTEN_CALLER_DIR`,
+ * `pnpm task`) and without `drop` (an entry ending in `*` is a name prefix), plus `KYOTEN_HOME`, `KYOTEN_CALLER_DIR`,
  * and `set`. Windows env names are case-insensitive, so they are matched that
  * way there.
  *
@@ -107,9 +107,20 @@ export function buildEnv({ env, home, cwd, platform, drop = [], set = {} }) {
   const fold = (name) => (platform === 'win32' ? name.toUpperCase() : name);
   /** @type {Record<string, string>} */
   const out = {};
-  const removed = new Set([...HARNESS_SESSION_VARS, ...drop].map(fold));
+  const names = new Set(HARNESS_SESSION_VARS.map(fold));
+  /** @type {string[]} */
+  const prefixes = [];
+  for (const entry of drop) {
+    if (entry.endsWith('*')) prefixes.push(fold(entry.slice(0, -1)));
+    else names.add(fold(entry));
+  }
+  /** @param {string} name */
+  const isRemoved = (name) => {
+    const folded = fold(name);
+    return names.has(folded) || prefixes.some((p) => folded.startsWith(p));
+  };
   for (const [name, value] of Object.entries(env)) {
-    if (value !== undefined && !removed.has(fold(name))) out[name] = value;
+    if (value !== undefined && !isRemoved(name)) out[name] = value;
   }
   const added = { KYOTEN_HOME: home, KYOTEN_CALLER_DIR: cwd, ...set };
   for (const [name, value] of Object.entries(added)) {

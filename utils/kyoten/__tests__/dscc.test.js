@@ -5,8 +5,8 @@ import path from 'path';
 import { Readable } from 'stream';
 import { vi } from 'vitest';
 import {
+  DSCC_DROP,
   TEMPLATE_FILE,
-  TOKEN_KEYS,
   dsccEnv,
   mask,
   parseLine,
@@ -284,20 +284,98 @@ describe('setKey', () => {
 });
 
 describe('dsccEnv', () => {
+  const URL_LINE = 'ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic\n';
+
   test('should drop the inherited keys and set the profile', () => {
-    const file = write('p.env', `ANTHROPIC_AUTH_TOKEN=${KEY}\nA=1\n2B=x\n`);
+    const file = write(
+      'p.env',
+      `${URL_LINE}ANTHROPIC_AUTH_TOKEN=${KEY}\nCLAUDE_CODE_EFFORT_LEVEL=max\nAPI_TIMEOUT_MS=5\n2B=x\n`
+    );
 
     const env = dsccEnv(file);
 
     expect(env).toEqual({
-      drop: TOKEN_KEYS,
-      set: { ANTHROPIC_AUTH_TOKEN: KEY, A: '1' },
-      warnings: ['line 3 skipped: not a variable name: 2B'],
+      drop: DSCC_DROP,
+      set: {
+        ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic',
+        ANTHROPIC_AUTH_TOKEN: KEY,
+        CLAUDE_CODE_EFFORT_LEVEL: 'max',
+        API_TIMEOUT_MS: '5',
+      },
+      warnings: ['line 5 skipped: not a variable name: 2B'],
     });
   });
 
+  test('should drop every ANTHROPIC_ name and the cloud provider switches', () => {
+    expect(DSCC_DROP).toEqual([
+      'ANTHROPIC_*',
+      'CLAUDE_CODE_USE_BEDROCK',
+      'CLAUDE_CODE_USE_VERTEX',
+      'CLAUDE_CODE_USE_FOUNDRY',
+      'CLAUDE_CODE_SKIP_BEDROCK_AUTH',
+      'CLAUDE_CODE_SKIP_VERTEX_AUTH',
+    ]);
+  });
+
+  test('should skip names outside the allowed settings', () => {
+    const file = write(
+      'p.env',
+      `${URL_LINE}ANTHROPIC_AUTH_TOKEN=${KEY}\nNODE_OPTIONS=--require=/tmp/x.js\nPATH=/evil\n`
+    );
+
+    const env = dsccEnv(file);
+
+    expect(Object.keys(env.set)).toEqual([
+      'ANTHROPIC_BASE_URL',
+      'ANTHROPIC_AUTH_TOKEN',
+    ]);
+    expect(env.warnings).toEqual([
+      'line 3 skipped: NODE_OPTIONS is not an ANTHROPIC_*, CLAUDE_CODE_*, or API_TIMEOUT_MS setting',
+      'line 4 skipped: PATH is not an ANTHROPIC_*, CLAUDE_CODE_*, or API_TIMEOUT_MS setting',
+    ]);
+  });
+
+  test.each([
+    ['missing', ''],
+    ['empty', 'ANTHROPIC_BASE_URL=\n'],
+    ['http', 'ANTHROPIC_BASE_URL=http://api.deepseek.com/anthropic\n'],
+    ['not a URL', 'ANTHROPIC_BASE_URL=api.deepseek.com\n'],
+  ])('should refuse a profile whose base URL is %s', (_label, line) => {
+    const file = write('p.env', `${line}ANTHROPIC_AUTH_TOKEN=${KEY}\n`);
+
+    expect(() => dsccEnv(file)).toThrow(
+      `ANTHROPIC_BASE_URL in ${file} must be an https URL (DeepSeek: https://api.deepseek.com/anthropic).\nFix: set it in the profile, then try again`
+    );
+  });
+
+  test('should check the base URL before the token', () => {
+    const file = write('p.env', 'ANTHROPIC_AUTH_TOKEN=\n');
+
+    expect(() => dsccEnv(file)).toThrow('ANTHROPIC_BASE_URL');
+  });
+
+  test('should warn when the base URL is not DeepSeek', () => {
+    const file = write(
+      'p.env',
+      `ANTHROPIC_BASE_URL=https://proxy.example.com/x\nANTHROPIC_AUTH_TOKEN=${KEY}\n`
+    );
+
+    expect(dsccEnv(file).warnings).toEqual([
+      'ANTHROPIC_BASE_URL points at proxy.example.com, not api.deepseek.com: the key is sent there',
+    ]);
+  });
+
+  test('should not warn for the DeepSeek host', () => {
+    const file = write('p.env', `${URL_LINE}ANTHROPIC_AUTH_TOKEN=${KEY}\n`);
+
+    expect(dsccEnv(file).warnings).toEqual([]);
+  });
+
   test('should refuse a profile without a token', () => {
-    const file = write('p.env', 'ANTHROPIC_AUTH_TOKEN=<paste here>\n');
+    const file = write(
+      'p.env',
+      `${URL_LINE}ANTHROPIC_AUTH_TOKEN=<paste here>\n`
+    );
 
     expect(() => dsccEnv(file)).toThrow(
       `ANTHROPIC_AUTH_TOKEN is not set in ${file}`

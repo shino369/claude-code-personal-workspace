@@ -165,8 +165,8 @@ dscc profile (DeepSeek API key and model mapping)
   kyoten dscc --set-key   Save the key (hidden prompt, or one line on stdin)
   kyoten dscc --show      Print the profile, the key masked
 
-The home is the first of: --home, $KYOTEN_HOME, a kyoten workspace containing
-the current directory, "home" in the config, ~/.kyoten.
+The home is the first of: --home, $KYOTEN_HOME, the clone kyoten runs from
+(pnpm kyoten inside it), "home" in the config, ~/.kyoten.
 Config: ${config}
   {"home": "/abs/path", "args": {"dscc": ["--dangerously-skip-permissions"]}}`;
 }

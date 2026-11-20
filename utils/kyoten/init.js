@@ -6,6 +6,7 @@
  * setup is finished by running init again.
  */
 import fs from 'fs';
+import path from 'path';
 import { PNPM_INSTALL, crossSpawn } from '../spawn.js';
 import { homeState, writeHomeInfo } from './home.js';
 import { checkNode, checkTool, initRepo } from './repo.js';
@@ -60,15 +61,28 @@ export function initHome({
     log(
       `creating a kyoten home at ${home} (kyoten ${source.version}, ${source.commit.slice(0, 7)})`
     );
-    fs.mkdirSync(home, { recursive: true });
-    materialize(source, home, { run });
-    initRepo({ run, home, version: source.version, env });
-    writeHomeInfo(home, {
-      managed: true,
-      version: source.version,
-      sourceCommit: source.commit,
-      createdAt: now().toISOString(),
-    });
+    fs.mkdirSync(path.dirname(home), { recursive: true });
+    const temp = path.join(
+      path.dirname(home),
+      `.${path.basename(home)}.kyoten-init-${process.pid}-${Date.now()}`
+    );
+    try {
+      fs.mkdirSync(temp);
+      materialize(source, temp, { run });
+      initRepo({ run, home: temp, version: source.version, env });
+      writeHomeInfo(temp, {
+        managed: true,
+        version: source.version,
+        sourceCommit: source.commit,
+        createdAt: now().toISOString(),
+      });
+      // An existing home can only be an empty folder here.
+      if (fs.existsSync(home)) fs.rmdirSync(home);
+      fs.renameSync(temp, home);
+    } catch (error) {
+      fs.rmSync(temp, { recursive: true, force: true });
+      throw error;
+    }
   } else {
     log(`${home} is already a kyoten workspace`);
   }

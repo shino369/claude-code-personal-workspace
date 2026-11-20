@@ -1,9 +1,9 @@
 /**
  * Where kyoten's workspace (the "home") is, and kyoten's per-user config.
  *
- * The home is the first match of: `--home`, `$KYOTEN_HOME`, a kyoten
- * workspace containing the current directory, the config file's `home`,
- * then `~/.kyoten`. The config file lives outside every workspace
+ * The home is the first match of: `--home`, `$KYOTEN_HOME`, the clone kyoten
+ * runs from when the current directory is inside it, the config file's
+ * `home`, then `~/.kyoten`. The config file lives outside every workspace
  * (`%APPDATA%\kyoten` on Windows, `$XDG_CONFIG_HOME/kyoten` or
  * `~/.config/kyoten` elsewhere), next to the dscc profile.
  */
@@ -189,13 +189,19 @@ export function findWorkspace(start) {
 }
 
 /**
- * @param {{ flag?: string, env: NodeJS.ProcessEnv, cwd: string, config: KyotenConfig, configPath: string, homedir: string, platform: NodeJS.Platform }} input
+ * The current-directory rule only takes the clone kyoten itself runs from
+ * (`root`, as with `pnpm kyoten`): any repository can look like a kyoten
+ * workspace, and its pnpm scripts and agent config must not be used unless
+ * the user names it (--home, KYOTEN_HOME, or the config).
+ *
+ * @param {{ flag?: string, env: NodeJS.ProcessEnv, cwd: string, root?: string, config: KyotenConfig, configPath: string, homedir: string, platform: NodeJS.Platform }} input
  * @returns {ResolvedHome}
  */
 export function resolveHome({
   flag,
   env,
   cwd,
+  root,
   config,
   configPath,
   homedir,
@@ -214,9 +220,29 @@ export function resolveHome({
     };
   }
   const found = findWorkspace(cwd);
-  if (found) return { dir: found, source: 'the current directory' };
+  if (found && root && samePath(found, root)) {
+    return { dir: found, source: 'the clone kyoten runs from' };
+  }
   if (config.home) return { dir: config.home, source: configPath };
   return { dir: defaultHome({ platform, homedir }), source: 'default' };
+}
+
+/**
+ * Whether two paths name the same folder, links resolved.
+ *
+ * @param {string} a
+ * @param {string} b
+ */
+export function samePath(a, b) {
+  /** @param {string} p */
+  const real = (p) => {
+    try {
+      return fs.realpathSync(p);
+    } catch {
+      return path.resolve(p);
+    }
+  };
+  return real(a) === real(b);
 }
 
 /**

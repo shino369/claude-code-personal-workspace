@@ -16,6 +16,7 @@ import {
   readConfig,
   readHomeInfo,
   resolveHome,
+  samePath,
   validateConfig,
   writeConfig,
   writeHomeInfo,
@@ -269,15 +270,35 @@ describe('resolveHome', () => {
     });
   });
 
-  test('should use the workspace containing the cwd next', () => {
+  test('should use the clone kyoten runs from when the cwd is inside it', () => {
     makeWorkspace(tmp);
+    const nested = path.join(tmp, 'tasks');
+    fs.mkdirSync(nested);
 
-    const home = resolveHome({ ...base, cwd: tmp, config: { home: '/cfg' } });
+    const home = resolveHome({
+      ...base,
+      cwd: nested,
+      root: tmp,
+      config: { home: '/cfg' },
+    });
 
     expect(home).toEqual({
       dir: path.resolve(tmp),
-      source: 'the current directory',
+      source: 'the clone kyoten runs from',
     });
+  });
+
+  test('should ignore a look-alike workspace that is not the running clone', () => {
+    makeWorkspace(tmp);
+
+    const home = resolveHome({
+      ...base,
+      cwd: tmp,
+      root: path.join(tmp, 'elsewhere'),
+      config: { home: '/cfg' },
+    });
+
+    expect(home).toEqual({ dir: '/cfg', source: '/c/config.json' });
   });
 
   test('should use the config home next', () => {
@@ -356,5 +377,18 @@ describe('readHomeInfo and writeHomeInfo', () => {
     fs.writeFileSync(path.join(tmp, HOME_INFO), text);
 
     expect(readHomeInfo(tmp)).toBeNull();
+  });
+});
+
+describe('samePath', () => {
+  test('should match a folder and its resolved form', () => {
+    expect(samePath(tmp, path.join(tmp, '.'))).toBe(true);
+  });
+
+  test('should compare missing paths by their resolved form', () => {
+    expect(
+      samePath(path.join(tmp, 'none'), path.join(tmp, 'x', '..', 'none'))
+    ).toBe(true);
+    expect(samePath(path.join(tmp, 'a'), path.join(tmp, 'b'))).toBe(false);
   });
 });
