@@ -57,6 +57,21 @@ export const HOOKS = [
     ],
   },
   {
+    id: 'guard',
+    script: '.claude/hooks/guard.js',
+    timeout: 5,
+    // Claude Code enforces .claude/settings.json permissions itself. Codex
+    // gets its shell rules from .codex/rules/workspace.rules; the guard
+    // checks the paths its patches edit.
+    codex: [{ event: 'PreToolUse', matcher: 'Bash|apply_patch' }],
+    dsh: [
+      {
+        event: 'PreToolUse',
+        matcher: 'bash|pwsh|read|edit|write|apply_patch|str_replace_editor',
+      },
+    ],
+  },
+  {
     id: 'compact-note',
     script: '.claude/hooks/pre_compact.js',
     timeout: 10,

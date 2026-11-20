@@ -38,7 +38,7 @@ const writeJson = (file, value) => {
  * @returns {any}
  */
 const claudeSettings = () => ({
-  permissions: { deny: [] },
+  permissions: { deny: ['Bash(rm:*)'], ask: ['Bash(git push:*)'] },
   ...renderHooksConfig('claude'),
 });
 
@@ -54,7 +54,9 @@ afterEach(() => {
 
 describe('generatedFiles', () => {
   test('should generate nothing for a harness with no hooks', () => {
-    expect(generatedFiles({ specs: [] })).toEqual([]);
+    expect(
+      generatedFiles({ specs: [], rootDir: path.join(root, 'no-settings') })
+    ).toEqual([]);
   });
 
   test('should render the Codex hooks config as formatted JSON', () => {
@@ -124,6 +126,34 @@ describe('pnpm harness sync', () => {
   });
 });
 
+describe('the Codex command rules', () => {
+  test('should be written from the permissions in .claude/settings.json', () => {
+    run(['sync']);
+    const rules = read('.codex/rules/workspace.rules');
+    expect(rules).toContain('pattern = ["rm"],');
+    expect(rules).toContain('pattern = ["git", "push"],');
+    expect(lines).toContain(
+      'Codex: the command rules apply from the next Codex session.'
+    );
+  });
+
+  test('should be compared as text, so an edit by hand is stale', () => {
+    run(['sync']);
+    fs.appendFileSync(path.join(root, '.codex/rules/workspace.rules'), '# x\n');
+    lines = [];
+    expect(run(['check'])).toBe(1);
+    expect(lines).toContain('✗ .codex/rules/workspace.rules is out of date');
+  });
+
+  test('should not be written while .claude/settings.json cannot be read', () => {
+    fs.writeFileSync(path.join(root, '.claude/settings.json'), '{');
+    run(['sync']);
+    expect(fs.existsSync(path.join(root, '.codex/rules/workspace.rules'))).toBe(
+      false
+    );
+  });
+});
+
 describe('pnpm harness check', () => {
   test('should pass when every config matches the manifest', () => {
     run(['sync']);
@@ -132,6 +162,7 @@ describe('pnpm harness check', () => {
     expect(lines).toEqual([
       '✓ .claude/settings.json hooks match utils/harness/hooks.js',
       '✓ .codex/hooks.json',
+      '✓ .codex/rules/workspace.rules',
     ]);
   });
 

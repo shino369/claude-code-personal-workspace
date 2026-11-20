@@ -55,6 +55,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/.claude/hooks/guard.js\" --harness codex",
+            "timeout": 5
+          },
+          {
+            "type": "command",
             "command": "node \"$(git rev-parse --show-toplevel)/.claude/hooks/audit_logger.js\" --harness codex",
             "timeout": 10
           },

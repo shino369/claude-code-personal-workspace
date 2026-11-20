@@ -22,6 +22,7 @@ import {
   readHookEntries,
   renderHooksConfig,
 } from './hooks.js';
+import { readPermissions, renderCodexRules } from './permissions.js';
 
 const MANIFEST = 'utils/harness/hooks.js';
 const CLAUDE_SETTINGS = '.claude/settings.json';
@@ -30,7 +31,7 @@ const CODEX_HOOKS_DESCRIPTION =
 
 /**
  * @typedef {{ rootDir: string, log: (line: string) => void }} Deps
- * @typedef {{ file: string, content: string, changedHint?: { text: string, when: (previous: string | null) => boolean } }} GeneratedFile
+ * @typedef {{ file: string, content: string, json?: boolean, changedHint?: { text: string, when: (previous: string | null) => boolean } }} GeneratedFile
  *   changedHint: printed after sync rewrote the file, when `when` says the
  *   change matters (given the previous content, null for a new file)
  */
@@ -56,10 +57,10 @@ function codexHooksChanged(previous) {
 /**
  * Every file `pnpm harness sync` writes, with its content.
  *
- * @param {{ specs?: import('./hooks.js').HookSpec[] }} [options]
+ * @param {{ specs?: import('./hooks.js').HookSpec[], rootDir?: string }} [options]
  * @returns {GeneratedFile[]}
  */
-export function generatedFiles({ specs = HOOKS } = {}) {
+export function generatedFiles({ specs = HOOKS, rootDir = ROOT_DIR } = {}) {
   /** @type {GeneratedFile[]} */
   const files = [];
   const codex = renderHooksConfig('codex', {
@@ -70,13 +71,39 @@ export function generatedFiles({ specs = HOOKS } = {}) {
     files.push({
       file: '.codex/hooks.json',
       content: `${JSON.stringify(codex, null, 2)}\n`,
+      json: true,
       changedHint: {
         text: 'Codex: run /hooks in Codex here to trust the changed hooks (each one is skipped until trusted).',
         when: codexHooksChanged,
       },
     });
   }
+  const settings = readSettings(rootDir);
+  if (settings) {
+    files.push({
+      file: '.codex/rules/workspace.rules',
+      content: renderCodexRules(readPermissions(settings)),
+      changedHint: {
+        text: 'Codex: the command rules apply from the next Codex session.',
+        when: () => true,
+      },
+    });
+  }
   return files;
+}
+
+/**
+ * @param {string} rootDir
+ * @returns {unknown} the parsed .claude/settings.json, or null
+ */
+function readSettings(rootDir) {
+  try {
+    return JSON.parse(
+      fs.readFileSync(path.join(rootDir, CLAUDE_SETTINGS), 'utf-8')
+    );
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -90,6 +117,8 @@ function fileState(rootDir, generated) {
   const file = path.join(rootDir, generated.file);
   if (!fs.existsSync(file)) return 'missing';
   const actual = fs.readFileSync(file, 'utf-8');
+  if (!generated.json)
+    return actual === generated.content ? 'current' : 'stale';
   try {
     return JSON.stringify(JSON.parse(actual)) ===
       JSON.stringify(JSON.parse(generated.content))
@@ -143,7 +172,7 @@ const COMMANDS = {
   /** @param {Deps} deps */
   sync(deps) {
     const written = [];
-    for (const generated of generatedFiles()) {
+    for (const generated of generatedFiles({ rootDir: deps.rootDir })) {
       const state = fileState(deps.rootDir, generated);
       if (state === 'current') continue;
       const file = path.join(deps.rootDir, generated.file);
@@ -165,7 +194,7 @@ const COMMANDS = {
   /** @param {Deps} deps */
   check(deps) {
     let ok = checkClaude(deps);
-    for (const generated of generatedFiles()) {
+    for (const generated of generatedFiles({ rootDir: deps.rootDir })) {
       const state = fileState(deps.rootDir, generated);
       if (state === 'current') {
         deps.log(`✓ ${generated.file}`);
