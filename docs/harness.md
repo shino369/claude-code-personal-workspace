@@ -49,10 +49,11 @@ files are `.codex/hooks.json`, `.codex/rules/workspace.rules`, `.codex/agents/*.
 `.dsh/hooks.json`, and `.dsh/workspace.patch.yml`.
 
 **DSH is partly tested.** `dsh web` 0.2.2-rc.3 on Windows read `AGENTS.md` and
-`AGENTS.local.md`, saw the skills, and ran `pnpm task`; with the hook commands below, the
-SessionStart brief, UserPromptSubmit, and Stop hooks ran (exit 0). The hooks on tool calls (guard,
-audit, format, memory triggers) have not run in DSH yet, so those cells come from reading its
-source and docs. Codex was tested live (Codex 0.155): a smoke test of the
+`AGENTS.local.md`, saw the skills, and ran `pnpm task`. With the hook commands below, the
+SessionStart brief, UserPromptSubmit, PreToolUse and PostToolUse (guard, audit, and the memory
+triggers), and Stop hooks ran (exit 0). `auto_format` has not run in DSH yet, because the test did
+not make an edit or write tool call, so that cell comes from reading its source and docs. Codex was
+tested live (Codex 0.155): a smoke test of the
 task brief, the Stop verify, formatting of a patch, audit entries, `rm` refused by the rules, and a
 `.env` patch refused by the guard passed 7 of 7.
 
@@ -127,7 +128,9 @@ Code's `node "$CLAUDE_PROJECT_DIR"/<script>`. On Windows DSH runs hooks with `pw
 bridge sets, so they expand to empty and Node looks for `C:\utils\…`. The patch sets the bridge's
 `projectDir` to `!!js process.cwd()` (the launch dir, which `configPath` is relative to as well),
 and the bridge replaces the braced token with it when it reads the config, so every shell gets one
-quoted path. The commands ran with an absolute `projectDir`; the `!!js` form has not run yet.
+quoted path. Both an absolute `projectDir` and the `!!js process.cwd()` form ran on Windows with
+`dsh web` 0.2.2-rc.3; with the latter, the SessionStart brief was injected and every hook in the
+test exited 0.
 
 DSH hooks fail open: a hook that cannot start, or a config the bridge cannot read, only logs a
 warning, so a broken command turns the guard off without a sign. The path is part of each command,

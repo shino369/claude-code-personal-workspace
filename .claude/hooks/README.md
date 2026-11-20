@@ -5,8 +5,8 @@ Claude Code, Codex, and DSH. `utils/harness/hooks.js` lists each hook once, with
 matcher per harness; `pnpm harness sync` writes `.codex/hooks.json` and `.dsh/hooks.json` from it,
 and `pnpm harness check` fails when they or `.claude/settings.json` differ from it. Every script
 takes `--harness claude|codex|dsh` (default `claude`). DSH is partly tested (`dsh web` on
-Windows ran the SessionStart, UserPromptSubmit, and Stop hooks; the tool hooks have not run yet).
-Details: `docs/harness.md`, "Three harnesses".
+Windows ran the SessionStart, UserPromptSubmit, PreToolUse/PostToolUse guard, audit, and memory
+hooks, and Stop; `auto_format` has not run yet). Details: `docs/harness.md`, "Three harnesses".
 
 | Hook                   | Claude Code | Codex                                            | DSH (partly tested)    |
 | ---------------------- | ----------- | ------------------------------------------------ | ---------------------- |
