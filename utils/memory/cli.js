@@ -9,6 +9,15 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { runAgent } from '../loop/adapters.js';
+import {
+  applyImport,
+  exportArchive,
+  formatExport,
+  formatImport,
+  parseParts,
+  planImport,
+  readArchive,
+} from './archive.js';
 import { runIfMain } from '../module-runner.js';
 import { SESSION_ID_RE, sessionFromEnv } from '../task/store.js';
 import { ROOT_DIR } from '../workspace-config.js';
@@ -109,6 +118,18 @@ Extraction (automatic after each Claude Code session)
   inbox [--reset]               Changes extraction held back for you to review (they read
                                 like instructions); --reset clears the list
 
+Move or back up (an explicit step; nothing is synced)
+  export [--include memory,personalization,tasks,resources] [--tasks a,b] [--out <file>]
+      [--allow-secrets]           Write a .tar.gz with a checksummed manifest (default:
+                                memory,personalization to memory-export-<yymmdd>.tar.gz).
+                                Files that look like they hold secrets stop the export
+  import <file> [--include …] [--dry-run] [--replace]
+                                Validate the archive (paths, links, checksums) before
+                                anything is written, then merge: new ids, other machines'
+                                notes unchecked, duplicates skipped, your settings, tasks,
+                                and resources kept. --replace takes over the store and
+                                settings; a snapshot is taken first
+
 Settings
   personalize [--preset <name>] [--call-me …] [--about-me …] [--language …]
       [--persona …] [--tone <text|preset>] [--traits a,b] [--extra …] [--reset]
@@ -145,6 +166,9 @@ const VALUE_FLAGS = {
   '--extra': 'extra',
   '--extract-model': 'extractModel',
   '--budget': 'budget',
+  '--include': 'include',
+  '--tasks': 'tasks',
+  '--out': 'out',
 };
 const REPEATABLE = new Set(['triggers']);
 const BOOLEAN_FLAGS = {
@@ -159,6 +183,8 @@ const BOOLEAN_FLAGS = {
   '--presets': 'presets',
   '--session': 'session',
   '--dry-run': 'dryRun',
+  '--allow-secrets': 'allowSecrets',
+  '--replace': 'replace',
   '--json': 'json',
   '--help': 'help',
   '-h': 'help',
@@ -189,11 +215,12 @@ const FIRST_NOTE =
  *   grep?: string, message?: string, preset?: string, callMe?: string,
  *   aboutMe?: string, language?: string, persona?: string, tone?: string,
  *   traits?: string, extra?: string, extractModel?: string, budget?: string,
+ *   include?: string, tasks?: string, out?: string,
  *   triggers: string[],
  *   pin: boolean, force: boolean, failure: boolean, pinned: boolean,
  *   stale: boolean, all: boolean, reset: boolean, show: boolean,
- *   presets: boolean, session: boolean, dryRun: boolean, json: boolean,
- *   help: boolean,
+ *   presets: boolean, session: boolean, dryRun: boolean,
+ *   allowSecrets: boolean, replace: boolean, json: boolean, help: boolean,
  * }} Options
  *
  * @typedef {{
@@ -203,6 +230,7 @@ const FIRST_NOTE =
  *   now: () => Date,
  *   log: (message: string) => void,
  *   runAgent: typeof runAgent,
+ *   machine: string,
  * }} Deps
  *
  * @typedef {import('./store.js').Note} Note
@@ -230,6 +258,8 @@ export function parseArgs(argv) {
     presets: false,
     session: false,
     dryRun: false,
+    allowSecrets: false,
+    replace: false,
     json: false,
     help: false,
   };
@@ -272,6 +302,7 @@ export function defaultDeps(overrides = {}) {
     now: () => new Date(),
     log: console.log,
     runAgent,
+    machine: os.hostname(),
     ...overrides,
   };
 }
@@ -551,6 +582,73 @@ export const COMMANDS = {
         : runs.flatMap(formatRun).join('\n')
     );
     return runs.some((run) => run.status === 'failed') ? 1 : 0;
+  },
+
+  export(options, deps) {
+    const parts = parseParts(options.include);
+    const tasks = options.tasks === undefined ? [] : splitList(options.tasks);
+    if (tasks.length > 0 && !parts.includes('tasks')) {
+      throw new Error(
+        '--tasks needs the tasks part. Fix: --include memory,personalization,tasks'
+      );
+    }
+    const now = deps.now();
+    const day = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const out = path.resolve(
+      deps.cwd,
+      options.out ?? `memory-export-${day}.tar.gz`
+    );
+    const result = exportArchive(deps.rootDir, {
+      parts,
+      tasks,
+      out,
+      allowSecrets: options.allowSecrets,
+      now,
+      machine: deps.machine,
+    });
+    output(deps, options, result, formatExport(result, deps.cwd).join('\n'));
+    return 0;
+  },
+
+  import(options, deps) {
+    const file = options.positionals[1];
+    if (!file) {
+      throw new Error(
+        'Name the archive: pnpm memory import <file> [--dry-run]'
+      );
+    }
+    const archive = readArchive(path.resolve(deps.cwd, file));
+    const include =
+      options.include === undefined ? null : parseParts(options.include);
+    const plan = planImport(deps.rootDir, archive, {
+      include,
+      replace: options.replace,
+    });
+    const result = options.dryRun
+      ? null
+      : applyImport(deps.rootDir, archive, plan, {
+          now: deps.now(),
+          detail: path.basename(file),
+          replace: options.replace,
+        });
+    const { files: _files, ...manifest } = archive.manifest;
+    output(
+      deps,
+      options,
+      {
+        manifest,
+        plan: {
+          ...plan,
+          notes: plan.notes && { ...plan.notes, add: plan.notes.add.length },
+          instructionsText: undefined,
+        },
+        result,
+      },
+      formatImport({ file, manifest: archive.manifest, plan, result }).join(
+        '\n'
+      )
+    );
+    return 0;
   },
 
   inbox(options, deps) {

@@ -363,7 +363,7 @@ export function replay(ops) {
  * @param {string} content
  * @returns {{ ops: Op[], problems: string[] }}
  */
-function parseLog(content) {
+export function parseLog(content) {
   /** @type {Op[]} */
   const ops = [];
   /** @type {string[]} */

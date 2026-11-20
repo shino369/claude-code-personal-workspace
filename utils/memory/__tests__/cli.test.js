@@ -546,6 +546,156 @@ describe('status of extraction', () => {
   });
 });
 
+describe('export and import', () => {
+  /** @type {string} */
+  let other;
+
+  beforeEach(() => {
+    run(['init']);
+    save({
+      scope: 'user',
+      type: 'preference',
+      text: 'Prefers design first, then review.',
+    });
+    save({
+      text: 'The proxy blocks GitHub GraphQL; merge by fast-forwarding main.',
+    });
+    run(['personalize', '--call-me', 'Sam']);
+    fs.mkdirSync(path.join(root, 'tasks', TASK), { recursive: true });
+    fs.writeFileSync(path.join(root, 'tasks', TASK, 'plan.md'), '# demo\n');
+    other = gitCheckout(path.join(tmp, 'other'), 'workspace');
+  });
+
+  /** @param {string[]} argv @param {object} [deps] */
+  const exportRun = (argv, deps = {}) =>
+    run(['export', ...argv], { machine: 'old-laptop', ...deps });
+
+  test('should export memory and personalization by default, named by date', () => {
+    const { code, out } = exportRun([]);
+
+    expect(code).toBe(0);
+    expect(out.split('\n')[0]).toMatch(
+      /^Exported memory, personalization to memory-export-261120\.tar\.gz \(2 notes, 0 tasks, 3 files, [\d.]+ (B|KB)\)\.$/
+    );
+    expect(fs.existsSync(path.join(root, 'memory-export-261120.tar.gz'))).toBe(
+      true
+    );
+  });
+
+  test('should export the parts and tasks asked for, to --out', () => {
+    const out = path.join(tmp, 'all.tar.gz');
+
+    const result = JSON.parse(
+      exportRun([
+        '--include',
+        'memory,tasks',
+        '--tasks',
+        TASK,
+        '--out',
+        out,
+        '--json',
+      ]).out
+    );
+
+    expect(result.manifest).toMatchObject({
+      parts: ['memory', 'tasks'],
+      machine: 'old-laptop',
+    });
+    expect(result.file).toBe(out);
+  });
+
+  test('should refuse --tasks without the tasks part', () => {
+    expect(() => exportRun(['--tasks', TASK])).toThrow(
+      /--tasks needs the tasks part/
+    );
+  });
+
+  test('should refuse secrets unless --allow-secrets', () => {
+    fs.writeFileSync(
+      path.join(root, 'tasks', TASK, 'tmp.md'),
+      `token ${SECRET}\n`
+    );
+    const args = ['--include', 'tasks', '--out', path.join(tmp, 's.tar.gz')];
+
+    expect(() => exportRun(args)).toThrow(/looks like it holds a secret/);
+    expect(exportRun([...args, '--allow-secrets']).out).toMatch(
+      /Warning: it holds possible secrets/
+    );
+  });
+
+  test('should use the machine name by default', () => {
+    const out = path.join(tmp, 'host.tar.gz');
+
+    const result = JSON.parse(run(['export', '--out', out, '--json']).out);
+
+    expect(result.manifest.machine).toBe(os.hostname());
+  });
+
+  test('should import into another checkout, and dry-run first', () => {
+    const file = path.join(tmp, 'move.tar.gz');
+    exportRun(['--include', 'memory,personalization,tasks', '--out', file]);
+
+    const dry = run(['import', 'move.tar.gz', '--dry-run'], {
+      rootDir: other,
+      cwd: tmp,
+    });
+    expect(dry.out.split('\n')[0]).toMatch(
+      /^Dry run: import of move\.tar\.gz \(from old-laptop, /
+    );
+    expect(fs.existsSync(path.join(other, 'memory'))).toBe(false);
+
+    const real = run(['import', 'move.tar.gz'], { rootDir: other, cwd: tmp });
+    expect(real.code).toBe(0);
+    expect(real.out).toMatch(/^Imported move\.tar\.gz/);
+    expect(real.out).toContain(
+      'Notes: 2 added (machine and repo notes start unchecked)'
+    );
+    expect(real.out).toContain(`Tasks: added ${TASK}`);
+    expect(loadNotes(memoryDir(other)).notes).toHaveLength(2);
+    expect(readPersonalization(memoryDir(other))).toEqual({ callMe: 'Sam' });
+  });
+
+  test('should import only --include parts, or replace with --replace', () => {
+    const file = path.join(tmp, 'move.tar.gz');
+    exportRun(['--out', file]);
+    run(['init'], { rootDir: other });
+    addNote(memoryDir(other), {
+      text: 'A note only the other checkout has.',
+      scope: 'machine',
+      type: 'fact',
+    });
+
+    const only = JSON.parse(
+      run(['import', file, '--include', 'personalization', '--json'], {
+        rootDir: other,
+      }).out
+    );
+    expect(only.plan.parts).toEqual(['personalization']);
+
+    const replaced = JSON.parse(
+      run(['import', file, '--replace', '--json'], { rootDir: other }).out
+    );
+    expect(replaced.plan.notes.add).toBe(2);
+    expect(replaced.result.snapshot).toMatch(/-import-2$/);
+    expect(
+      loadNotes(memoryDir(other)).notes.map((note) => note.text)
+    ).not.toContain('A note only the other checkout has.');
+  });
+
+  test('should refuse an import without a file', () => {
+    expect(() => run(['import'])).toThrow(/Name the archive/);
+  });
+
+  test('should refuse a bad archive', () => {
+    const file = path.join(tmp, 'bad.tar.gz');
+    fs.writeFileSync(file, 'nope');
+
+    expect(() => run(['import', file])).toThrow(
+      /^Refused: The file is not a gzip archive/
+    );
+  });
+});
+
 describe('status', () => {
   test('should be the default command', () => {
     expect(run([]).out).toBe(run(['status']).out);
