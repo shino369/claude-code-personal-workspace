@@ -13,7 +13,11 @@ import path from 'path';
 import os from 'os';
 import { spawnSync } from 'child_process';
 import { main as harnessMain } from './harness/cli.js';
-import { DSH_BRIDGE_INSTALL, DSH_PATCH } from './loop/adapters.js';
+import {
+  DSH_BRIDGE_INSTALL,
+  DSH_PATCH,
+  dshDirProblem,
+} from './loop/adapters.js';
 import { initLocal } from './memory/render.js';
 import { mainCheckout } from './memory/repo.js';
 import { runIfMain } from './module-runner.js';
@@ -672,7 +676,12 @@ export function stepHarnessAgents(deps) {
           }
     );
   }
-  if (installed.has('dsh')) {
+  const dshProblem =
+    installed.has('dsh') && dshDirProblem(deps.rootDir, deps.platform);
+  if (dshProblem) {
+    const [detail, fix] = dshProblem.split('\nFix: ');
+    results.push({ id: 'harness-dsh', status: 'warn', detail, fix });
+  } else if (installed.has('dsh')) {
     results.push({
       id: 'harness-dsh',
       status: 'ok',

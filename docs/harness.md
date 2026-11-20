@@ -129,6 +129,13 @@ bridge sets, so they expand to empty and Node looks for `C:\utils\…`. The patc
 and the bridge replaces the braced token with it when it reads the config, so every shell gets one
 quoted path. The commands ran with an absolute `projectDir`; the `!!js` form has not run yet.
 
+DSH hooks fail open: a hook that cannot start, or a config the bridge cannot read, only logs a
+warning, so a broken command turns the guard off without a sign. The path is part of each command,
+so `pnpm agent ask`, `pnpm loop`, and `pnpm swarm` refuse to start DSH from a directory whose path
+has `$`, a backtick, or `"` (or `\` on macOS and Linux), and `pnpm workspace:setup` warns about
+it. Pass `--patch` only for a checkout you trust: its `!!js` runs inside DSH at boot, like the hook
+commands it loads.
+
 ### Changing a hook, a permission, or a role
 
 1. **Hook.** Edit `.claude/settings.json` and the manifest `utils/harness/hooks.js` together (the

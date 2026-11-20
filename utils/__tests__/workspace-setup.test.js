@@ -832,6 +832,14 @@ describe('stepHarnessAgents', () => {
     expect(result.detail).toContain('dsh --version');
     expect(result.detail).not.toContain('dsh plugin add');
   });
+
+  test('should warn when the checkout path breaks the DSH hook commands', () => {
+    const deps = makeDeps({ tools: registryOf(['dsh']), rootDir: '/repo$x' });
+    const [result] = stepHarnessAgents(deps);
+    expect(result).toMatchObject({ id: 'harness-dsh', status: 'warn' });
+    expect(result.detail).toContain("DSH cannot run this workspace's hooks");
+    expect(result.fix).toMatch(/move the checkout/);
+  });
 });
 
 describe('runSteps', () => {
