@@ -136,7 +136,24 @@ describe('the DSH bridge files', () => {
     const patch = read('.dsh/workspace.patch.yml');
     expect(patch).toContain("name: '@deepseek-ai/dsh-hooks-claude-code'");
     expect(patch).toContain('configPath: ./.dsh/hooks.json');
-    expect(patch).toContain('dsh --patch .dsh/workspace.patch.yml');
+    expect(patch).toContain('dsh <profile> --patch .dsh/workspace.patch.yml');
+  });
+
+  test('should set projectDir to the launch dir, so the bridge writes the path into each command', () => {
+    run(['sync']);
+    const patch = read('.dsh/workspace.patch.yml');
+    expect(patch).toMatch(/^ {8}projectDir: !!js process\.cwd\(\)$/m);
+    expect(read('.dsh/hooks.json')).not.toContain('"$CLAUDE_PROJECT_DIR"/');
+  });
+
+  test('should say how to install the bridge and its peers per profile, at the DSH version', () => {
+    run(['sync']);
+    const patch = read('.dsh/workspace.patch.yml');
+    expect(patch).toContain(
+      'dsh plugin --profile <profile> add @deepseek-ai/dsh-hooks-claude-code@<version> @deepseek-ai/dsh-hook-protocol@<version> @deepseek-ai/dsh-llm@<version>'
+    );
+    expect(patch).toContain('dsh --version');
+    expect(patch).not.toMatch(/dsh plugin add/);
   });
 });
 

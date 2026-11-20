@@ -19,6 +19,30 @@ import { HARNESS_SESSION_VARS } from '../task/store.js';
 export const AGENTS = /** @type {const} */ (['claude', 'codex', 'dsh']);
 /** The DSH overlay that enables the workspace's hooks (utils/harness/cli.js). */
 export const DSH_PATCH = '.dsh/workspace.patch.yml';
+/**
+ * How to install DSH's Claude hooks bridge into a profile: with the two
+ * peers it imports and the profile lacks, at the version `dsh --version`
+ * prints (`latest` lags behind the runtime).
+ */
+export const DSH_BRIDGE_INSTALL =
+  'dsh plugin --profile <profile> add @deepseek-ai/dsh-hooks-claude-code@<version> @deepseek-ai/dsh-hook-protocol@<version> @deepseek-ai/dsh-llm@<version>';
+
+/**
+ * Why DSH cannot run the workspace's hooks from `dir`, or null. The bridge
+ * writes the launch dir into `node "<dir>/<script>"` (utils/harness/hooks.js),
+ * where bash and pwsh read `$` and a backtick, `"` ends the path, and bash
+ * also reads `\`. The hook would not run (DSH hooks fail open, so the guard
+ * would be off) or would run part of the path.
+ *
+ * @param {string} dir
+ * @param {string} [platform]
+ * @returns {string | null}
+ */
+export function dshDirProblem(dir, platform = process.platform) {
+  const unsafe = platform === 'win32' ? /[$`"\n]/ : /[$`"\\\n]/;
+  if (!unsafe.test(dir)) return null;
+  return `DSH cannot run this workspace's hooks from ${dir}: the hook commands carry the path, and the shell reads its ${platform === 'win32' ? '$, `, or "' : '$, `, ", or \\'} as syntax, so the guard would not run.\nFix: move the checkout to a path without them`;
+}
 
 /** @typedef {typeof AGENTS[number]} AgentName */
 
@@ -166,7 +190,8 @@ export function installHint(agent) {
  * would act as the caller's session in `pnpm task` (`TASK_SESSION`, set on
  * purpose, is kept).
  *
- * @param {{ command: AgentCommand, cwd: string, prompt: string, timeoutMs: number, env: NodeJS.ProcessEnv, spawn?: AgentSpawn, now?: () => number }} options
+ * @param {{ command: AgentCommand, cwd: string, prompt: string, timeoutMs: number, env: NodeJS.ProcessEnv, spawn?: AgentSpawn, now?: () => number, platform?: string }} options
+ *   DSH refuses a cwd its hook commands cannot carry (dshDirProblem)
  * @returns {AgentResult}
  */
 export function runAgent({
@@ -178,7 +203,12 @@ export function runAgent({
   // Resolves Windows .cmd shims (e.g. a pnpm-installed codex.cmd) safely.
   spawn = /** @type {AgentSpawn} */ (crossSpawn()),
   now = Date.now,
+  platform = process.platform,
 }) {
+  if (command.agent === 'dsh') {
+    const problem = dshDirProblem(cwd, platform);
+    if (problem) throw new Error(problem);
+  }
   const started = now();
   const result = spawn(command.bin, command.args, {
     cwd,

@@ -148,20 +148,29 @@ export const HOOKS = [
 ];
 
 /**
- * The shell command that runs a hook in a harness. Claude Code and the DSH
- * bridge set `$CLAUDE_PROJECT_DIR`; Codex sets no project dir and runs hooks
- * in the session's cwd, so its commands find the script from the git top
- * level (a worktree's own copy in a worktree).
+ * The shell command that runs a hook in a harness.
+ *
+ * - Claude Code sets `$CLAUDE_PROJECT_DIR`.
+ * - DSH runs hooks with `pwsh -Command` on Windows, where `$NAME` and
+ *   `${NAME}` are PowerShell variables, not the env var the bridge sets, so
+ *   they expand to empty. The bridge replaces the braced token with its
+ *   `projectDir` (set in the patch, utils/harness/cli.js) when it reads the
+ *   config, so the shell gets one quoted path; bash also expands the token
+ *   from the env var if it is left.
+ * - Codex sets no project dir and runs hooks in the session's cwd, so its
+ *   commands find the script from the git top level (a worktree's own copy
+ *   in a worktree).
  *
  * @param {Harness} harness
  * @param {Pick<HookSpec, 'script' | 'args'>} spec
  * @returns {string}
  */
 export function hookCommand(harness, { script, args = [] }) {
-  const program =
-    harness === 'codex'
-      ? `node "$(git rev-parse --show-toplevel)/${script}"`
-      : `node "$CLAUDE_PROJECT_DIR"/${script}`;
+  const program = {
+    claude: `node "$CLAUDE_PROJECT_DIR"/${script}`,
+    codex: `node "$(git rev-parse --show-toplevel)/${script}"`,
+    dsh: `node "\${CLAUDE_PROJECT_DIR}/${script}"`,
+  }[harness];
   return [program, ...args, '--harness', harness].join(' ');
 }
 

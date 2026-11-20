@@ -17,12 +17,18 @@ const readJson = (file) =>
 describe('hookCommand', () => {
   const spec = { id: 'x', script: '.claude/hooks/x.js', timeout: 5 };
 
-  test('should run the script from the project dir in Claude Code and DSH', () => {
+  test('should run the script from the project dir in Claude Code', () => {
     expect(hookCommand('claude', spec)).toBe(
       'node "$CLAUDE_PROJECT_DIR"/.claude/hooks/x.js --harness claude'
     );
+  });
+
+  test('should give DSH the braced token its bridge replaces, inside one quoted path (pwsh on Windows reads no env var as $NAME)', () => {
     expect(hookCommand('dsh', spec)).toBe(
-      'node "$CLAUDE_PROJECT_DIR"/.claude/hooks/x.js --harness dsh'
+      'node "${CLAUDE_PROJECT_DIR}/.claude/hooks/x.js" --harness dsh'
+    );
+    expect(hookCommand('dsh', { ...spec, args: ['--reset'] })).toBe(
+      'node "${CLAUDE_PROJECT_DIR}/.claude/hooks/x.js" --reset --harness dsh'
     );
   });
 
@@ -333,6 +339,17 @@ describe('the committed configs', () => {
         readHookEntries(readJson('.dsh/hooks.json'))
       )
     ).toEqual({ missing: [], extra: [] });
+  });
+
+  test('should keep every .dsh/hooks.json command in the form the bridge substitutes', () => {
+    const commands = readHookEntries(readJson('.dsh/hooks.json')).map(
+      (entry) => entry.command
+    );
+    expect(commands.length).toBeGreaterThan(0);
+    for (const command of commands) {
+      expect(command).toMatch(/^node "\$\{CLAUDE_PROJECT_DIR\}\/[^"]+\.js" /);
+      expect(command).not.toContain('"$CLAUDE_PROJECT_DIR"/');
+    }
   });
 
   test('should match the manifest in .claude/settings.json', () => {

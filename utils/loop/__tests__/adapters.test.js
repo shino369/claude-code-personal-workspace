@@ -1,5 +1,11 @@
 import { vi } from 'vitest';
-import { AGENTS, buildCommand, installHint, runAgent } from '../adapters.js';
+import {
+  AGENTS,
+  buildCommand,
+  dshDirProblem,
+  installHint,
+  runAgent,
+} from '../adapters.js';
 
 describe('buildCommand', () => {
   test('should build the claude command with the prompt on stdin', () => {
@@ -134,10 +140,66 @@ describe('installHint', () => {
   });
 });
 
+describe('dshDirProblem', () => {
+  test('should accept ordinary paths, with spaces, and Windows backslashes', () => {
+    expect(dshDirProblem('/Users/me/My Repo', 'darwin')).toBeNull();
+    expect(dshDirProblem('C:\\Users\\me\\ws', 'win32')).toBeNull();
+  });
+
+  test.each([
+    ['/home/me/a$b', 'linux'],
+    ['/home/me/a`b', 'linux'],
+    ['/home/me/a"b', 'linux'],
+    ['/home/me/a\\b', 'linux'],
+    ['/home/me/a\nb', 'linux'],
+    ['C:\\Users\\me\\a$b', 'win32'],
+    ['C:\\Users\\me\\a`b', 'win32'],
+  ])(
+    'should refuse %j on %s: the hook command reads it as shell syntax',
+    (dir, platform) => {
+      expect(dshDirProblem(dir, platform)).toMatch(
+        /^DSH cannot run this workspace's hooks from .*\nFix: /s
+      );
+    }
+  );
+});
+
 describe('runAgent', () => {
   const command = buildCommand({ agent: 'codex' });
   let clock = 0;
   const now = () => (clock += 1000);
+
+  test('should refuse to start DSH from a dir its hook commands cannot carry', () => {
+    const spawn = vi.fn();
+    expect(() =>
+      runAgent({
+        command: buildCommand({ agent: 'dsh' }),
+        cwd: '/wt/a$b',
+        prompt: 'p',
+        timeoutMs: 1,
+        env: {},
+        spawn,
+        now,
+        platform: 'linux',
+      })
+    ).toThrow(/DSH cannot run this workspace's hooks from \/wt\/a\$b/);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  test('should start the other agents from such a dir', () => {
+    const spawn = vi.fn(() => ({ status: 0, stdout: '', stderr: '' }));
+    runAgent({
+      command,
+      cwd: '/wt/a$b',
+      prompt: 'p',
+      timeoutMs: 1,
+      env: {},
+      spawn,
+      now,
+      platform: 'linux',
+    });
+    expect(spawn).toHaveBeenCalled();
+  });
 
   test("should not pass the parent harness's session ids to the child agent", () => {
     const spawn = vi.fn(() => ({ status: 0, stdout: '', stderr: '' }));

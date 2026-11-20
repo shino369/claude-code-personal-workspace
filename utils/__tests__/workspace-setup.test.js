@@ -823,8 +823,22 @@ describe('stepHarnessAgents', () => {
     const deps = makeDeps({ tools: registryOf(['dsh']) });
     const [result] = stepHarnessAgents(deps);
     expect(result).toMatchObject({ id: 'harness-dsh', status: 'ok' });
-    expect(result.detail).toContain('dsh --patch .dsh/workspace.patch.yml');
-    expect(result.detail).toContain('dsh plugin add');
+    expect(result.detail).toContain(
+      'dsh <profile> --patch .dsh/workspace.patch.yml'
+    );
+    expect(result.detail).toContain(
+      'dsh plugin --profile <profile> add @deepseek-ai/dsh-hooks-claude-code@<version> @deepseek-ai/dsh-hook-protocol@<version> @deepseek-ai/dsh-llm@<version>'
+    );
+    expect(result.detail).toContain('dsh --version');
+    expect(result.detail).not.toContain('dsh plugin add');
+  });
+
+  test('should warn when the checkout path breaks the DSH hook commands', () => {
+    const deps = makeDeps({ tools: registryOf(['dsh']), rootDir: '/repo$x' });
+    const [result] = stepHarnessAgents(deps);
+    expect(result).toMatchObject({ id: 'harness-dsh', status: 'warn' });
+    expect(result.detail).toContain("DSH cannot run this workspace's hooks");
+    expect(result.fix).toMatch(/move the checkout/);
   });
 });
 
