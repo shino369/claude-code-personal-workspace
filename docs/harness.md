@@ -130,6 +130,27 @@ Notes:
 | Permission kinds other than Bash, Read, and Edit           | Web fetch domains and MCP tools have no equivalent in the Codex rules or the guard                |
 | PreCompact, context warnings, and memory extraction in DSH | DSH has no event for the first, no transcript for the second, and no SessionEnd for the third     |
 
+### Known limits of the guardrails
+
+The Codex rules and the guard hook are guardrails, like Claude Code's own permissions: they stop
+mistakes and obvious misuse, not a determined agent. The security audit of this setup accepted
+these limits:
+
+- **The rules can be edited by the agent they bind.** The guard reads `.claude/settings.json` on
+  every call, and `pnpm harness sync` writes the Codex rules from it, so an agent that edits
+  that file (or `.codex/`, `.dsh/`) loosens its own later calls. Claude Code has the same
+  exposure: its agents can edit `settings.json` too. Review changes to these files like code.
+- **Codex finds the hook scripts from the git top level of the session's folder**
+  (`$(git rev-parse --show-toplevel)`). Start Codex in this workspace (any subfolder works).
+  Started inside another repository, Codex loads that repository's `.codex/` instead, so these
+  hooks do not run there at all.
+- **Session ids are not a security boundary.** `TASK_SESSION` names any session, and
+  `CODEX_THREAD_ID` and `DSH_SESSION_ID` win over Claude Code's id: a `claude` started by hand
+  from a Codex or DSH shell acts as that session in `pnpm task`. `pnpm loop`, `swarm`, and
+  `agent ask` strip these ids from the agents they start.
+- **Shell reads are not path-checked.** `cat .env` passes the read rules in Codex and DSH, as it
+  does in Claude Code; AGENTS.md §1 forbids it.
+
 ## Building blocks
 
 ### 1. Instructions
