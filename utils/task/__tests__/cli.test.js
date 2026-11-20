@@ -1119,6 +1119,18 @@ describe('review', () => {
     expect(read('NOTES.md')).toContain('Review round 1/2 opened: 1 file(s)');
   });
 
+  test('should refuse --folder or --base while a round is open', () => {
+    greenCodeTask();
+    run(['review']);
+
+    expect(() => run(['review', '--folder'])).toThrow(
+      /Round 1 is open with its own scope[^]*Fix: finish it/
+    );
+    expect(() => run(['review', '--base', 'main'])).toThrow(
+      /Round 1 is open with its own scope/
+    );
+  });
+
   test('should reprint an open round without touching the findings file', () => {
     greenCodeTask();
     run(['review']);

@@ -52,6 +52,8 @@ const LIVE_STATUSES = ['running', 'pending'];
  * }} Quality
  *   roundsBefore: the rounds run before the task was last reopened; a code
  *   task needs a round after them before it can close again.
+ *   base: the scope the rounds recorded: a git ref, FOLDER_BASE (review.js:
+ *   the task folder, chosen with --folder), or null (chosen per round).
  */
 
 /** @returns {Quality} */
@@ -133,7 +135,7 @@ export function validateQuality(quality, stepIds) {
     errors.push('quality.reviewedDiff must be a string or null');
   }
   if (q.base !== undefined && q.base !== null && !isString(q.base)) {
-    errors.push('quality.base must be a git ref or null');
+    errors.push('quality.base must be a git ref, the folder marker, or null');
   }
   if (q.nudged !== undefined && q.nudged !== null && !isString(q.nudged)) {
     errors.push('quality.nudged must be a string or null');

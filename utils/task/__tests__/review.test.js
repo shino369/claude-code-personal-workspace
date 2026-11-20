@@ -565,6 +565,15 @@ describe('reviewScope', () => {
     ).toEqual([]);
   });
 
+  test('should refuse a base that git would read as an option', () => {
+    const runGit = vi.fn(() => 'abc');
+
+    expect(() =>
+      reviewScope({ rootDir: root, taskDir: root, base: '--all', runGit })
+    ).toThrow(/--all is not a git ref[^]*--base <ref>/);
+    expect(runGit).not.toHaveBeenCalled();
+  });
+
   test('should explain a base ref git cannot resolve', () => {
     expect(() =>
       reviewScope({

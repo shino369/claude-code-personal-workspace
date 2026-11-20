@@ -202,6 +202,11 @@ export function reviewScope({
       files: files.map((file) => `${prefix}/${file}`),
     };
   }
+  if (base.startsWith('-')) {
+    throw new Error(
+      `${base} is not a git ref: git would read it as an option.\nFix: pass a branch or commit: pnpm task review --base <ref>`
+    );
+  }
   const mergeBase = runGit(['merge-base', 'HEAD', base], repoDir);
   if (!mergeBase) {
     throw new Error(

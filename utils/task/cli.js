@@ -1160,6 +1160,14 @@ export const COMMANDS = {
       );
     }
     const quality = task.state.quality ?? freshQuality();
+    if (
+      quality.phase === 'review' &&
+      (options.folder || options.base !== undefined)
+    ) {
+      throw new Error(
+        `Round ${quality.reviewRounds} is open with its own scope; --folder and --base choose the scope of the next round.\nFix: finish it (reviewer, triage, pnpm task review record), then pnpm task review ${options.folder ? '--folder' : `--base ${options.base}`}`
+      );
+    }
     const taskRel = path
       .relative(deps.rootDir, task.dir)
       .split(path.sep)
