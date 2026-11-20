@@ -587,6 +587,8 @@ describe('repo', () => {
   });
 
   test('should take git state for status and notes from the repo', () => {
+    // The temp dir can sit under the real home (Windows), which would print ~.
+    vi.spyOn(os, 'homedir').mockReturnValue(path.join(root, 'home'));
     run(['new', 'demo', '--goal', 'G', '--repo', repo], deps);
     const { out } = run(['status'], deps);
     expect(out).toContain(`Repo: ${repo}`);
@@ -644,6 +646,8 @@ describe('repo', () => {
       },
     }));
 
+    // The temp dir can sit under the real home (Windows), which would print ~.
+    vi.spyOn(os, 'homedir').mockReturnValue(path.join(root, 'home'));
     const { out } = run(['set', '--repo', repo], deps);
     expect(out).toContain(`Repo: ${repo} (start commit repohead)`);
     expect(state()).toMatchObject({

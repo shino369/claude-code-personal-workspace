@@ -46,6 +46,9 @@ let source;
 let target;
 
 const NOW = new Date(2026, 10, 20, 14, 3);
+// A junction needs no symlink privilege on Windows; lstat still reports it
+// as a link. The type is ignored elsewhere.
+const LINK = process.platform === 'win32' ? 'junction' : 'dir';
 const TOKEN = `ghp_${'a1B2c3D4e5'.repeat(4)}`;
 
 /** @param {string} root @param {any} input */
@@ -105,7 +108,9 @@ function seedSource() {
   write(source, 'tasks/.trash/x.md', 'trash\n');
   write(source, 'tasks/.active', 'alpha-261120\n');
   write(source, 'resources/img/logo.txt', 'logo\n');
-  fs.symlinkSync('/etc/hosts', path.join(source, 'resources', 'hosts'));
+  const linkTarget = path.join(tmp, 'link-target');
+  fs.mkdirSync(linkTarget, { recursive: true });
+  fs.symlinkSync(linkTarget, path.join(source, 'resources', 'hosts'), LINK);
 }
 
 beforeEach(() => {
@@ -952,7 +957,7 @@ describe('planImport and applyImport', () => {
     const outside = path.join(tmp, 'outside');
     fs.mkdirSync(path.join(target, 'resources'), { recursive: true });
     fs.mkdirSync(outside);
-    fs.symlinkSync(outside, path.join(target, 'resources', 'img'));
+    fs.symlinkSync(outside, path.join(target, 'resources', 'img'), LINK);
     const { archive, plan: p } = plan({ include: ['resources'] });
 
     const result = applyImport(target, archive, p, { now: NOW, detail: 'x' });
@@ -967,7 +972,7 @@ describe('planImport and applyImport', () => {
     seedSource();
     const outside = path.join(tmp, 'outside');
     fs.mkdirSync(outside);
-    fs.symlinkSync(outside, path.join(target, 'tasks'));
+    fs.symlinkSync(outside, path.join(target, 'tasks'), LINK);
     const { archive, plan: p } = plan({ include: ['tasks'] });
 
     const result = applyImport(target, archive, p, { now: NOW, detail: 'x' });
