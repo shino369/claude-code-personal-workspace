@@ -1,9 +1,9 @@
-# Claude Code Personal Workspace
+# Kyoten
 
 [![Test CI](https://github.com/shino369/claude-code-personal-workspace/actions/workflows/test.yml/badge.svg)](https://github.com/shino369/claude-code-personal-workspace/actions/workflows/test.yml)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](./LICENSE)
 
-A personal Claude Code workspace for programming, documentation, research, translation, and
+Kyoten (拠点) is a supercharged personal workspace for programming, documentation, research, translation, and
 generative-AI work. It packages reusable rules, subagents, skills, hooks, and a repeatable quality
 gate.
 
@@ -309,7 +309,7 @@ to read:
 | Codex                       | `AGENTS.md`                            | `.agents/skills/` (native)                                  |
 | DeepSeek harness and others | `AGENTS.md` (point it there if needed) | `.agents/skills/`, or `pnpm workspace:setup --target <dir>` |
 
-Claude Code hooks do not run in other harnesses. The git hooks in `.githooks/` (enabled by
+Most of the Claude Code hooks work on other harness after the setup (but some don't). The git hooks in `.githooks/` (enabled by
 `pnpm workspace:setup`) enforce formatting, linting, and commit messages for everyone, and
 `pnpm task status` gives every harness the same resume brief the `SessionStart` hook injects.
 
