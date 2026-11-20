@@ -10,55 +10,16 @@
  *   each other the way a read-modify-write of a JSON array would.
  * - Anchored to the project: CLAUDE_PROJECT_DIR, else the hook input's cwd,
  *   else process.cwd().
- * - Secrets are redacted from every string before long fields are truncated.
+ * - Secrets are redacted from every string before long fields are truncated,
+ *   with the shared rules in utils/redact.js.
  * - Fails open: any error exits 0 so the tool call is never blocked.
  */
 import fs from 'fs';
 import path from 'path';
 import { runIfMain } from '#utils/module-runner.js';
+import { REDACTED, isSecretKey, redactSecrets } from '#utils/redact.js';
 
 export const LOG_FILE_NAME = 'logging.jsonl';
-export const REDACTED = '[REDACTED]';
-
-/** Keys whose string values are always redacted (e.g. `{ API_KEY: '...' }`). */
-const SECRET_KEY_NAME = /(TOKEN|SECRET|PASSWORD|API_?KEY|ACCESS_KEY)/i;
-
-/**
- * Ordered redaction rules. PEM blocks and Bearer tokens run before the generic
- * `NAME=value` rule so multi-part secrets are removed whole.
- *
- * @type {Array<[RegExp, string]>}
- */
-const REDACTION_RULES = [
-  [
-    /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
-    '[REDACTED PRIVATE KEY]',
-  ],
-  [/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, `Bearer ${REDACTED}`],
-  [
-    /\b([A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_KEY|APIKEY|ACCESS_KEY)[A-Za-z0-9_]*)(\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)/gi,
-    `$1$2${REDACTED}`,
-  ],
-  [/\bAKIA[0-9A-Z]{16}\b/g, REDACTED],
-  [/\bgh[pousr]_[A-Za-z0-9]{20,}/g, REDACTED],
-  [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, REDACTED],
-  [/\bsk-[A-Za-z0-9_-]{20,}/g, REDACTED],
-  [/\bxox[baprs]-[A-Za-z0-9-]{10,}/g, REDACTED],
-  [/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, REDACTED],
-];
-
-/**
- * Replace known secret patterns in a string.
- *
- * @param {string} text
- * @returns {string}
- */
-export function redactSecrets(text) {
-  return REDACTION_RULES.reduce(
-    (result, [pattern, replacement]) => result.replace(pattern, replacement),
-    text
-  );
-}
 
 /**
  * Resolve the directory that owns the `logs/` folder.
@@ -114,7 +75,7 @@ export function sanitizeForLogging(data, maxContentLength = 500) {
   /** @type {Record<string, unknown>} */
   const sanitized = {};
   for (const [key, value] of Object.entries(data)) {
-    if (typeof value === 'string' && SECRET_KEY_NAME.test(key)) {
+    if (typeof value === 'string' && isSecretKey(key)) {
       sanitized[key] = REDACTED;
       continue;
     }

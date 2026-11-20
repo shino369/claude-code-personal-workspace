@@ -18,10 +18,13 @@ This directory contains hook scripts for Claude Code that automatically execute 
 - Records timestamps, tool names, inputs, outputs, and session information
 - Redacts secrets in every string before logging: AWS keys, GitHub tokens, `sk-…` API keys,
   Slack tokens, JWTs, `Bearer` tokens, PEM private keys, `*_TOKEN=` / `*_PASSWORD=` / `*API_KEY=`
-  style assignments, and string values under secret-named keys
+  style assignments, and string values under secret-named keys. An assignment whose value is
+  only a reference (`$GITHUB_TOKEN`, `${X}`, `$(gh auth token)`, `<placeholder>`) is kept
 - Truncates large `content` / `new_source` fields (>500 chars) after redaction
 
-Redaction is pattern-based and best-effort; treat `logs/` as sensitive and keep it git-ignored.
+The rules live in `utils/redact.js`, shared with the memory store (which refuses a note that
+matches) and memory export (which stops on a match). Redaction is pattern-based and
+best-effort; treat `logs/` as sensitive and keep it git-ignored.
 
 **Log Structure:**
 
