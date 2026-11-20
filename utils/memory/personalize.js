@@ -99,8 +99,8 @@ function normalizeTraits(value) {
 
 /**
  * Validate settings: known fields only, text values (traits a list), no
- * secrets, and within PERSONALIZATION_BUDGET once rendered. Empty fields are
- * dropped.
+ * secrets, and within PERSONALIZATION_BUDGET once rendered. Empty and
+ * undefined fields are dropped.
  *
  * @param {unknown} input
  * @returns {Personalization}
@@ -115,6 +115,7 @@ export function normalizePersonalization(input) {
     if (!FIELD_NAMES.includes(/** @type {any} */ (key))) {
       invalid(`Unknown field "${key}"; fields: ${FIELD_NAMES.join(', ')}.`);
     }
+    if (value === undefined) continue;
     if (key === 'traits') {
       const traits = normalizeTraits(value);
       if (traits.length > 0) result.traits = traits;

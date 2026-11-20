@@ -4,6 +4,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { CONFIG_FILE, DEFAULT_CONFIG, writeConfig } from '../config.js';
 import { writePersonalization, PERSONALIZATION_FILE } from '../personalize.js';
 import {
   AGENTS_LOCAL_FILE,
@@ -17,6 +18,7 @@ import {
   initLocal,
   renderCore,
   renderLocal,
+  renderStored,
 } from '../render.js';
 import { MemoryError, addNote, memoryDir, setPinned } from '../store.js';
 
@@ -417,6 +419,50 @@ describe('local files', () => {
       fs.mkdirSync(path.join(dir, PERSONALIZATION_FILE), { recursive: true });
 
       expect(() => renderLocal(root)).toThrow(/EISDIR/);
+    });
+
+    test('should use the budget from memory/config.json', () => {
+      writeConfig(dir, { ...DEFAULT_CONFIG, budget: 1000 });
+      for (let i = 0; i < 8; i++) {
+        const { note: added } = addNote(dir, {
+          text: `Pinned fact number ${i} ${'about the build '.repeat(10)}`,
+          scope: 'machine',
+          type: 'fact',
+        });
+        setPinned(dir, added.id, true);
+      }
+
+      const result = renderLocal(root);
+
+      expect(result.warnings[0]).toMatch(/over 1000 characters/);
+    });
+
+    test('should render the stored block without writing a file', () => {
+      addNote(dir, {
+        text: 'Merge by fast-forward.',
+        scope: 'machine',
+        type: 'howto',
+      });
+      setPinned(dir, 'm1', true);
+
+      const result = renderStored(root);
+
+      expect(result).toMatchObject({ budget: CORE_BUDGET, warnings: [] });
+      expect(result.block).toMatch(
+        /- m1 \(machine, howto\) Merge by fast-forward\./
+      );
+      expect(fs.existsSync(path.join(root, AGENTS_LOCAL_FILE))).toBe(false);
+    });
+
+    test('should warn about a broken config and use the default budget', () => {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, CONFIG_FILE), '{"budget": 2}');
+
+      const result = renderLocal(root);
+
+      expect(result.warnings).toEqual([
+        expect.stringMatching(/budget must be a whole number/),
+      ]);
     });
   });
 });

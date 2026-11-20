@@ -370,11 +370,15 @@ function parseLog(content) {
   const problems = [];
   content.split('\n').forEach((line, index) => {
     if (!line.trim()) return;
+    let op;
     try {
-      ops.push(JSON.parse(line));
+      op = JSON.parse(line);
     } catch {
       problems.push(`line ${index + 1}: not JSON`);
+      return;
     }
+    if (isObject(op)) ops.push(op);
+    else problems.push(`line ${index + 1}: not an op`);
   });
   return { ops, problems };
 }
@@ -426,6 +430,17 @@ export function loadNotes(dir) {
 }
 
 /**
+ * Every op in the log, oldest first, and the lines that are not ops.
+ *
+ * @param {string} dir the memory directory
+ * @returns {{ ops: Op[], problems: string[] }}
+ */
+export function readLog(dir) {
+  const content = readIfExists(path.join(dir, LOG_FILE));
+  return content === null ? { ops: [], problems: [] } : parseLog(content);
+}
+
+/**
  * The ops that touched one note, oldest first.
  *
  * @param {string} dir
@@ -433,9 +448,7 @@ export function loadNotes(dir) {
  * @returns {Op[]}
  */
 export function noteHistory(dir, id) {
-  const content = readIfExists(path.join(dir, LOG_FILE));
-  if (content === null) return [];
-  return parseLog(content).ops.filter(
+  return readLog(dir).ops.filter(
     (op) => (op?.op === 'add' ? op.note?.id : op?.id) === id
   );
 }

@@ -281,9 +281,9 @@ const shorten = (text, max) =>
  * plus `unchecked` (imported, never confirmed here) or `stale`.
  *
  * @param {Note} note
- * @param {Date} now
+ * @param {Date} [now]
  */
-function labels(note, now) {
+export function noteLabels(note, now = new Date()) {
   const task = note.source.via === 'digest' ? note.source.task : undefined;
   const parts = task
     ? [`task ${task}`, note.updated]
@@ -316,7 +316,7 @@ export function formatRecall(
   // Every line costs its length plus the newline before it.
   let room = budget - RECALL_HEADER.length - RECALL_FOOTER.length - 1;
   for (const { note } of results) {
-    const prefix = `- ${note.id} (${labels(note, now)}) `;
+    const prefix = `- ${note.id} (${noteLabels(note, now)}) `;
     let line = prefix + shorten(note.text, NOTE_CHARS);
     if (line.length + 1 > room) {
       const fit = room - 1 - prefix.length;

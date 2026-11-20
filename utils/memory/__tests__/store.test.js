@@ -20,6 +20,7 @@ import {
   loadNotes,
   memoryDir,
   noteHistory,
+  readLog,
   readUsage,
   recordHits,
   replay,
@@ -708,6 +709,16 @@ describe('memory store', () => {
       expect(notes).toHaveLength(1);
       expect(problems).toEqual(['line 2: not JSON']);
     });
+
+    test('should report a JSON line that is not an op', () => {
+      addNote(dir, input());
+      fs.appendFileSync(path.join(dir, LOG_FILE), 'null\n[1]\n');
+
+      expect(loadNotes(dir).problems).toEqual([
+        'line 2: not an op',
+        'line 3: not an op',
+      ]);
+    });
   });
 
   describe('replay', () => {
@@ -855,6 +866,23 @@ describe('memory store', () => {
 
     test('should be empty without a log', () => {
       expect(noteHistory(dir, 'm1')).toEqual([]);
+    });
+  });
+
+  describe('readLog', () => {
+    test('should return every op in order with the lines that are not JSON', () => {
+      addNote(dir, input());
+      setPinned(dir, 'm1', true);
+      fs.appendFileSync(path.join(dir, LOG_FILE), '{broken\n');
+
+      const log = readLog(dir);
+
+      expect(log.ops.map((op) => op.op)).toEqual(['add', 'pin']);
+      expect(log.problems).toEqual(['line 3: not JSON']);
+    });
+
+    test('should be empty without a log', () => {
+      expect(readLog(dir)).toEqual({ ops: [], problems: [] });
     });
   });
 

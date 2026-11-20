@@ -15,6 +15,7 @@ import {
   formatRecall,
   loadIndex,
   matchTriggers,
+  noteLabels,
   recall,
   scoreTerms,
 } from '../recall.js';
@@ -416,6 +417,20 @@ describe('recall', () => {
 
       expect(recall(notes, 'docker').map((r) => r.note.id)).toEqual(['a']);
     });
+  });
+});
+
+describe('noteLabels', () => {
+  test('should label a note by scope, type, and date', () => {
+    expect(
+      noteLabels(note('m1', { scope: 'machine', type: 'howto' }), NOW)
+    ).toBe('machine, howto, 2026-11-20');
+  });
+
+  test('should judge staleness from today by default', () => {
+    expect(
+      noteLabels(note('m1', { type: 'fact', checked: '2000-01-01' }))
+    ).toMatch(/, stale$/);
   });
 });
 

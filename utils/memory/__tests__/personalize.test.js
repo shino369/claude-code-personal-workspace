@@ -46,6 +46,12 @@ describe('normalizePersonalization', () => {
     ).toEqual({ callMe: 'Sam', traits: ['direct'] });
   });
 
+  test('should drop undefined fields', () => {
+    expect(
+      normalizePersonalization({ tone: undefined, traits: undefined })
+    ).toEqual({});
+  });
+
   test('should keep every known field', () => {
     const all = {
       callMe: 'Sam',

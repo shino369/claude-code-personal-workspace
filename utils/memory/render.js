@@ -14,6 +14,7 @@ import fs from 'fs';
 import path from 'path';
 import { readIfExists, writeFileAtomic } from '../task/store.js';
 import { ROOT_DIR } from '../workspace-config.js';
+import { DEFAULT_CONFIG, readConfig } from './config.js';
 import { readPersonalization, renderPersonalization } from './personalize.js';
 import { MemoryError, loadNotes, memoryDir } from './store.js';
 
@@ -243,36 +244,72 @@ export function applyCoreBlock(text, block) {
 }
 
 /**
+ * The core block for the store in `rootDir`, within the configured budget,
+ * with the settings it used and its warnings. Writes nothing (status uses
+ * it). A broken personalization or config file is a warning and its
+ * defaults, not an error, so memory still loads.
+ *
+ * @param {string} rootDir
+ * @returns {{ block: string, budget: number, personalization: Personalization, config: import('./config.js').MemoryConfig, warnings: string[] }}
+ */
+export function renderStored(rootDir) {
+  const dir = memoryDir(rootDir);
+  /** @type {string[]} */
+  const warnings = [];
+  /**
+   * @template T
+   * @param {() => T} read
+   * @param {T} fallback
+   * @returns {T}
+   */
+  const orWarn = (read, fallback) => {
+    try {
+      return read();
+    } catch (error) {
+      if (!(error instanceof MemoryError)) throw error;
+      warnings.push(error.message);
+      return fallback;
+    }
+  };
+  const personalization = orWarn(
+    () => readPersonalization(dir),
+    /** @type {Personalization} */ ({})
+  );
+  const config = orWarn(() => readConfig(dir), {
+    ...DEFAULT_CONFIG,
+    offSessions: [],
+  });
+  const budget = config.budget ?? CORE_BUDGET;
+  const rendered = renderCore({
+    notes: loadNotes(dir).notes,
+    personalization,
+    profile: readIfExists(path.join(dir, PROFILE_FILE)),
+    budget,
+  });
+  return {
+    block: rendered.block,
+    budget,
+    personalization,
+    config,
+    warnings: [...warnings, ...rendered.warnings],
+  };
+}
+
+/**
  * Re-render the core block of AGENTS.local.md from the store (creating the
- * file from the template when missing). A broken personalization file is a
- * warning, not an error, so memory still loads.
+ * file from the template when missing).
  *
  * @param {string} rootDir
  * @returns {{ file: string, changed: boolean, warnings: string[] }}
  */
 export function renderLocal(rootDir) {
-  const dir = memoryDir(rootDir);
-  /** @type {string[]} */
-  const warnings = [];
-  /** @type {Personalization} */
-  let personalization = {};
-  try {
-    personalization = readPersonalization(dir);
-  } catch (error) {
-    if (!(error instanceof MemoryError)) throw error;
-    warnings.push(error.message);
-  }
-  const rendered = renderCore({
-    notes: loadNotes(dir).notes,
-    personalization,
-    profile: readIfExists(path.join(dir, PROFILE_FILE)),
-  });
+  const { block, warnings } = renderStored(rootDir);
   const file = path.join(rootDir, AGENTS_LOCAL_FILE);
   const current = readIfExists(file) ?? fs.readFileSync(TEMPLATE_FILE, 'utf-8');
-  const next = applyCoreBlock(current, rendered.block);
+  const next = applyCoreBlock(current, block);
   const changed = next !== readIfExists(file);
   if (changed) writeFileAtomic(file, next);
-  return { file, changed, warnings: [...warnings, ...rendered.warnings] };
+  return { file, changed, warnings };
 }
 
 /**
