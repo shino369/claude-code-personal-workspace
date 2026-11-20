@@ -4,6 +4,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { vi } from 'vitest';
 import { createState } from '../../task/state.js';
 import { saveState, tasksRoot, writeActive } from '../../task/store.js';
 import { DEFAULT_CONFIG, writeConfig } from '../config.js';
@@ -17,6 +18,15 @@ import {
   runHook,
   sessionFile,
 } from '../hook.js';
+import {
+  EXTRACT_ENV,
+  IDLE_MS,
+  appendJournal,
+  readOpen,
+  readQueue,
+  registerOpen,
+  tryLock,
+} from '../queue.js';
 import { RECALL_HEADER } from '../recall.js';
 import { CLAUDE_LOCAL_FILE, CORE_START } from '../render.js';
 import {
@@ -70,14 +80,21 @@ function seed() {
   }
 }
 
+/** The detached worker start, replaced so tests never spawn it. */
+const kick = vi.fn();
+
+beforeEach(() => {
+  kick.mockClear();
+});
+
 /**
  * @param {Record<string, unknown>} input
- * @param {{ harness?: 'claude' | 'codex' }} [options]
+ * @param {{ harness?: 'claude' | 'codex', env?: NodeJS.ProcessEnv }} [options]
  */
-const hook = (input, { harness = 'claude' } = {}) =>
+const hook = (input, { harness = 'claude', env = {} } = {}) =>
   handleHook(
     { session_id: SESSION, cwd: root, ...input },
-    { harness, rootDir: root, now: NOW }
+    { harness, rootDir: root, now: NOW, env, kick }
   );
 
 /** @param {ReturnType<typeof hook>} output */
@@ -431,6 +448,180 @@ describe('SessionStart', () => {
     });
 
     expect(fs.existsSync(old)).toBe(false);
+  });
+});
+
+describe('extraction hooks', () => {
+  /** @type {string} */
+  let transcript;
+
+  beforeEach(() => {
+    fs.writeFileSync(path.join(root, CLAUDE_LOCAL_FILE), '@AGENTS.local.md\n');
+    transcript = path.join(root, `${SESSION}.jsonl`);
+    fs.writeFileSync(transcript, '{}\n');
+  });
+
+  /** @param {string} event @param {object} [extra] @param {any} [options] */
+  const lifecycle = (event, extra = {}, options = {}) =>
+    hook(
+      {
+        hook_event_name: event,
+        source: 'startup',
+        transcript_path: transcript,
+        ...extra,
+      },
+      options
+    );
+
+  test('should register a starting Claude session as open', () => {
+    lifecycle('SessionStart');
+
+    expect(readOpen(dir)).toEqual([
+      expect.objectContaining({
+        session: SESSION,
+        harness: 'claude',
+        transcript,
+        cwd: root,
+      }),
+    ]);
+    expect(kick).not.toHaveBeenCalled();
+  });
+
+  test('should not register Codex sessions (no transcript adapter yet)', () => {
+    lifecycle('SessionStart', {}, { harness: 'codex' });
+    lifecycle('SessionEnd', {}, { harness: 'codex' });
+
+    expect(readOpen(dir)).toEqual([]);
+    expect(readQueue(dir)).toEqual([]);
+  });
+
+  test('should queue an ended session and start the worker, silently', () => {
+    lifecycle('SessionStart');
+
+    const output = lifecycle('SessionEnd', { reason: 'prompt_input_exit' });
+
+    expect(output).toBeNull();
+    expect(readOpen(dir)).toEqual([]);
+    expect(readQueue(dir)).toEqual([
+      expect.objectContaining({ session: SESSION }),
+    ]);
+    expect(kick).toHaveBeenCalledWith({ rootDir: root, env: {} });
+  });
+
+  test('should not start a second worker while one runs', () => {
+    const lock = tryLock(dir);
+
+    lifecycle('SessionEnd');
+
+    expect(readQueue(dir)).toHaveLength(1);
+    expect(kick).not.toHaveBeenCalled();
+    lock?.release();
+  });
+
+  test('should not queue a session that left no transcript', () => {
+    // Headless runs (pnpm agent ask, pnpm loop) use --no-session-persistence.
+    lifecycle('SessionEnd', { transcript_path: path.join(root, 'none.jsonl') });
+
+    expect(readQueue(dir)).toEqual([]);
+    expect(kick).not.toHaveBeenCalled();
+  });
+
+  test('should ignore a SessionEnd without a usable transcript', () => {
+    lifecycle('SessionEnd', { transcript_path: 'relative.jsonl' });
+
+    expect(readQueue(dir)).toEqual([]);
+    expect(kick).not.toHaveBeenCalled();
+  });
+
+  test('should catch up on a session that ended without SessionEnd', () => {
+    const crashed = path.join(root, 'crashed.jsonl');
+    fs.writeFileSync(crashed, '{}\n');
+    const idle = new Date(NOW.getTime() - IDLE_MS - 1000);
+    fs.utimesSync(crashed, idle, idle);
+    registerOpen(dir, {
+      session: 'crashed',
+      harness: 'claude',
+      transcript: crashed,
+      cwd: root,
+      at: idle.toISOString(),
+    });
+
+    lifecycle('SessionStart');
+
+    expect(readQueue(dir).map((entry) => entry.session)).toEqual(['crashed']);
+    expect(kick).toHaveBeenCalledTimes(1);
+  });
+
+  test('should announce what extraction saved, to the agent and the user', () => {
+    appendJournal(dir, {
+      at: '2026-11-20T11:00:00.000Z',
+      status: 'applied',
+      changes: [
+        {
+          action: 'added',
+          id: 'm9',
+          scope: 'user',
+          repo: null,
+          type: 'preference',
+          text: 'The user wants pnpm.',
+        },
+      ],
+    });
+
+    const output = /** @type {any} */ (lifecycle('SessionStart'));
+
+    expect(context(output)).toMatch(
+      /^\[Memory\] Saved by automatic extraction/
+    );
+    expect(context(output)).toContain(
+      '- Saved to memory: m9 (user, preference) The user wants pnpm.'
+    );
+    expect(output.systemMessage).toBe(context(output));
+    expect(lifecycle('SessionStart')).toBeNull();
+  });
+
+  test('should ask Codex to pass the announcement on', () => {
+    appendJournal(dir, {
+      at: '2026-11-20T11:00:00.000Z',
+      status: 'applied',
+      changes: [
+        {
+          action: 'added',
+          id: 'm9',
+          scope: 'user',
+          repo: null,
+          type: 'preference',
+          text: 'The user wants pnpm.',
+        },
+      ],
+    });
+
+    const output = /** @type {any} */ (
+      lifecycle('SessionStart', {}, { harness: 'codex' })
+    );
+
+    expect(context(output)).toMatch(
+      /Mention these saves to the user in one line\.$/
+    );
+    expect(output.systemMessage).toBeUndefined();
+  });
+
+  test('should stay silent for the extraction agent itself', () => {
+    const env = { [EXTRACT_ENV]: '1' };
+
+    expect(lifecycle('SessionStart', {}, { env })).toBeNull();
+    expect(lifecycle('SessionEnd', {}, { env })).toBeNull();
+    expect(
+      hook(
+        {
+          hook_event_name: 'UserPromptSubmit',
+          prompt: 'merge this PR on github',
+        },
+        { env }
+      )
+    ).toBeNull();
+    expect(readOpen(dir)).toEqual([]);
+    expect(readQueue(dir)).toEqual([]);
   });
 });
 

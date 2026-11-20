@@ -14,11 +14,17 @@
  * - PreToolUse: notes whose triggers are in the command (no scoring).
  * - PostToolUseFailure (Claude) or PostToolUse with a non-zero exit (Codex):
  *   notes recalled for the command and its error output.
+ * - Extraction (path B, harnesses with a transcript adapter: Claude Code):
+ *   SessionStart records the session as open, queues sessions that ended
+ *   without a SessionEnd, and starts the worker; SessionEnd queues the
+ *   session and starts the worker (detached, so nothing waits). SessionStart
+ *   also announces what extraction saved since the last session.
  *
  * Silence is the default: nothing is printed when nothing matches, before
  * memory is set up, for the reviewer and verifier roles (clean-context
- * reviews), or on any error (fail open). A note is injected once per
- * session. Reads only the caches on the warm path, so it stays fast.
+ * reviews), for the extraction agent (EXTRACT_ENV), or on any error (fail
+ * open). A note is injected once per session. Reads only the caches on the
+ * warm path, so it stays fast.
  */
 import fs from 'fs';
 import path from 'path';
@@ -27,6 +33,16 @@ import { SESSION_ID_RE } from '../task/store.js';
 import { ROOT_DIR } from '../workspace-config.js';
 import { readConfig, savingOff } from './config.js';
 import { taskContext } from './context.js';
+import { announcement } from './extract.js';
+import {
+  EXTRACT_ENV,
+  catchUp,
+  enqueue,
+  kickWorker,
+  readQueue,
+  registerOpen,
+  workerRunning,
+} from './queue.js';
 import {
   RECALL_LIMIT,
   formatRecall,
@@ -43,6 +59,7 @@ import {
   readUsage,
   recordHits,
 } from './store.js';
+import { TRANSCRIPT_ADAPTERS } from './transcript.js';
 
 /** Roles that must review in a clean context. */
 export const SKIP_AGENTS = ['reviewer', 'verifier'];
@@ -58,8 +75,8 @@ const NOTE_ID_RE = /^- ([mt][1-9]\d*) \(/;
 /**
  * @typedef {'claude' | 'codex'} Harness
  * @typedef {Record<string, any>} HookInput
- * @typedef {{ hookSpecificOutput: { hookEventName: string, additionalContext: string } }} HookOutput
- * @typedef {{ harness?: Harness, rootDir?: string, now?: Date }} HookOptions
+ * @typedef {{ hookSpecificOutput: { hookEventName: string, additionalContext: string }, systemMessage?: string }} HookOutput
+ * @typedef {{ harness?: Harness, rootDir?: string, now?: Date, env?: NodeJS.ProcessEnv, kick?: typeof kickWorker }} HookOptions
  */
 
 /**
@@ -206,10 +223,18 @@ function inject({ dir, session, now }, event, pick) {
  */
 export function handleHook(
   input,
-  { harness = 'claude', rootDir = ROOT_DIR, now = new Date() } = {}
+  {
+    harness = 'claude',
+    rootDir = ROOT_DIR,
+    now = new Date(),
+    env = process.env,
+    kick = kickWorker,
+  } = {}
 ) {
   const event = input.hook_event_name;
-  if (SKIP_AGENTS.includes(input.agent_type)) return null;
+  if (env[EXTRACT_ENV] === '1' || SKIP_AGENTS.includes(input.agent_type)) {
+    return null;
+  }
   const home = mainCheckout(rootDir);
   const dir = memoryDir(home);
   if (!fs.existsSync(dir)) return null;
@@ -225,9 +250,37 @@ export function handleHook(
       cwd: typeof input.cwd === 'string' ? input.cwd : rootDir,
     });
 
+  // Extraction needs a transcript adapter for this harness.
+  const extracts = Object.hasOwn(TRANSCRIPT_ADAPTERS, harness);
+  const entry = {
+    session,
+    harness,
+    transcript: input.transcript_path,
+    cwd: input.cwd,
+    at: now.toISOString(),
+  };
+  const startWorker = () => {
+    if (readQueue(dir).length > 0 && !workerRunning(dir)) {
+      kick({ rootDir: home, env });
+    }
+  };
+
+  if (event === 'SessionEnd') {
+    // Headless runs (--no-session-persistence) leave no transcript to read.
+    const saved =
+      typeof entry.transcript === 'string' && fs.existsSync(entry.transcript);
+    if (extracts && saved && enqueue(dir, entry)) startWorker();
+    return null;
+  }
   if (event === 'SessionStart') {
     if (input.source !== 'resume') writeInjected(dir, session, new Set());
     pruneSessions(dir, now);
+    if (extracts) {
+      registerOpen(dir, entry);
+      catchUp(dir, { current: session, now });
+      startWorker();
+    }
+    const news = announcement(dir);
     const off = savingOff(readConfig(dir), session);
     const parts = [
       ...(harness === 'codex' ||
@@ -239,8 +292,19 @@ export function handleHook(
             `[Memory] Saving to memory is off ${off === 'global' ? 'everywhere' : 'for this session'}: do not save notes (pnpm memory add) unless the user asks; recall still works.`,
           ]
         : []),
+      // Claude Code shows the user a systemMessage; Codex relies on the agent.
+      ...(news
+        ? [
+            harness === 'claude'
+              ? news
+              : `${news}\nMention these saves to the user in one line.`,
+          ]
+        : []),
     ];
-    return contextOutput(event, parts.join('\n\n'));
+    const output = contextOutput(event, parts.join('\n\n'));
+    return output && news && harness === 'claude'
+      ? { ...output, systemMessage: news }
+      : output;
   }
   if (event === 'UserPromptSubmit') {
     const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : '';

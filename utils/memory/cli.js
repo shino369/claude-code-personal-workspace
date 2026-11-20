@@ -8,8 +8,9 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { runAgent } from '../loop/adapters.js';
 import { runIfMain } from '../module-runner.js';
-import { sessionFromEnv } from '../task/store.js';
+import { SESSION_ID_RE, sessionFromEnv } from '../task/store.js';
 import { ROOT_DIR } from '../workspace-config.js';
 import { readConfig, savingOff, setSaving, writeConfig } from './config.js';
 import {
@@ -22,12 +23,28 @@ import {
   writerSource,
 } from './context.js';
 import {
+  defaultExtractDeps,
+  extractEntry,
+  formatRun,
+  runWorker,
+} from './extract.js';
+import {
   listPresets,
   readPersonalization,
   readPreset,
   renderPersonalization,
   writePersonalization,
 } from './personalize.js';
+import {
+  clearInbox,
+  enqueue,
+  readInbox,
+  readJournal,
+  readOpen,
+  readQueue,
+  registerOpen,
+  workerRunning,
+} from './queue.js';
 import { RECALL_LIMIT, loadIndex, noteLabels, recall } from './recall.js';
 import {
   AGENTS_LOCAL_FILE,
@@ -83,6 +100,15 @@ Find
   history [--grep "…"] [--limit N]
                                 The journal of changes, oldest first (default: the last 20)
 
+Extraction (automatic after each Claude Code session)
+  extract [<session>] [--dry-run]
+                                Extract notes from the queued sessions now (the worker
+                                normally does this in the background). <session> extracts
+                                a session that is still open; --dry-run prints what would
+                                be sent to the model and changes nothing
+  inbox [--reset]               Changes extraction held back for you to review (they read
+                                like instructions); --reset clears the list
+
 Settings
   personalize [--preset <name>] [--call-me …] [--about-me …] [--language …]
       [--persona …] [--tone <text|preset>] [--traits a,b] [--extra …] [--reset]
@@ -132,6 +158,7 @@ const BOOLEAN_FLAGS = {
   '--show': 'show',
   '--presets': 'presets',
   '--session': 'session',
+  '--dry-run': 'dryRun',
   '--json': 'json',
   '--help': 'help',
   '-h': 'help',
@@ -165,7 +192,8 @@ const FIRST_NOTE =
  *   triggers: string[],
  *   pin: boolean, force: boolean, failure: boolean, pinned: boolean,
  *   stale: boolean, all: boolean, reset: boolean, show: boolean,
- *   presets: boolean, session: boolean, json: boolean, help: boolean,
+ *   presets: boolean, session: boolean, dryRun: boolean, json: boolean,
+ *   help: boolean,
  * }} Options
  *
  * @typedef {{
@@ -174,6 +202,7 @@ const FIRST_NOTE =
  *   env: NodeJS.ProcessEnv,
  *   now: () => Date,
  *   log: (message: string) => void,
+ *   runAgent: typeof runAgent,
  * }} Deps
  *
  * @typedef {import('./store.js').Note} Note
@@ -200,6 +229,7 @@ export function parseArgs(argv) {
     show: false,
     presets: false,
     session: false,
+    dryRun: false,
     json: false,
     help: false,
   };
@@ -241,6 +271,7 @@ export function defaultDeps(overrides = {}) {
     env,
     now: () => new Date(),
     log: console.log,
+    runAgent,
     ...overrides,
   };
 }
@@ -303,6 +334,21 @@ function localTime(iso) {
   if (Number.isNaN(date.getTime())) return iso;
   const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/**
+ * One held change in the inbox: time, op, id, what, and why it was held.
+ *
+ * @param {Record<string, any>} item
+ */
+function heldLine(item) {
+  const id = typeof item.id === 'string' ? ` ${item.id}` : '';
+  const what =
+    item.note?.text ??
+    item.why ??
+    item.changes?.text ??
+    JSON.stringify(item.changes);
+  return `- ${localTime(String(item.at))} ${item.op}${id}: ${what} (${item.reason})`;
 }
 
 /**
@@ -451,6 +497,89 @@ export const COMMANDS = {
     return 0;
   },
 
+  extract(options, deps) {
+    const dir = dirOf(deps);
+    if (!fs.existsSync(dir)) {
+      throw new Error('Memory is not set up. Fix: pnpm memory init');
+    }
+    const extractDeps = defaultExtractDeps({
+      rootDir: deps.rootDir,
+      env: deps.env,
+      now: deps.now,
+      runAgent: deps.runAgent,
+      dryRun: options.dryRun,
+    });
+    const session = options.positionals[1];
+    let entries = readQueue(dir);
+    if (session !== undefined) {
+      if (!SESSION_ID_RE.test(session)) {
+        throw new Error(`Invalid session id "${session}".`);
+      }
+      const open = readOpen(dir).find((item) => item.session === session);
+      const known =
+        open ?? entries.find((item) => item.session === session) ?? null;
+      if (!known) {
+        throw new Error(
+          `No transcript is known for session ${session}: only Claude Code sessions that started after pnpm memory init are recorded (pnpm memory status).`
+        );
+      }
+      entries = [known];
+      if (!options.dryRun) {
+        enqueue(dir, { ...known, at: deps.now().toISOString() });
+        // Still running: keep it open, so its end (or a crash) is caught.
+        if (open) registerOpen(dir, open);
+      }
+    }
+    const runs = options.dryRun
+      ? entries.map((item) => extractEntry(item, extractDeps))
+      : runWorker(extractDeps);
+    if (runs === null) {
+      output(
+        deps,
+        options,
+        { running: true, runs: [] },
+        'An extraction is already running; it will take the queue.'
+      );
+      return 0;
+    }
+    output(
+      deps,
+      options,
+      { runs },
+      runs.length === 0
+        ? 'Nothing to extract: the queue is empty.'
+        : runs.flatMap(formatRun).join('\n')
+    );
+    return runs.some((run) => run.status === 'failed') ? 1 : 0;
+  },
+
+  inbox(options, deps) {
+    const dir = dirOf(deps);
+    const items = readInbox(dir);
+    if (options.reset) {
+      clearInbox(dir);
+      output(
+        deps,
+        options,
+        { cleared: items.length },
+        `Cleared ${plural(items.length, 'held change')} from the inbox.`
+      );
+      return 0;
+    }
+    output(
+      deps,
+      options,
+      { items },
+      items.length === 0
+        ? 'The inbox is empty: extraction held nothing back.'
+        : [
+            `${plural(items.length, 'change')} held for review (save one yourself with pnpm memory add, edit, or rm; clear the list with pnpm memory inbox --reset):`,
+            ...items.map(heldLine),
+          ].join('\n')
+    );
+    return 0;
+  },
+
   status(options, deps) {
     const dir = dirOf(deps);
     const now = deps.now();
@@ -489,6 +618,18 @@ export const COMMANDS = {
           : 'on';
     const fields = Object.keys(core.personalization);
     const { extractModel } = core.config;
+    const last = readJournal(dir).at(-1);
+    const extraction = {
+      queued: readQueue(dir).length,
+      running: workerRunning(dir),
+      lastRun: last ? { at: last.at, status: last.status } : null,
+      inbox: readInbox(dir).length,
+    };
+    const lastRun = extraction.running
+      ? 'running now'
+      : extraction.lastRun
+        ? `last run ${localTime(String(extraction.lastRun.at))} (${extraction.lastRun.status})`
+        : 'no run yet';
     const summary =
       notes.length === 0
         ? `Memory: no notes yet. Save one: ${FIRST_NOTE}`
@@ -502,6 +643,7 @@ export const COMMANDS = {
         personalization: fields,
         saving,
         extractModel,
+        extraction,
         missing,
         warnings,
       },
@@ -515,6 +657,12 @@ export const COMMANDS = {
           `Personalization: ${fields.length > 0 ? fields.join(', ') : 'not set (pnpm memory personalize --presets)'}`,
           `Saving: ${saving}${off ? ' (pnpm memory on)' : ''}`,
           `Extraction model: ${extractModel ?? "the main session's model"}`,
+          `Extraction: ${plural(extraction.queued, 'session')} queued; ${lastRun}`,
+          ...(extraction.inbox > 0
+            ? [
+                `Inbox: ${plural(extraction.inbox, 'change')} held for review (pnpm memory inbox)`,
+              ]
+            : []),
         ].join('\n'),
         warnings
       )

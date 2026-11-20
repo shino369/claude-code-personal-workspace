@@ -170,10 +170,12 @@ by running `pnpm task status`.
 
 ### 7. Memory (`utils/memory/hook.js`)
 
-**Events:** SessionStart, UserPromptSubmit, PreToolUse (`Bash`), PostToolUseFailure (`Bash`)
+**Events:** SessionStart, UserPromptSubmit, PreToolUse (`Bash`), PostToolUseFailure (`Bash`),
+SessionEnd
 **Purpose:** Personal memory (`pnpm memory`): recall notes from earlier sessions when they are
-relevant. The same script serves Codex through `.codex/hooks.json` (`--harness codex`; trust it
-once with `/hooks`).
+relevant, and learn new ones after a session. The same script serves Codex through
+`.codex/hooks.json` (`--harness codex`; trust it once with `/hooks`); Codex has no extraction
+yet (no transcript adapter).
 
 **What it does:**
 
@@ -185,9 +187,20 @@ once with `/hooks`).
   PostToolUse with a non-zero exit)
 - SessionStart: says when saving is off; injects the core block when `CLAUDE.local.md` does not
   load it (always for Codex); `/clear` and compaction reset what the session was shown
+- Extraction (Claude Code): SessionStart records the session as open; SessionEnd queues it
+  (`memory/extract/queue/`) and starts a detached worker (`utils/memory/extract.js`), so the
+  session never waits. The worker reads what the transcript gained since its last offset,
+  condenses it (your messages, final replies, failed commands; secrets left out), and makes one
+  read-only, tool-less `claude -p` call on the session's model that returns ADD/UPDATE/DELETE ops
+  against the related notes. Notes with secrets are refused; ops that read like instructions go to
+  `memory/inbox.jsonl` (`pnpm memory inbox`). A session that ended without SessionEnd is queued
+  by a later SessionStart once its transcript is idle for an hour. The next SessionStart announces
+  what was saved (to the agent, and to you as a system message). `pnpm memory extract` runs it
+  by hand (`--dry-run` shows the prompt)
 - Injects a note once per session (`memory/cache/sessions/`), counts recalls (`usage.json`),
-  skips the `reviewer` and `verifier` roles, stays silent before `pnpm memory init`, and fails
-  open on any error. About 40 ms per call, most of it Node startup
+  skips the `reviewer` and `verifier` roles and the extraction agent (`MEMORY_EXTRACT=1`), stays
+  silent before `pnpm memory init`, and fails open on any error. About 40 ms per call, most of it
+  Node startup
 
 ## Hook Configuration
 

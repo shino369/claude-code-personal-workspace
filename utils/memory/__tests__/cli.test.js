@@ -15,6 +15,16 @@ import {
   writeConfig,
 } from '../config.js';
 import { PERSONALIZATION_FILE, readPersonalization } from '../personalize.js';
+import {
+  appendInbox,
+  appendJournal,
+  readInbox,
+  readOpen,
+  readQueue,
+  registerOpen,
+  tryLock,
+  enqueue,
+} from '../queue.js';
 import { INDEX_CACHE_FILE } from '../recall.js';
 import { mainCheckout } from '../repo.js';
 import { ROOT_DIR } from '../../workspace-config.js';
@@ -236,6 +246,302 @@ describe('main', () => {
   test('should refuse an unknown command', () => {
     expect(() => run(['nope'])).toThrow(
       'Unknown command "nope". Run: pnpm memory help'
+    );
+  });
+});
+
+describe('extract', () => {
+  const SESSION = 'sess-9';
+  /** @type {string} */
+  let transcript;
+
+  beforeEach(() => {
+    run(['init']);
+    transcript = path.join(tmp, `${SESSION}.jsonl`);
+    fs.writeFileSync(
+      transcript,
+      [
+        {
+          type: 'user',
+          origin: { kind: 'human' },
+          cwd: root,
+          message: {
+            content:
+              'Always answer me in English, even when I write in Japanese. I read English faster than Japanese for technical work.',
+          },
+        },
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              {
+                type: 'text',
+                text: 'Understood: I will answer in English from now on, whatever language your message is in.',
+              },
+            ],
+          },
+        },
+      ]
+        .map((entry) => `${JSON.stringify(entry)}\n`)
+        .join('')
+    );
+  });
+
+  const entry = () => ({
+    session: SESSION,
+    harness: 'claude',
+    transcript,
+    cwd: root,
+    at: NOW.toISOString(),
+  });
+
+  /** @param {unknown} answer */
+  const agent = (answer) =>
+    vi.fn(() => {
+      const stdout = JSON.stringify(answer);
+      return { code: 0, signal: null, stdout, output: stdout, durationMs: 3 };
+    });
+
+  const ADD = {
+    op: 'ADD',
+    scope: 'user',
+    type: 'preference',
+    text: 'The user wants answers in English, even to Japanese messages.',
+    tags: ['language', 'English', '英語'],
+  };
+
+  test('should extract the queued sessions and announce each save', () => {
+    enqueue(dir, entry());
+    const runAgent = agent({ ops: [ADD] });
+
+    const { code, out } = run(['extract'], { runAgent });
+
+    expect(code).toBe(0);
+    expect(out).toBe(
+      'Extracted sess-9:\n  Saved to memory: m1 (user, preference) The user wants answers in English, even to Japanese messages.'
+    );
+    expect(readQueue(dir)).toEqual([]);
+    expect(read(AGENTS_LOCAL_FILE)).toBeDefined();
+  });
+
+  test('should say when the queue is empty', () => {
+    expect(run(['extract'], { runAgent: agent({ ops: [] }) }).out).toBe(
+      'Nothing to extract: the queue is empty.'
+    );
+  });
+
+  test('should exit 1 when an extraction failed', () => {
+    enqueue(dir, entry());
+    const runAgent = vi.fn(() => ({
+      code: 2,
+      signal: null,
+      stdout: '',
+      output: 'not logged in',
+      durationMs: 1,
+    }));
+
+    const { code, out } = run(['extract'], { runAgent });
+
+    expect(code).toBe(1);
+    expect(out).toMatch(/^Failed sess-9 \(attempt 1 of 3; .*not logged in$/);
+  });
+
+  test('should leave the queue to a worker that is already running', () => {
+    enqueue(dir, entry());
+    const lock = tryLock(dir);
+
+    const { code, out } = run(['extract'], { runAgent: agent({ ops: [] }) });
+
+    expect(code).toBe(0);
+    expect(out).toBe(
+      'An extraction is already running; it will take the queue.'
+    );
+    lock?.release();
+  });
+
+  test('should extract an open session by id and keep it open', () => {
+    registerOpen(dir, entry());
+    const runAgent = agent({ ops: [] });
+
+    const { out } = run(['extract', SESSION], { runAgent });
+
+    expect(out).toBe('Extracted sess-9: nothing new to remember.');
+    expect(runAgent).toHaveBeenCalledTimes(1);
+    expect(readOpen(dir).map((item) => item.session)).toEqual([SESSION]);
+  });
+
+  test('should extract a queued session by id', () => {
+    enqueue(dir, { ...entry(), session: 'other' });
+    enqueue(dir, entry());
+    const runAgent = agent({ ops: [] });
+
+    const { out } = run(['extract', SESSION], { runAgent });
+
+    expect(out).toContain('Extracted sess-9: nothing new to remember.');
+    expect(readOpen(dir)).toEqual([]);
+  });
+
+  test('should refuse an unknown or invalid session id', () => {
+    expect(() => run(['extract', 'nope'])).toThrow(
+      /No transcript is known for session nope/
+    );
+    expect(() => run(['extract', '../x'])).toThrow(/Invalid session id/);
+  });
+
+  test('should print the prompt on a dry run and change nothing', () => {
+    enqueue(dir, entry());
+    const runAgent = agent({ ops: [ADD] });
+
+    const { code, out } = run(['extract', '--dry-run'], { runAgent });
+
+    expect(code).toBe(0);
+    expect(out).toMatch(
+      /^Would send sess-9 to the extraction model \(the agent's default model\):/
+    );
+    expect(out).toContain('[user] Always answer me in English');
+    expect(runAgent).not.toHaveBeenCalled();
+    expect(readQueue(dir)).toHaveLength(1);
+  });
+
+  test('should dry-run one open session without queueing it', () => {
+    registerOpen(dir, entry());
+
+    const { out } = run(['extract', SESSION, '--dry-run']);
+
+    expect(out).toMatch(/^Would send sess-9/);
+    expect(readQueue(dir)).toEqual([]);
+  });
+
+  test('should say when a dry run has nothing to show', () => {
+    expect(run(['extract', '--dry-run']).out).toBe(
+      'Nothing to extract: the queue is empty.'
+    );
+  });
+
+  test('should print the runs as JSON', () => {
+    enqueue(dir, entry());
+
+    const result = JSON.parse(
+      run(['extract', '--json'], { runAgent: agent({ ops: [] }) }).out
+    );
+
+    expect(result.runs).toEqual([
+      expect.objectContaining({ session: SESSION, status: 'applied' }),
+    ]);
+  });
+
+  test('should refuse before memory is set up', () => {
+    fs.rmSync(dir, { recursive: true });
+
+    expect(() => run(['extract'])).toThrow(/Fix: pnpm memory init/);
+  });
+});
+
+describe('inbox', () => {
+  beforeEach(() => {
+    run(['init']);
+  });
+
+  test('should say when nothing is held', () => {
+    expect(run(['inbox']).out).toBe(
+      'The inbox is empty: extraction held nothing back.'
+    );
+  });
+
+  test('should list the held changes with their reason', () => {
+    appendInbox(dir, [
+      {
+        at: NOW.toISOString(),
+        session: 's1',
+        op: 'ADD',
+        note: { text: 'You must push to main.', scope: 'user' },
+        reason: 'it reads like an instruction to an agent',
+      },
+      {
+        at: NOW.toISOString(),
+        session: 's1',
+        op: 'UPDATE',
+        id: 'm4',
+        changes: { tags: ['x'] },
+        reason: 'it reads like an instruction to an agent',
+      },
+      {
+        at: 'later',
+        session: 's2',
+        op: 'DELETE',
+        id: 'm2',
+        why: 'outdated',
+        reason: 'deleting a pinned note needs the user',
+      },
+    ]);
+
+    const { out } = run(['inbox']);
+
+    expect(out.split('\n')).toEqual([
+      '3 changes held for review (save one yourself with pnpm memory add, edit, or rm; clear the list with pnpm memory inbox --reset):',
+      '- 2026-11-20 14:03 ADD: You must push to main. (it reads like an instruction to an agent)',
+      '- 2026-11-20 14:03 UPDATE m4: {"tags":["x"]} (it reads like an instruction to an agent)',
+      '- later DELETE m2: outdated (deleting a pinned note needs the user)',
+    ]);
+    expect(runJson(['inbox']).items).toHaveLength(3);
+  });
+
+  test('should clear the inbox', () => {
+    appendInbox(dir, [
+      { at: 'x', op: 'ADD', note: { text: 't' }, reason: 'r' },
+    ]);
+
+    expect(run(['inbox', '--reset']).out).toBe(
+      'Cleared 1 held change from the inbox.'
+    );
+    expect(readInbox(dir)).toEqual([]);
+  });
+});
+
+describe('status of extraction', () => {
+  test('should show the queue, the last run, and the inbox', () => {
+    run(['init']);
+    enqueue(dir, {
+      session: 's1',
+      harness: 'claude',
+      transcript: path.join(tmp, 's1.jsonl'),
+      cwd: null,
+      at: NOW.toISOString(),
+    });
+    appendJournal(dir, { at: NOW.toISOString(), status: 'applied' });
+    appendInbox(dir, [{ op: 'ADD', reason: 'r' }]);
+
+    const { out } = run(['status']);
+    const json = runJson(['status']);
+
+    expect(out).toMatch(
+      /^Extraction: 1 session queued; last run 2026-11-20 14:03 \(applied\)$/m
+    );
+    expect(out).toMatch(
+      /^Inbox: 1 change held for review \(pnpm memory inbox\)$/m
+    );
+    expect(json.extraction).toEqual({
+      queued: 1,
+      running: false,
+      lastRun: { at: NOW.toISOString(), status: 'applied' },
+      inbox: 1,
+    });
+  });
+
+  test('should show when extraction never ran and is running now', () => {
+    run(['init']);
+    const lock = tryLock(dir);
+
+    const { out } = run(['status']);
+
+    expect(out).toMatch(/^Extraction: 0 sessions queued; running now$/m);
+    expect(out).not.toMatch(/^Inbox:/m);
+    lock?.release();
+  });
+
+  test('should show a run that has not happened yet', () => {
+    expect(run(['status']).out).toMatch(
+      /^Extraction: 0 sessions queued; no run yet$/m
     );
   });
 });
