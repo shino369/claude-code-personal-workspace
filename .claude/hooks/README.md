@@ -168,6 +168,27 @@ walk through the quality loop (review round → triage → fixes; AGENTS.md §4.
 The task logic lives in `utils/task/` (the `pnpm task` CLI), so other harnesses get the same brief
 by running `pnpm task status`.
 
+### 7. Memory (`utils/memory/hook.js`)
+
+**Events:** SessionStart, UserPromptSubmit, PreToolUse (`Bash`), PostToolUseFailure (`Bash`)
+**Purpose:** Personal memory (`pnpm memory`): recall notes from earlier sessions when they are
+relevant. The same script serves Codex through `.codex/hooks.json` (`--harness codex`; trust it
+once with `/hooks`).
+
+**What it does:**
+
+- UserPromptSubmit: recalls notes for the prompt plus the task's goal (BM25F with a gate: often
+  nothing) and injects at most 4, within 1,200 characters, framed as facts, not instructions.
+  Skips slash commands and background-task notifications
+- PreToolUse: injects notes whose `triggers` match the command, before it runs
+- PostToolUseFailure: recalls notes for the failed command and its error output (Codex: a
+  PostToolUse with a non-zero exit)
+- SessionStart: says when saving is off; injects the core block when `CLAUDE.local.md` does not
+  load it (always for Codex); `/clear` and compaction reset what the session was shown
+- Injects a note once per session (`memory/cache/sessions/`), counts recalls (`usage.json`),
+  skips the `reviewer` and `verifier` roles, stays silent before `pnpm memory init`, and fails
+  open on any error. About 40 ms per call, most of it Node startup
+
 ## Hook Configuration
 
 Hooks are configured in `.claude/settings.json`:

@@ -3,9 +3,10 @@
  * and the refresh after a write (core block + index cache), so hooks stay on
  * the fast path. Used by `pnpm memory` and `pnpm task` (digests, --learn).
  */
-import { currentTask, sessionFromEnv } from '../task/store.js';
+import { currentTask, loadTask, sessionFromEnv } from '../task/store.js';
 import { loadIndex } from './recall.js';
 import { renderLocal } from './render.js';
+import { repoName } from './repo.js';
 import { MemoryError, memoryDir } from './store.js';
 
 /** Characters of a note shown when a save is announced. */
@@ -83,4 +84,30 @@ export function refreshAfterWrite(rootDir) {
   }
   loadIndex(memoryDir(rootDir));
   return warnings;
+}
+
+/**
+ * The caller's task (its session's, else the workspace default), its goal,
+ * and the repository it works in: the task's --repo, else the folder the
+ * command ran in. Recall uses the goal in its query and the repo for repo
+ * notes; a repo note is saved with this name.
+ *
+ * @param {{ rootDir: string, session: string | null, cwd: string }} context
+ * @returns {{ task: string | null, goal: string | null, repo: string | null }}
+ */
+export function taskContext({ rootDir, session, cwd }) {
+  const task = currentTask(rootDir, session);
+  let state = null;
+  if (task) {
+    try {
+      state = loadTask(rootDir, task).state;
+    } catch {
+      // A broken task state is pnpm task's to report; use the folder.
+    }
+  }
+  return {
+    task,
+    goal: state?.goal ?? null,
+    repo: repoName(state?.repo ?? cwd),
+  };
 }

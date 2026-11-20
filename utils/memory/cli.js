@@ -9,7 +9,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { runIfMain } from '../module-runner.js';
-import { currentTask, loadTask, sessionFromEnv } from '../task/store.js';
+import { sessionFromEnv } from '../task/store.js';
 import { ROOT_DIR } from '../workspace-config.js';
 import { readConfig, savingOff, setSaving, writeConfig } from './config.js';
 import {
@@ -18,6 +18,7 @@ import {
   kindLabel,
   refreshAfterWrite,
   shorten,
+  taskContext,
   writerSource,
 } from './context.js';
 import {
@@ -325,26 +326,6 @@ function historyLine(op) {
 }
 
 /**
- * The repository the caller works in: the current task's --repo, else the
- * folder the command ran in.
- *
- * @param {Deps} deps
- * @returns {string | null}
- */
-function contextRepo(deps) {
-  let dir = deps.cwd;
-  const task = currentTask(deps.rootDir, sessionFromEnv(deps.env));
-  if (task) {
-    try {
-      dir = loadTask(deps.rootDir, task).state?.repo ?? dir;
-    } catch {
-      // A broken task state is pnpm task's to report; use the folder.
-    }
-  }
-  return repoName(dir);
-}
-
-/**
  * A --repo value: a path (it has a slash, or starts with . or ~) names the
  * repository there; anything else is the name itself.
  *
@@ -384,7 +365,11 @@ function repoArg(deps, value) {
 function noteRepo(deps, options, scope) {
   if (options.repo !== undefined) return repoArg(deps, options.repo);
   if (scope !== 'repo') return null;
-  const name = contextRepo(deps);
+  const name = taskContext({
+    rootDir: deps.rootDir,
+    session: sessionFromEnv(deps.env),
+    cwd: deps.cwd,
+  }).repo;
   if (!name) {
     throw new Error(
       'Not in a git repository, so the repo is unknown.\nFix: add --repo <name> (or a path to the repository)'
@@ -619,7 +604,11 @@ export const COMMANDS = {
         repo:
           options.repo !== undefined
             ? repoArg(deps, options.repo)
-            : contextRepo(deps),
+            : taskContext({
+                rootDir: deps.rootDir,
+                session: sessionFromEnv(deps.env),
+                cwd: deps.cwd,
+              }).repo,
         failure: options.failure,
         usage: readUsage(dir),
         now,
