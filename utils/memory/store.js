@@ -383,7 +383,7 @@ function parseLog(content) {
  * @param {string} file
  * @returns {unknown} the parsed JSON, or null when missing or unreadable
  */
-function readJsonOrNull(file) {
+export function readJsonOrNull(file) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf-8'));
   } catch {
@@ -394,19 +394,21 @@ function readJsonOrNull(file) {
 /**
  * Every note (active and deleted) with the log's problems, from the cache
  * when the log is unchanged, else by replaying the log (and caching it).
+ * `stamp` identifies the log state the notes come from (other caches key on
+ * it); it is null when there is no log or the log changed while it was read.
  *
  * @param {string} dir the memory directory
- * @returns {{ notes: Note[], problems: string[] }}
+ * @returns {{ notes: Note[], problems: string[], stamp: string | null }}
  */
 export function loadNotes(dir) {
   const logFile = path.join(dir, LOG_FILE);
   const stat = fs.statSync(logFile, { throwIfNoEntry: false });
-  if (!stat) return { notes: [], problems: [] };
+  if (!stat) return { notes: [], problems: [], stamp: null };
   const stamp = `${stat.size}:${stat.mtimeMs}`;
   const cacheFile = path.join(dir, CACHE_DIR, NOTES_CACHE_FILE);
   const cached = /** @type {any} */ (readJsonOrNull(cacheFile));
   if (cached?.version === CACHE_VERSION && cached.stamp === stamp) {
-    return { notes: cached.notes, problems: cached.problems };
+    return { notes: cached.notes, problems: cached.problems, stamp };
   }
   const content = fs.readFileSync(logFile);
   const parsed = parseLog(content.toString('utf-8'));
@@ -414,14 +416,13 @@ export function loadNotes(dir) {
   const result = { notes, problems: [...parsed.problems, ...problems] };
   // A writer appended between stat and read: the stamp would not match the
   // content, so leave caching to the next reader.
-  if (content.length === stat.size) {
-    fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
-    writeFileAtomic(
-      cacheFile,
-      JSON.stringify({ version: CACHE_VERSION, stamp, ...result })
-    );
-  }
-  return result;
+  if (content.length !== stat.size) return { ...result, stamp: null };
+  fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
+  writeFileAtomic(
+    cacheFile,
+    JSON.stringify({ version: CACHE_VERSION, stamp, ...result })
+  );
+  return { ...result, stamp };
 }
 
 /**

@@ -1,0 +1,347 @@
+{
+  "description": "Golden retrieval set: a realistic store, queries in EN/JA/zh with the note that must be in the top 3, and unrelated prompts that must recall nothing. Context repo defaults to `workspace`.",
+  "notes": [
+    {
+      "id": "m1",
+      "scope": "machine",
+      "type": "howto",
+      "text": "The company proxy blocks GitHub GraphQL (gh pr create, gh pr view, gh pr checks) and the PR merge API with 403 \"Noncompliant action\". REST reads, REST POST /pulls, and git push work. Merge by fast-forwarding main and pushing.",
+      "tags": [
+        "github",
+        "gh",
+        "pull request",
+        "PR",
+        "merge",
+        "proxy",
+        "403",
+        "graphql",
+        "プルリク",
+        "マージ",
+        "拉取請求",
+        "合併"
+      ],
+      "triggers": ["gh pr", "graphql", "pulls/*/merge"]
+    },
+    {
+      "id": "m2",
+      "scope": "machine",
+      "type": "fact",
+      "text": "GITHUB_TOKEN in the environment belongs to the work account; the gh CLI is logged in to the personal account. Use GH_TOKEN=$(gh auth token --user <personal>) for personal repositories.",
+      "tags": [
+        "github",
+        "token",
+        "GITHUB_TOKEN",
+        "gh",
+        "auth",
+        "account",
+        "personal",
+        "認証",
+        "アカウント",
+        "帳號"
+      ]
+    },
+    {
+      "id": "m3",
+      "scope": "user",
+      "type": "preference",
+      "text": "Design first: write the design doc and get it approved before writing code; then run a review and a security audit before merging.",
+      "tags": [
+        "design",
+        "design doc",
+        "review",
+        "security audit",
+        "workflow",
+        "plan",
+        "設計",
+        "レビュー",
+        "審查"
+      ]
+    },
+    {
+      "id": "m4",
+      "scope": "user",
+      "type": "preference",
+      "text": "Prefers replies in English; keeps Japanese UI terms as they are.",
+      "tags": [
+        "language",
+        "english",
+        "japanese",
+        "reply",
+        "言語",
+        "英語",
+        "語言"
+      ]
+    },
+    {
+      "id": "m5",
+      "scope": "machine",
+      "type": "howto",
+      "text": "Docker Desktop must be running before docker compose; start it with open -a Docker and wait for the daemon.",
+      "tags": [
+        "docker",
+        "docker compose",
+        "daemon",
+        "container",
+        "コンテナ",
+        "起動",
+        "容器"
+      ],
+      "triggers": ["docker compose", "docker run"]
+    },
+    {
+      "id": "m6",
+      "scope": "repo",
+      "repo": "live-notifier",
+      "type": "fact",
+      "text": "live-notifier keeps the YouTube API quota counter in Redis; the daily limit resets at midnight Pacific time.",
+      "tags": ["youtube", "api", "quota", "redis", "limit", "クォータ", "配額"]
+    },
+    {
+      "id": "m7",
+      "scope": "repo",
+      "repo": "live-notifier",
+      "type": "howto",
+      "text": "Run the live-notifier tests with pnpm test:unit; the e2e suite needs a local Redis on port 6380.",
+      "tags": ["test", "e2e", "redis", "pnpm", "テスト", "測試"]
+    },
+    {
+      "id": "m8",
+      "scope": "machine",
+      "type": "fact",
+      "text": "Homebrew lives under /opt/homebrew on this Mac; its python3 is 3.13, so use uv for other Python versions.",
+      "tags": [
+        "homebrew",
+        "brew",
+        "python",
+        "uv",
+        "version",
+        "mac",
+        "バージョン"
+      ]
+    },
+    {
+      "id": "m9",
+      "scope": "user",
+      "type": "preference",
+      "text": "Use pnpm, never npm, in every repository.",
+      "tags": [
+        "pnpm",
+        "npm",
+        "package manager",
+        "install",
+        "インストール",
+        "パッケージ",
+        "套件"
+      ]
+    },
+    {
+      "id": "m10",
+      "scope": "machine",
+      "type": "howto",
+      "text": "Start Chrome with --remote-debugging-port=9222 so browser-use can attach to the real profile.",
+      "tags": [
+        "chrome",
+        "browser",
+        "remote debugging",
+        "cdp",
+        "browser-use",
+        "attach",
+        "ブラウザ",
+        "瀏覽器"
+      ]
+    },
+    {
+      "id": "m11",
+      "scope": "user",
+      "type": "preference",
+      "text": "Commit messages follow Conventional Commits, in English, without attribution lines.",
+      "tags": [
+        "commit",
+        "commit message",
+        "git",
+        "conventional commits",
+        "コミット",
+        "提交",
+        "訊息"
+      ]
+    },
+    {
+      "id": "m12",
+      "scope": "machine",
+      "type": "fact",
+      "text": "The VPN drops connections to internal hosts after 8 hours; reconnect when curl to *.corp times out.",
+      "tags": [
+        "vpn",
+        "network",
+        "timeout",
+        "curl",
+        "internal",
+        "corp",
+        "切れる",
+        "ネットワーク",
+        "網路"
+      ]
+    },
+    {
+      "id": "m13",
+      "scope": "user",
+      "type": "preference",
+      "text": "Translations into Traditional Chinese use Taiwan terms (軟體, not 软件).",
+      "tags": [
+        "translation",
+        "translate",
+        "traditional chinese",
+        "zh-TW",
+        "taiwan",
+        "翻訳",
+        "繁體中文",
+        "翻譯"
+      ]
+    },
+    {
+      "id": "m14",
+      "scope": "machine",
+      "type": "howto",
+      "text": "Convert a screen recording to a GIF with ffmpeg -i in.mov -vf fps=10,scale=800:-1 out.gif.",
+      "tags": [
+        "ffmpeg",
+        "video",
+        "gif",
+        "convert",
+        "screen recording",
+        "動画",
+        "影片"
+      ]
+    },
+    {
+      "id": "t15",
+      "scope": "user",
+      "type": "episode",
+      "source": { "via": "digest", "task": "cws-auto-publish-261120" },
+      "text": "Task cws-auto-publish: release runs publish the extension to the Chrome Web Store through the CWS API with a service account; see .github/workflows/release.yml.",
+      "tags": [
+        "chrome web store",
+        "cws",
+        "release",
+        "publish",
+        "extension",
+        "公開",
+        "拡張機能",
+        "擴充功能"
+      ]
+    },
+    {
+      "id": "t16",
+      "scope": "user",
+      "type": "episode",
+      "source": { "via": "digest", "task": "live-notifier-setup-261115" },
+      "text": "Task live-notifier-setup: built the notifier that posts Discord alerts when a channel goes live; deployed on Cloudflare Workers with wrangler.",
+      "tags": [
+        "discord",
+        "notification",
+        "alert",
+        "live",
+        "cloudflare",
+        "workers",
+        "wrangler",
+        "deploy",
+        "通知",
+        "配信"
+      ]
+    },
+    {
+      "id": "m17",
+      "scope": "repo",
+      "repo": "workspace",
+      "type": "fact",
+      "text": "pnpm check runs typecheck, lint, format check, and tests with 100% coverage; tasks/ is excluded from coverage.",
+      "tags": [
+        "check",
+        "coverage",
+        "lint",
+        "typecheck",
+        "test",
+        "カバレッジ",
+        "覆蓋率"
+      ]
+    },
+    {
+      "id": "m18",
+      "scope": "machine",
+      "type": "fact",
+      "text": "The default shell is zsh; rtk rewrites common commands to save tokens.",
+      "tags": ["shell", "zsh", "rtk", "terminal", "シェル"]
+    }
+  ],
+  "queries": [
+    { "q": "open a PR for this branch", "expect": ["m1"] },
+    { "q": "PRを作って", "expect": ["m1"] },
+    { "q": "プルリクをマージしてください", "expect": ["m1"] },
+    { "q": "merge the pull request", "expect": ["m1"] },
+    { "q": "請幫我合併這個拉取請求", "expect": ["m1"] },
+    {
+      "q": "gh pr create --fill\nGraphQL: Resource not accessible by integration (createPullRequest) HTTP 403",
+      "failure": true,
+      "expect": ["m1"]
+    },
+    { "q": "push to my personal repo with gh", "expect": ["m2"] },
+    { "q": "which GitHub account does GITHUB_TOKEN use?", "expect": ["m2"] },
+    { "q": "should I write a design doc first?", "expect": ["m3"] },
+    { "q": "設計レビューをお願い", "expect": ["m3"] },
+    { "q": "reply in English please", "expect": ["m4"] },
+    {
+      "q": "docker compose up -d\nCannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+      "failure": true,
+      "expect": ["m5"]
+    },
+    { "q": "コンテナを起動して", "expect": ["m5"] },
+    {
+      "q": "check the YouTube quota",
+      "repo": "live-notifier",
+      "expect": ["m6"]
+    },
+    { "q": "run the e2e tests", "repo": "live-notifier", "expect": ["m7"] },
+    { "q": "install python 3.12", "expect": ["m8"] },
+    { "q": "pythonのバージョンを変えたい", "expect": ["m8"] },
+    { "q": "npm install lodash", "expect": ["m9"] },
+    { "q": "npmでインストールして", "expect": ["m9"] },
+    { "q": "attach browser-use to my Chrome", "expect": ["m10"] },
+    { "q": "write the commit message", "expect": ["m11"] },
+    { "q": "コミットメッセージを書いて", "expect": ["m11"] },
+    { "q": "幫我寫提交訊息", "expect": ["m11"] },
+    {
+      "q": "curl https://wiki.corp/api\ncurl: (28) Operation timed out after 30001 milliseconds",
+      "failure": true,
+      "expect": ["m12"]
+    },
+    { "q": "VPNが切れる", "expect": ["m12"] },
+    {
+      "q": "translate this README into Traditional Chinese",
+      "expect": ["m13"]
+    },
+    { "q": "把這段翻譯成繁體中文", "expect": ["m13"] },
+    { "q": "make a GIF from this screen recording", "expect": ["m14"] },
+    { "q": "release the extension to the chrome web store", "expect": ["t15"] },
+    { "q": "Chrome Web Storeに公開して", "expect": ["t15"] },
+    {
+      "q": "send a Discord alert when the stream goes live",
+      "expect": ["t16"]
+    },
+    { "q": "deploy the worker with wrangler", "expect": ["t16"] },
+    { "q": "why does pnpm check fail on coverage?", "expect": ["m17"] }
+  ],
+  "unrelated": [
+    { "q": "write a haiku about autumn leaves" },
+    { "q": "what is the capital of France?" },
+    { "q": "explain the difference between TCP and UDP" },
+    { "q": "summarize this article for me" },
+    { "q": "今日の天気は？" },
+    { "q": "おすすめの本を教えて" },
+    { "q": "refactor this function to use async/await" },
+    { "q": "add a unit test for the parser" },
+    { "q": "fix the typo in the docs" },
+    { "q": "how do I center a div in CSS?" },
+    { "q": "這個函式的時間複雜度是多少？" },
+    { "q": "rename the variable to camelCase" }
+  ]
+}

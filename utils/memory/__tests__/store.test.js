@@ -613,7 +613,17 @@ describe('memory store', () => {
     const cacheFile = () => path.join(dir, CACHE_DIR, NOTES_CACHE_FILE);
 
     test('should be empty without a log', () => {
-      expect(loadNotes(dir)).toEqual({ notes: [], problems: [] });
+      expect(loadNotes(dir)).toEqual({ notes: [], problems: [], stamp: null });
+    });
+
+    test('should return the same stamp from the log and from the cache', () => {
+      addNote(dir, input());
+
+      const built = loadNotes(dir);
+      const cached = loadNotes(dir);
+
+      expect(built.stamp).toMatch(/^\d+:[\d.]+$/);
+      expect(cached.stamp).toBe(built.stamp);
     });
 
     test('should serve the cache while the log is unchanged', () => {
@@ -682,9 +692,10 @@ describe('memory store', () => {
         )
       );
 
-      const { notes } = loadNotes(dir);
+      const { notes, stamp } = loadNotes(dir);
 
       expect(notes).toHaveLength(1);
+      expect(stamp).toBeNull();
       expect(fs.existsSync(cacheFile())).toBe(false);
     });
 

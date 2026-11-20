@@ -5,9 +5,9 @@ import { jaccard, termSet, tokenize } from '../tokenize.js';
 
 describe('tokenize', () => {
   test('should lowercase and split English words', () => {
-    expect(tokenize('Proxy BLOCKS GraphQL')).toEqual([
+    expect(tokenize('Proxy BLOCK GraphQL')).toEqual([
       'proxy',
-      'blocks',
+      'block',
       'graphql',
     ]);
   });
@@ -15,19 +15,43 @@ describe('tokenize', () => {
   test('should drop English stopwords and punctuation', () => {
     expect(tokenize('The proxy blocks it, and the API is down.')).toEqual([
       'proxy',
-      'blocks',
+      'block',
       'api',
       'down',
     ]);
   });
 
   test('should keep short code tokens and numbers', () => {
-    expect(tokenize('gh pr create fails with 403')).toEqual([
+    expect(tokenize('gh pr create fail with 403')).toEqual([
       'gh',
       'pr',
       'create',
-      'fails',
+      'fail',
       '403',
+    ]);
+  });
+
+  test('should fold an English plural into its singular', () => {
+    expect(tokenize('tests translations repos docs')).toEqual([
+      'test',
+      'translation',
+      'repo',
+      'doc',
+    ]);
+  });
+
+  test.each(['access', 'status', 'analysis', 'gas', 'prs'])(
+    'should not fold %s, which is not a plain plural',
+    (word) => {
+      expect(tokenize(word)).toEqual([word]);
+    }
+  );
+
+  test('should fold the parts of a compound but not the compound', () => {
+    expect(tokenize('github_tokens')).toEqual([
+      'github_tokens',
+      'github',
+      'token',
     ]);
   });
 
@@ -39,6 +63,15 @@ describe('tokenize', () => {
       'file.js',
       'file',
       'js',
+    ]);
+  });
+
+  test('should split a compound at a colon', () => {
+    expect(tokenize('pnpm test:unit')).toEqual([
+      'pnpm',
+      'test:unit',
+      'test',
+      'unit',
     ]);
   });
 

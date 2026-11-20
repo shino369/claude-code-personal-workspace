@@ -7,8 +7,11 @@
  *   with Node's full ICU;
  * - a small English stoplist, and one- or two-character hiragana tokens
  *   (particles and inflections such as を, って, した) dropped;
- * - code tokens kept whole (`gh`, `403`, `github_token`, `file.js`), plus
- *   their `_`/`.` parts so `token` finds `GITHUB_TOKEN`.
+ * - code tokens kept whole (`gh`, `403`, `github_token`, `test:unit`), plus
+ *   their `_`/`.`/`:` parts so `token` finds `GITHUB_TOKEN`;
+ * - plain English plurals folded to the singular (`tests` → `test`). Notes
+ *   and queries go through the same folding, so an odd stem (`news` → `new`)
+ *   still matches itself.
  */
 
 const SEGMENTER = new Intl.Segmenter('und', { granularity: 'word' });
@@ -23,7 +26,14 @@ const STOPWORDS = new Set(
 );
 
 const SHORT_HIRAGANA = /^[\u3040-\u309f]{1,2}$/;
-const COMPOUND_SEPARATOR = /[_.]/;
+const COMPOUND_SEPARATOR = /[_.:]/;
+/** Three or more letters plus `s`, but not `-ss`, `-us`, `-is` (access, status, analysis). */
+const PLURAL = /^[a-z]{2,}[a-rt-z]s$/;
+const NOT_PLURAL = /(?:us|is)$/;
+
+/** @param {string} token */
+const fold = (token) =>
+  PLURAL.test(token) && !NOT_PLURAL.test(token) ? token.slice(0, -1) : token;
 
 /** @param {string} token */
 const isKept = (token) => !STOPWORDS.has(token) && !SHORT_HIRAGANA.test(token);
@@ -40,10 +50,10 @@ export function tokenize(text) {
   const normalized = text.normalize('NFKC').toLowerCase();
   for (const { segment, isWordLike } of SEGMENTER.segment(normalized)) {
     if (!isWordLike || !isKept(segment)) continue;
-    tokens.push(segment);
+    tokens.push(fold(segment));
     if (COMPOUND_SEPARATOR.test(segment)) {
       for (const part of segment.split(COMPOUND_SEPARATOR)) {
-        if (part.length >= 2 && isKept(part)) tokens.push(part);
+        if (part.length >= 2 && isKept(part)) tokens.push(fold(part));
       }
     }
   }
