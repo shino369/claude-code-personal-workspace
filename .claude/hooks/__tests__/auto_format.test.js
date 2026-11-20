@@ -3,6 +3,7 @@
  */
 import { vi } from 'vitest';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 // Mock child_process module
@@ -15,8 +16,9 @@ const childProcess = await import('child_process');
 const spawnSync = /** @type {import('vitest').Mock} */ (
   /** @type {unknown} */ (childProcess.spawnSync)
 );
-const { prettierBin, processHookInput, runPrettier } =
+const { prettierBin, processHookInput, processOtherHarness, runPrettier } =
   await import('../auto_format.js');
+const { queueFiles, takeQueue } = await import('#utils/harness/format.js');
 const BIN = /** @type {string} */ (prettierBin());
 
 describe('auto_format', () => {
@@ -244,5 +246,103 @@ describe('auto_format', () => {
       }
       consoleErrorSpy.mockRestore();
     });
+  });
+});
+
+describe('auto_format in Codex and DSH', () => {
+  /** @type {string} */
+  let project;
+  /** @type {string} */
+  let tmpDir;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    spawnSync.mockImplementation(() => ({ status: 0, stderr: '' }));
+    project = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'fmt-hook-'))
+    );
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fmt-q-'));
+    fs.writeFileSync(path.join(project, 'a.js'), 'x');
+    fs.writeFileSync(path.join(project, 'b.md'), 'x');
+  });
+
+  afterEach(() => {
+    fs.rmSync(project, { recursive: true, force: true });
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const patch =
+    "apply_patch <<'EOF'\n*** Begin Patch\n*** Update File: a.js\n*** End Patch\nEOF";
+  /** @param {Record<string, unknown>} input */
+  const options = (input) => ({ rootDir: project, env: {}, tmpDir, ...input });
+
+  test("should queue Codex's shell-run patch at PreToolUse without formatting yet", () => {
+    const input = {
+      hook_event_name: 'PreToolUse',
+      session_id: 's-1',
+      cwd: project,
+      tool_name: 'Bash',
+      tool_input: { command: patch },
+    };
+    expect(processOtherHarness(input, 'codex', options({}))).toEqual([]);
+    expect(spawnSync).not.toHaveBeenCalled();
+    expect(takeQueue('s-1', { tmpDir })).toEqual([path.join(project, 'a.js')]);
+  });
+
+  test('should format the queue at the next Codex PostToolUse, whatever the tool', () => {
+    queueFiles('s-1', [path.join(project, 'a.js')], { tmpDir });
+    const input = {
+      hook_event_name: 'PostToolUse',
+      session_id: 's-1',
+      cwd: project,
+      tool_name: 'Bash',
+      tool_input: { command: 'ls' },
+    };
+    expect(processOtherHarness(input, 'codex', options({}))).toEqual([
+      path.join(project, 'a.js'),
+    ]);
+    expect(spawnSync).toHaveBeenCalledTimes(1);
+  });
+
+  test("should format a DSH edit's files at PostToolUse", () => {
+    const input = {
+      hook_event_name: 'PostToolUse',
+      session_id: 's-1',
+      cwd: project,
+      tool_name: 'edit',
+      tool_input: { file_path: path.join(project, 'b.md') },
+    };
+    expect(processOtherHarness(input, 'dsh', options({}))).toEqual([
+      path.join(project, 'b.md'),
+    ]);
+  });
+
+  test('should use CLAUDE_PROJECT_DIR in DSH and skip files outside it', () => {
+    const input = {
+      hook_event_name: 'PostToolUse',
+      session_id: 's-1',
+      cwd: project,
+      tool_name: 'write',
+      tool_input: { file_path: path.join(project, 'a.js') },
+    };
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'fmt-x-'));
+    expect(
+      processOtherHarness(
+        input,
+        'dsh',
+        options({ env: { CLAUDE_PROJECT_DIR: elsewhere } })
+      )
+    ).toEqual([]);
+    fs.rmSync(elsewhere, { recursive: true, force: true });
+  });
+
+  test('should ignore tools that edit nothing', () => {
+    const input = {
+      hook_event_name: 'PostToolUse',
+      tool_name: 'read',
+      tool_input: {},
+    };
+    expect(processOtherHarness(input, 'dsh', options({}))).toEqual([]);
+    expect(spawnSync).not.toHaveBeenCalled();
   });
 });

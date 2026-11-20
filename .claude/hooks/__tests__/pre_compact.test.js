@@ -61,6 +61,17 @@ describe('pre_compact processHookInput', () => {
     );
   });
 
+  test('should sign the checkpoint with the harness that compacted', () => {
+    const notes = makeActiveTask('demo-261117');
+    processHookInput(
+      { trigger: 'auto' },
+      { rootDir: root, now, git: fakeGit(null), agent: 'codex' }
+    );
+    expect(fs.readFileSync(notes, 'utf-8')).toContain(
+      '## 2026-11-17 09:30 — codex (auto: pre-compact, auto)'
+    );
+  });
+
   test('should omit the diff and name an unknown trigger when input is missing', () => {
     const notes = makeActiveTask('demo-261117');
 

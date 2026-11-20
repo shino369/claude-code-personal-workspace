@@ -7,6 +7,7 @@
  *
  * No task the session worked on (see `sessionTask`) means nothing to do. Fails open: errors exit 0 silently.
  */
+import { parseHarness } from '#utils/harness/input.js';
 import { runIfMain } from '#utils/module-runner.js';
 import { stateLine, writeNote } from '#utils/task/cli.js';
 import { gitInfo } from '#utils/task/git.js';
@@ -21,12 +22,18 @@ import { ROOT_DIR } from '#utils/workspace-config.js';
 
 /**
  * @param {HookInput | undefined} input
- * @param {{ rootDir?: string, now?: Date, git?: (cwd: string) => GitInfo }} [options]
+ * @param {{ rootDir?: string, now?: Date, git?: (cwd: string) => GitInfo, agent?: string }} [options]
+ *   agent: who the note is from (the harness; Codex also sends PreCompact)
  * @returns {string | null} the task that received the entry, or null
  */
 export function processHookInput(
   input,
-  { rootDir = ROOT_DIR, now = new Date(), git = (cwd) => gitInfo(cwd) } = {}
+  {
+    rootDir = ROOT_DIR,
+    now = new Date(),
+    git = (cwd) => gitInfo(cwd),
+    agent = 'claude',
+  } = {}
 ) {
   try {
     // Only the task this session worked on: never another session's notes.
@@ -39,7 +46,7 @@ export function processHookInput(
     const info = git(taskRepoDir(rootDir, task.state));
     writeNote(deps, task, {
       at: now,
-      agent: 'claude',
+      agent,
       label: `auto: pre-compact, ${input?.trigger ?? 'unknown'}`,
       message:
         'Context was compacted. Mechanical checkpoint — the latest manual entry above holds Done/Next.',
@@ -60,7 +67,9 @@ function main() {
   });
   process.stdin.on('end', () => {
     try {
-      processHookInput(data.trim() ? JSON.parse(data) : {});
+      processHookInput(data.trim() ? JSON.parse(data) : {}, {
+        agent: parseHarness(process.argv.slice(2)),
+      });
     } catch {
       // Fail open.
     }

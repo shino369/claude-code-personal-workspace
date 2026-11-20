@@ -43,10 +43,11 @@ const CODEX_HOOKS_DESCRIPTION =
  */
 function codexHooksChanged(previous) {
   try {
-    return (
-      JSON.stringify(readHookEntries(JSON.parse(String(previous)))) !==
-      JSON.stringify(hookEntries('codex'))
+    const { missing, extra } = diffEntries(
+      hookEntries('codex'),
+      readHookEntries(JSON.parse(String(previous)))
     );
+    return missing.length > 0 || extra.length > 0;
   } catch {
     return true;
   }

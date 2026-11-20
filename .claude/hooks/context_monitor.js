@@ -13,8 +13,10 @@
  *   60%+   — urgent, context likely degraded
  *
  * The window defaults to 1M tokens; set CLAUDE_CONTEXT_WINDOW to override.
+ * Codex records the model's window in its rollout, and that wins. DSH gives
+ * hooks no transcript, so there the monitor stays silent.
  */
-import fs from 'fs';
+import { parseHarness, transcriptUsage } from '#utils/harness/input.js';
 import { runIfMain } from '#utils/module-runner.js';
 import { sessionTask } from '#utils/task/store.js';
 import { ROOT_DIR } from '#utils/workspace-config.js';
@@ -60,8 +62,9 @@ export function formatWindow(contextWindow) {
 }
 
 /**
- * Extract cumulative input-token usage from the newest assistant entry in a
- * transcript. Returns null when the transcript is missing or has no usage data.
+ * Cumulative input-token usage from the newest assistant entry of a Claude
+ * Code transcript (read from the end; see utils/harness/input.js). Null when
+ * the transcript is missing or has no usage data.
  *
  * Approximation: accurate when prompt caching is active. cache_read_input_tokens
  * reflects the full prior context served from cache; input_tokens is only the
@@ -71,39 +74,8 @@ export function formatWindow(contextWindow) {
  * @returns {{ inputTokens: number } | null}
  */
 export function getUsageFromTranscript(transcriptPath) {
-  if (!transcriptPath || !fs.existsSync(transcriptPath)) return null;
-
-  try {
-    const lines = fs
-      .readFileSync(transcriptPath, 'utf-8')
-      .split('\n')
-      .filter((line) => line.trim());
-
-    // Find the last assistant message with usage data — it reflects cumulative context.
-    let lastUsage = null;
-    for (let i = lines.length - 1; i >= 0; i--) {
-      try {
-        const entry = JSON.parse(lines[i]);
-        if (entry.type === 'assistant' && entry.message?.usage) {
-          lastUsage = entry.message.usage;
-          break;
-        }
-      } catch {
-        // The last line may be partially written; skip and continue scanning upward.
-      }
-    }
-
-    if (!lastUsage) return null;
-
-    const inputTokens =
-      (lastUsage.cache_read_input_tokens || 0) +
-      (lastUsage.cache_creation_input_tokens || 0) +
-      (lastUsage.input_tokens || 0);
-
-    return { inputTokens };
-  } catch {
-    return null;
-  }
+  const usage = transcriptUsage(transcriptPath, 'claude');
+  return usage ? { inputTokens: usage.tokens } : null;
 }
 
 /**
@@ -173,19 +145,22 @@ export function buildMessage(
  *
  * @param {{ transcript_path?: string, session_id?: string }} [input]
  * @param {NodeJS.ProcessEnv} [env]
- * @param {{ activeTask?: (session: string | null) => string | null }} [options]
+ * @param {{ activeTask?: (session: string | null) => string | null, harness?: import('#utils/harness/input.js').Harness }} [options]
  * @returns {HookOutput | null}
  */
 export function processHookInput(
   input,
   env = process.env,
-  { activeTask = (session) => getActiveTask(ROOT_DIR, session) } = {}
+  {
+    activeTask = (session) => getActiveTask(ROOT_DIR, session),
+    harness = 'claude',
+  } = {}
 ) {
-  const usage = getUsageFromTranscript(input?.transcript_path);
+  const usage = transcriptUsage(input?.transcript_path, harness);
   if (!usage) return null;
 
-  const contextWindow = getContextWindow(env);
-  const usagePct = usage.inputTokens / contextWindow;
+  const contextWindow = usage.window ?? getContextWindow(env);
+  const usagePct = usage.tokens / contextWindow;
   const message = buildMessage(
     usagePct,
     contextWindow,
@@ -225,7 +200,9 @@ function main() {
   process.stdin.on('end', () => {
     try {
       const hookInput = JSON.parse(inputData);
-      const output = processHookInput(hookInput);
+      const output = processHookInput(hookInput, process.env, {
+        harness: parseHarness(process.argv.slice(2)),
+      });
 
       if (output) {
         // Wait for stdout to flush before exiting; process.exit() during a

@@ -250,7 +250,42 @@ describe('diffEntries', () => {
   });
 });
 
+describe('the Codex wiring', () => {
+  const events = (/** @type {string} */ id) =>
+    (HOOKS.find((spec) => spec.id === id)?.codex ?? []).map(
+      (p) => `${p.event}${p.matcher ? ` [${p.matcher}]` : ''}`
+    );
+
+  test('should run the task brief, loop, reset, checkpoint, and context monitor', () => {
+    expect(events('task-brief')).toEqual([
+      'SessionStart [startup|resume|clear|compact]',
+    ]);
+    expect(events('task-loop')).toEqual(['Stop']);
+    expect(events('task-loop-reset')).toEqual(['UserPromptSubmit']);
+    expect(events('compact-note')).toEqual(['PreCompact']);
+    expect(events('context-monitor')).toEqual(['UserPromptSubmit']);
+  });
+
+  test('should see patch edits at PreToolUse, where Codex reports them', () => {
+    for (const id of ['audit', 'format']) {
+      expect(events(id)).toEqual([
+        'PreToolUse [Bash|apply_patch]',
+        'PostToolUse [*]',
+      ]);
+    }
+  });
+});
+
 describe('the committed configs', () => {
+  test('should match the manifest in .codex/hooks.json (run pnpm harness sync)', () => {
+    expect(
+      diffEntries(
+        hookEntries('codex'),
+        readHookEntries(readJson('.codex/hooks.json'))
+      )
+    ).toEqual({ missing: [], extra: [] });
+  });
+
   test('should match the manifest in .claude/settings.json', () => {
     expect(
       diffEntries(

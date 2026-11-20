@@ -35,6 +35,7 @@ export const HOOKS = [
     script: '.claude/hooks/session_start.js',
     timeout: 10,
     claude: [{ event: 'SessionStart', matcher: SESSION_SOURCES }],
+    codex: [{ event: 'SessionStart', matcher: SESSION_SOURCES }],
   },
   {
     id: 'memory',
@@ -60,12 +61,15 @@ export const HOOKS = [
     script: '.claude/hooks/pre_compact.js',
     timeout: 10,
     claude: [{ event: 'PreCompact' }],
+    codex: [{ event: 'PreCompact' }],
   },
   {
     id: 'task-loop',
     script: '.claude/hooks/task_loop.js',
     timeout: 300,
     claude: [{ event: 'Stop' }],
+    // In Codex it also formats the files edits queued (see format below).
+    codex: [{ event: 'Stop' }],
   },
   {
     id: 'task-loop-reset',
@@ -73,24 +77,38 @@ export const HOOKS = [
     args: ['--reset'],
     timeout: 5,
     claude: [{ event: 'UserPromptSubmit' }],
+    codex: [{ event: 'UserPromptSubmit' }],
   },
   {
     id: 'context-monitor',
     script: '.claude/hooks/context_monitor.js',
     timeout: 5,
     claude: [{ event: 'UserPromptSubmit' }],
+    // Codex records the window in its rollout; DSH gives hooks no transcript.
+    codex: [{ event: 'UserPromptSubmit' }],
   },
   {
     id: 'audit',
     script: '.claude/hooks/audit_logger.js',
     timeout: 10,
     claude: [{ event: 'PostToolUse', matcher: '*' }],
+    // Codex sends only PreToolUse for a shell-run apply_patch.
+    codex: [
+      { event: 'PreToolUse', matcher: 'Bash|apply_patch' },
+      { event: 'PostToolUse', matcher: '*' },
+    ],
   },
   {
     id: 'format',
     script: '.claude/hooks/auto_format.js',
     timeout: 30,
     claude: [{ event: 'PostToolUse', matcher: 'Edit|Write' }],
+    // Codex: queue a patch's files at PreToolUse, format them at the next
+    // PostToolUse (any tool); task-loop formats what is left at Stop.
+    codex: [
+      { event: 'PreToolUse', matcher: 'Bash|apply_patch' },
+      { event: 'PostToolUse', matcher: '*' },
+    ],
   },
 ];
 

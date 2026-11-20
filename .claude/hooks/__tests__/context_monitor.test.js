@@ -156,7 +156,7 @@ describe('context_monitor', () => {
       const file = transcript([
         { type: 'assistant', message: { usage: { input_tokens: 10 } } },
       ]);
-      const spy = vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+      const spy = vi.spyOn(fs, 'readSync').mockImplementation(() => {
         throw new Error('read failed');
       });
 
@@ -260,6 +260,41 @@ describe('context_monitor', () => {
     test('returns null for missing input', () => {
       expect(processHookInput(undefined, {})).toBeNull();
       expect(processHookInput({}, {})).toBeNull();
+    });
+
+    test("uses Codex's rollout usage and its own context window", () => {
+      const file = transcript([
+        {
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              last_token_usage: { total_tokens: 120_000 },
+              model_context_window: 258_400,
+            },
+          },
+        },
+      ]);
+      const output = processHookInput(
+        { transcript_path: file },
+        { CLAUDE_CONTEXT_WINDOW: '1000000' },
+        { harness: 'codex', activeTask: () => 'demo-task' }
+      );
+      expect(output?.hookSpecificOutput.additionalContext).toContain(
+        '[Context Monitor][WARNING] Usage at 46.4% of 258K context window'
+      );
+    });
+
+    test('stays silent in DSH, which gives hooks no transcript', () => {
+      const file = transcript([
+        {
+          type: 'assistant',
+          message: { usage: { input_tokens: 900_000 } },
+        },
+      ]);
+      expect(
+        processHookInput({ transcript_path: file }, {}, { harness: 'dsh' })
+      ).toBeNull();
     });
 
     test('returns null below the note threshold', () => {

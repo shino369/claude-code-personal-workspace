@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Audit logging hook for Claude Code.
+ * Audit logging hook (Claude Code, Codex, DSH; `--harness <name>`).
  *
  * Appends one JSON line per tool call to
  * <project>/logs/<YYYYMMDD>/logging.jsonl.
@@ -9,15 +9,22 @@
  *   processes (parallel tool calls, subagents, swarm workers) cannot clobber
  *   each other the way a read-modify-write of a JSON array would.
  * - Anchored to the project: CLAUDE_PROJECT_DIR, else the hook input's cwd,
- *   else process.cwd().
+ *   else process.cwd(). Codex sets no project dir (and may inherit a parent
+ *   Claude session's), so it logs under the workspace root.
+ * - Entries from Codex and DSH carry `harness`; Claude Code's do not.
+ * - Codex sends no PostToolUse for a shell-run `apply_patch`, so those edits
+ *   are logged at PreToolUse; its other PreToolUse calls are skipped (they
+ *   are logged at PostToolUse).
  * - Secrets are redacted from every string before long fields are truncated,
  *   with the shared rules in utils/redact.js.
  * - Fails open: any error exits 0 so the tool call is never blocked.
  */
 import fs from 'fs';
 import path from 'path';
+import { parseHarness, toolEvent } from '#utils/harness/input.js';
 import { runIfMain } from '#utils/module-runner.js';
 import { REDACTED, isSecretKey, redactSecrets } from '#utils/redact.js';
+import { ROOT_DIR } from '#utils/workspace-config.js';
 
 export const LOG_FILE_NAME = 'logging.jsonl';
 
@@ -26,9 +33,15 @@ export const LOG_FILE_NAME = 'logging.jsonl';
  *
  * @param {{ cwd?: string }} [input]
  * @param {NodeJS.ProcessEnv} [env]
+ * @param {{ harness?: import('#utils/harness/input.js').Harness, rootDir?: string }} [options]
  * @returns {string}
  */
-export function getLogRoot(input = {}, env = process.env) {
+export function getLogRoot(
+  input = {},
+  env = process.env,
+  { harness = 'claude', rootDir = ROOT_DIR } = {}
+) {
+  if (harness === 'codex') return rootDir;
   return env.CLAUDE_PROJECT_DIR || input.cwd || process.cwd();
 }
 
@@ -112,12 +125,14 @@ export function sanitizeForLogging(data, maxContentLength = 500) {
  *
  * @param {HookInput} input
  * @param {Date} [now]
+ * @param {string} [harness] recorded unless it is Claude Code
  * @returns {Record<string, unknown>}
  */
-export function buildLogEntry(input, now = new Date()) {
+export function buildLogEntry(input, now = new Date(), harness = 'claude') {
   /** @type {Record<string, unknown>} */
   const logEntry = {
     timestamp: now.toISOString(),
+    harness: harness === 'claude' ? undefined : harness,
     session_id: input.session_id,
     hook_event: input.hook_event_name,
     tool_name: input.tool_name,
@@ -146,11 +161,20 @@ export function buildLogEntry(input, now = new Date()) {
 /**
  * @param {HookInput} input
  * @param {NodeJS.ProcessEnv} [env]
- * @returns {string} the log file written to
+ * @param {{ harness?: import('#utils/harness/input.js').Harness, rootDir?: string }} [options]
+ * @returns {string | null} the log file written to, or null when skipped
  */
-export function processHookInput(input, env = process.env) {
-  const logFile = ensureLogDirectory(getLogRoot(input, env));
-  appendLogEntry(logFile, buildLogEntry(input));
+export function processHookInput(input, env = process.env, options = {}) {
+  const harness = options.harness ?? 'claude';
+  if (
+    harness === 'codex' &&
+    input.hook_event_name === 'PreToolUse' &&
+    toolEvent(input).kind !== 'edit'
+  ) {
+    return null;
+  }
+  const logFile = ensureLogDirectory(getLogRoot(input, env, options));
+  appendLogEntry(logFile, buildLogEntry(input, new Date(), harness));
   return logFile;
 }
 
@@ -166,7 +190,9 @@ function main() {
 
     process.stdin.on('end', () => {
       try {
-        processHookInput(JSON.parse(inputData));
+        processHookInput(JSON.parse(inputData), process.env, {
+          harness: parseHarness(process.argv.slice(2)),
+        });
         process.exit(0);
       } catch (err) {
         console.error(
