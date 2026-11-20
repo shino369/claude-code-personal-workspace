@@ -70,8 +70,10 @@ Every command takes `--task <name>`, `--agent <name>`, and `--json`. Several age
 plan: `pnpm task claim` hands each a different ready step (dependencies done) under a lock file.
 
 **Which task a command acts on.** Several sessions often work in one checkout at once, so the
-active task is per session: `tasks/.sessions/<id>.json` (the id is `$TASK_SESSION`, else Claude
-Code's `$CLAUDE_CODE_SESSION_ID`, which the hooks also receive). Claude's `SessionStart` hook binds
+active task is per session: `tasks/.sessions/<id>.json` (the id is `$TASK_SESSION`, else the
+harness's own id, which its hooks also receive: Codex's `$CODEX_THREAD_ID`, DSH's `$DSH_SESSION_ID`,
+then Claude Code's `$CLAUDE_CODE_SESSION_ID`; `pnpm loop`, `swarm`, and `agent ask` do not pass
+these to the agents they start). Claude's `SessionStart` hook binds
 a new session, dormant, to the default task (`tasks/.active`); `new` and `switch` move the
 binding (and the default); the first `pnpm task` command that changes a task engages it. The
 `Stop`, `PreCompact`, and context-monitor hooks act only on an engaged task, so a session that

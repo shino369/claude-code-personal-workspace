@@ -76,8 +76,8 @@ Every workspace script prints a `Fix:` line when it fails — run that command.
 task other than the active one), and `--agent <name>` (who is acting; or set `TASK_AGENT`).
 
 **The active task is per session.** Several sessions can work in one checkout, so each session
-keeps its own task (`tasks/.sessions/<id>.json`; the id is `$TASK_SESSION`, else Claude Code's
-session id). `new` and `switch` set it; the first command that changes a task (`step`, `note`,
+keeps its own task (`tasks/.sessions/<id>.json`; the id is `$TASK_SESSION`, else the harness's
+own: `$CODEX_THREAD_ID`, `$DSH_SESSION_ID`, or Claude Code's session id). `new` and `switch` set it; the first command that changes a task (`step`, `note`,
 `verify`, `set`, `review`, …) claims it for the session. `tasks/.active` is only the default
 for a new session. Another harness working beside other sessions: pass `--task <name>` on each
 command (or run each one with `TASK_SESSION=<your id>` set).

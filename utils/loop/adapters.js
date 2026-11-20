@@ -14,6 +14,7 @@
  * mode, codex `read-only` sandbox, dsh `read-only` preset.
  */
 import { crossSpawn } from '../spawn.js';
+import { HARNESS_SESSION_VARS } from '../task/store.js';
 
 export const AGENTS = /** @type {const} */ (['claude', 'codex', 'dsh']);
 
@@ -150,7 +151,10 @@ export function installHint(agent) {
  */
 
 /**
- * Run one headless agent turn with the prompt on stdin.
+ * Run one headless agent turn with the prompt on stdin. The child gets the
+ * caller's env without the harness session ids: a child that inherited them
+ * would act as the caller's session in `pnpm task` (`TASK_SESSION`, set on
+ * purpose, is kept).
  *
  * @param {{ command: AgentCommand, cwd: string, prompt: string, timeoutMs: number, env: NodeJS.ProcessEnv, spawn?: AgentSpawn, now?: () => number }} options
  * @returns {AgentResult}
@@ -173,7 +177,9 @@ export function runAgent({
     timeout: timeoutMs,
     killSignal: 'SIGTERM',
     maxBuffer: 64 * 1024 * 1024,
-    env,
+    env: Object.fromEntries(
+      Object.entries(env).filter(([key]) => !HARNESS_SESSION_VARS.includes(key))
+    ),
   });
   if (result.error?.code === 'ENOENT') {
     throw new Error(

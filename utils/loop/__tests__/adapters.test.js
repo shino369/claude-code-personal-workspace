@@ -135,6 +135,33 @@ describe('runAgent', () => {
   let clock = 0;
   const now = () => (clock += 1000);
 
+  test("should not pass the parent harness's session ids to the child agent", () => {
+    const spawn = vi.fn(() => ({ status: 0, stdout: '', stderr: '' }));
+    const env = {
+      A: '1',
+      TASK_SESSION: 'mine',
+      CLAUDE_CODE_SESSION_ID: 'cc-1',
+      CODEX_THREAD_ID: 'cx-1',
+      CODEX_SESSION_ID: 'cx-1',
+      DSH_SESSION_ID: 'dsh-1',
+    };
+    runAgent({
+      command,
+      cwd: '/wt',
+      prompt: 'p',
+      timeoutMs: 1,
+      env,
+      spawn,
+      now,
+    });
+    expect(spawn).toHaveBeenCalledWith(
+      'codex',
+      command.args,
+      expect.objectContaining({ env: { A: '1', TASK_SESSION: 'mine' } })
+    );
+    expect(env.CLAUDE_CODE_SESSION_ID).toBe('cc-1');
+  });
+
   test('should pass the prompt on stdin and join stdout and stderr', () => {
     const spawn = vi.fn(() => ({
       status: 0,
