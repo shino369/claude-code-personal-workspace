@@ -160,8 +160,17 @@ describe('withLock', () => {
     const now = () => (clock += 60);
     expect(() =>
       withLock(root, () => 'never', { timeoutMs: 100, now })
-    ).toThrow(/locked by another process/);
+    ).toThrow(/^Task is locked by another process/);
     expect(fs.existsSync(path.join(root, '.lock'))).toBe(true);
+  });
+
+  test('should name what is locked in the timeout message', () => {
+    fs.writeFileSync(path.join(root, '.lock'), '');
+    let clock = Date.now();
+    const now = () => (clock += 60);
+    expect(() =>
+      withLock(root, () => 'never', { timeoutMs: 100, now, label: 'Memory' })
+    ).toThrow(/^Memory is locked by another process/);
   });
 
   test('should wait out a lock Windows is still deleting (EPERM)', () => {
