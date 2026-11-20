@@ -276,12 +276,61 @@ describe('the Codex wiring', () => {
   });
 });
 
+describe('the DSH wiring', () => {
+  const events = (/** @type {string} */ id) =>
+    (HOOKS.find((spec) => spec.id === id)?.dsh ?? []).map(
+      (p) => `${p.event}${p.matcher ? ` [${p.matcher}]` : ''}`
+    );
+
+  test('should run the brief, the loop, the reset, memory, audit, format, and the guard', () => {
+    expect(events('task-brief')).toEqual([
+      'SessionStart [startup|resume|clear|compact]',
+    ]);
+    expect(events('task-loop')).toEqual(['Stop']);
+    expect(events('task-loop-reset')).toEqual(['UserPromptSubmit']);
+    expect(events('memory')).toEqual([
+      'SessionStart [startup|resume|clear|compact]',
+      'UserPromptSubmit',
+      'PreToolUse [bash|pwsh]',
+      'PostToolUse [bash|pwsh]',
+    ]);
+    expect(events('audit')).toEqual(['PostToolUse [*]']);
+    expect(events('format')).toEqual([
+      'PostToolUse [edit|write|apply_patch|str_replace_editor]',
+    ]);
+    expect(events('guard')).toHaveLength(1);
+  });
+
+  test('should leave out what the bridge cannot run: PreCompact, and the context monitor', () => {
+    expect(events('compact-note')).toEqual([]);
+    expect(events('context-monitor')).toEqual([]);
+  });
+
+  test("should name DSH's own lowercase tools, since the bridge has no aliases", () => {
+    const matchers = HOOKS.flatMap((spec) => spec.dsh ?? []).flatMap((p) =>
+      p.matcher && p.matcher !== '*' && !p.matcher.includes('startup')
+        ? p.matcher.split('|')
+        : []
+    );
+    for (const name of matchers) expect(name).toMatch(/^[a-z_]+$/);
+  });
+});
+
 describe('the committed configs', () => {
   test('should match the manifest in .codex/hooks.json (run pnpm harness sync)', () => {
     expect(
       diffEntries(
         hookEntries('codex'),
         readHookEntries(readJson('.codex/hooks.json'))
+      )
+    ).toEqual({ missing: [], extra: [] });
+  });
+
+  test('should match the manifest in .dsh/hooks.json (run pnpm harness sync)', () => {
+    expect(
+      diffEntries(
+        hookEntries('dsh'),
+        readHookEntries(readJson('.dsh/hooks.json'))
       )
     ).toEqual({ missing: [], extra: [] });
   });

@@ -52,7 +52,11 @@ import {
   matchTriggers,
   recall,
 } from './recall.js';
-import { CLAUDE_LOCAL_FILE, renderStored } from './render.js';
+import {
+  AGENTS_LOCAL_FILE,
+  CLAUDE_LOCAL_FILE,
+  renderStored,
+} from './render.js';
 import { mainCheckout } from './repo.js';
 import {
   CACHE_DIR,
@@ -69,12 +73,12 @@ export const SESSIONS_DIR = 'sessions';
 export const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Characters of a failed command's output used in the query. */
 export const ERROR_CHARS = 600;
-const HARNESSES = ['claude', 'codex'];
+const HARNESSES = ['claude', 'codex', 'dsh'];
 const EXIT_CODE_RE = /\bexit code:?\s*(-?\d+)/i;
 const NOTE_ID_RE = /^- ([mt][1-9]\d*) \(/;
 
 /**
- * @typedef {'claude' | 'codex'} Harness
+ * @typedef {'claude' | 'codex' | 'dsh'} Harness
  * @typedef {Record<string, any>} HookInput
  * @typedef {{ hookSpecificOutput: { hookEventName: string, additionalContext: string }, systemMessage?: string }} HookOutput
  * @typedef {{ harness?: Harness, rootDir?: string, now?: Date, env?: NodeJS.ProcessEnv, kick?: typeof kickWorker }} HookOptions
@@ -281,8 +285,15 @@ export function handleHook(
     const news = announcement(dir);
     const off = savingOff(readConfig(dir), session);
     const parts = [
+      // The core block, unless the harness loads it from a local file:
+      // Claude Code through CLAUDE.local.md, DSH AGENTS.local.md itself.
       ...(harness === 'codex' ||
-      !fs.existsSync(path.join(home, CLAUDE_LOCAL_FILE))
+      !fs.existsSync(
+        path.join(
+          home,
+          harness === 'dsh' ? AGENTS_LOCAL_FILE : CLAUDE_LOCAL_FILE
+        )
+      )
         ? [renderStored(home).block]
         : []),
       ...(off

@@ -36,6 +36,7 @@ export const HOOKS = [
     timeout: 10,
     claude: [{ event: 'SessionStart', matcher: SESSION_SOURCES }],
     codex: [{ event: 'SessionStart', matcher: SESSION_SOURCES }],
+    dsh: [{ event: 'SessionStart', matcher: SESSION_SOURCES }],
   },
   {
     id: 'memory',
@@ -56,6 +57,13 @@ export const HOOKS = [
       { event: 'UserPromptSubmit' },
       { event: 'PreToolUse', matcher: 'Bash' },
       { event: 'PostToolUse', matcher: 'Bash' },
+    ],
+    // DSH (bridge): no SessionEnd, so no extraction; it loads AGENTS.local.md.
+    dsh: [
+      { event: 'SessionStart', matcher: SESSION_SOURCES },
+      { event: 'UserPromptSubmit' },
+      { event: 'PreToolUse', matcher: 'bash|pwsh' },
+      { event: 'PostToolUse', matcher: 'bash|pwsh' },
     ],
   },
   {
@@ -87,6 +95,7 @@ export const HOOKS = [
     claude: [{ event: 'Stop' }],
     // In Codex it also formats the files edits queued (see format below).
     codex: [{ event: 'Stop' }],
+    dsh: [{ event: 'Stop' }],
   },
   {
     id: 'task-loop-reset',
@@ -95,6 +104,7 @@ export const HOOKS = [
     timeout: 5,
     claude: [{ event: 'UserPromptSubmit' }],
     codex: [{ event: 'UserPromptSubmit' }],
+    dsh: [{ event: 'UserPromptSubmit' }],
   },
   {
     id: 'context-monitor',
@@ -114,12 +124,20 @@ export const HOOKS = [
       { event: 'PreToolUse', matcher: 'Bash|apply_patch' },
       { event: 'PostToolUse', matcher: '*' },
     ],
+    dsh: [{ event: 'PostToolUse', matcher: '*' }],
   },
   {
     id: 'format',
     script: '.claude/hooks/auto_format.js',
     timeout: 30,
     claude: [{ event: 'PostToolUse', matcher: 'Edit|Write' }],
+    // DSH: its edit tools report after the edit, as in Claude Code.
+    dsh: [
+      {
+        event: 'PostToolUse',
+        matcher: 'edit|write|apply_patch|str_replace_editor',
+      },
+    ],
     // Codex: queue a patch's files at PreToolUse, format them at the next
     // PostToolUse (any tool); task-loop formats what is left at Stop.
     codex: [
