@@ -13,8 +13,22 @@
  * ```
  */
 
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+/**
+ * The real path of `file` (links resolved), or `file` when it does not exist.
+ *
+ * @param {string} file
+ */
+function realPath(file) {
+  try {
+    return fs.realpathSync(file);
+  } catch {
+    return file;
+  }
+}
 
 /**
  * Runs the provided function only if the module is executed directly
@@ -34,7 +48,13 @@ export function runIfMain(importMetaUrl, mainFunction) {
 
     // Check if this file is being executed directly. Resolving both sides makes
     // this work whether the script was invoked with a relative or absolute path.
-    if (modulePath === scriptPath || modulePath === scriptPath + '.js') {
+    // Node gives the main module its real path, so a script started through a
+    // linked folder (macOS /var is /private/var) is compared by real path too.
+    if (
+      scriptPath &&
+      (modulePath === realPath(scriptPath) ||
+        modulePath === realPath(scriptPath + '.js'))
+    ) {
       mainFunction();
     }
   } catch {

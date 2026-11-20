@@ -2,8 +2,11 @@
  * Tests for module-runner.js
  */
 import { runIfMain } from '../module-runner.js';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { linkDir } from './support/links.js';
 
 describe('module-runner', () => {
   describe('runIfMain', () => {
@@ -73,6 +76,30 @@ describe('module-runner', () => {
         // Restore original argv
         process.argv[1] = originalArgv;
       }
+    });
+
+    test('should run when the script was started through a linked folder', () => {
+      const tmp = fs.realpathSync(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'runner-'))
+      );
+      const real = path.join(tmp, 'real');
+      fs.mkdirSync(real);
+      fs.writeFileSync(path.join(real, 'script.js'), '');
+      linkDir(real, path.join(tmp, 'link'));
+      const originalArgv = process.argv[1];
+      process.argv[1] = path.join(tmp, 'link', 'script.js');
+      let called = false;
+
+      try {
+        runIfMain(pathToFileURL(path.join(real, 'script.js')).href, () => {
+          called = true;
+        });
+      } finally {
+        process.argv[1] = originalArgv;
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+
+      expect(called).toBe(true);
     });
 
     test('should run when process.argv[1] is a relative path', () => {

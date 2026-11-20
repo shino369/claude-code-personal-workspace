@@ -149,7 +149,8 @@ function kyoten(args, { tgz = tarball, env = {}, input, cwd = tmp } = {}) {
 }
 
 test.beforeAll(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kyoten-e2e-'));
+  // The real path: on macOS the temp dir is reached through /var -> /private/var.
+  tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'kyoten-e2e-')));
   bin = path.join(tmp, 'bin');
   home = path.join(tmp, 'home');
   writeFakes();
@@ -196,9 +197,10 @@ test('claude starts in the home with the arguments and exit code passed through'
   expect(result.status).toBe(3);
   expect(result.agent.name).toBe('claude');
   expect(result.agent.argv).toEqual(['-p', 'hello world']);
-  expect(path.resolve(result.agent.cwd)).toBe(path.resolve(home));
-  expect(path.resolve(result.agent.env.KYOTEN_CALLER_DIR)).toBe(
-    path.resolve(tmp)
+  // Real paths: macOS reaches the temp dir through the /var -> /private/var link.
+  expect(fs.realpathSync(result.agent.cwd)).toBe(fs.realpathSync(home));
+  expect(fs.realpathSync(result.agent.env.KYOTEN_CALLER_DIR)).toBe(
+    fs.realpathSync(tmp)
   );
   expect(result.agent.env.CLAUDE_CODE_SESSION_ID).toBeNull();
 });
@@ -255,7 +257,7 @@ test('update merges a newer snapshot with a local commit', () => {
 
   const result = kyoten(['update', '--no-setup'], { tgz: second });
 
-  expect(result.status, result.stderr).toBe(0);
+  expect(result.status, `${second}\n${result.stderr}`).toBe(0);
   expect(fs.readFileSync(path.join(home, 'README.md'), 'utf-8')).toContain(
     'Upstream change.'
   );
