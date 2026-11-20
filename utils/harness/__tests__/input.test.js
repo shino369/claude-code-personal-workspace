@@ -224,12 +224,35 @@ describe('toolEvent', () => {
       ).toMatchObject({ kind: 'edit', dir: 'sub' });
     });
 
+    test.each([
+      [`env apply_patch ${body}`],
+      [`FOO=1 apply_patch ${body}`],
+      [`true && apply_patch ${body}`],
+      [`cd a && cd b && apply_patch ${body}`],
+      [`(cd x && apply_patch ${body})`],
+      [`rtk run "apply_patch ${body}"`],
+      [`bash -lc "ls && apply_patch ${body}`],
+      [`echo apply_patch ${body}`],
+    ])(
+      'should treat any other command with apply_patch and a patch as an edit: %s',
+      (command) => {
+        expect(event(command)).toMatchObject({
+          kind: 'edit',
+          files: ['x.txt'],
+        });
+      }
+    );
+
     test('should not treat other commands as patches', () => {
-      expect(event(`echo apply_patch ${body}`).kind).toBe('shell');
-      expect(event(`bash -lc "ls && apply_patch ${body}`).kind).toBe('shell');
       expect(event(`bash -x apply_patch`).kind).toBe('shell');
-      expect(event(`rtk read apply_patch ${body}`).kind).toBe('shell');
-      expect(event(`rtkx apply_patch ${body}`).kind).toBe('shell');
+      expect(event(`cat notes.md <<'EOF'\n*** Begin Patch\nEOF`).kind).toBe(
+        'shell'
+      );
+      expect(event('grep -n apply_patch input.js').kind).toBe('shell');
+      expect(event('rtk read apply_patch.md').kind).toBe('shell');
+      expect(event('rtkx apply_patch').kind).toBe('shell');
+      // With a patch these still apply it, so they are edits (no cd dir).
+      expect(event(`rtk read apply_patch ${body}`).dir).toBeUndefined();
     });
   });
 

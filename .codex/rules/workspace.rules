@@ -20,6 +20,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "npm"],
+    decision = "forbidden",
+    justification = "Use pnpm instead (AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "npm"],
+    decision = "forbidden",
+    justification = "Use pnpm instead (AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["wget"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -33,6 +45,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "wget"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "wget"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "wget"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -56,6 +80,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "Invoke-WebRequest"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "Invoke-WebRequest"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["iwr"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -69,6 +105,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "iwr"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "iwr"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "iwr"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -92,6 +140,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "Invoke-RestMethod"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "Invoke-RestMethod"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["irm"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -105,6 +165,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "irm"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "irm"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "irm"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -128,6 +200,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "powershell"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "powershell"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["pwsh"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -141,6 +225,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "pwsh"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "pwsh"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "pwsh"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -164,6 +260,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "cmd"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "cmd"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["net"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -177,6 +285,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "net"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "net"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "net"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -200,6 +320,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "netsh"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "netsh"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["reg"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -213,6 +345,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "reg"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "reg"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "reg"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -236,6 +380,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "regedit"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "regedit"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["sc"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -249,6 +405,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "sc"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "sc"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "sc"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -272,6 +440,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "schtasks"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "schtasks"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["wmic"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -285,6 +465,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "wmic"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "wmic"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "wmic"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -308,6 +500,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "format"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "format"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["diskpart"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -321,6 +525,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "diskpart"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "diskpart"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "diskpart"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -344,6 +560,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "shutdown"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "shutdown"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["restart"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -357,6 +585,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "restart"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "restart"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "restart"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -380,6 +620,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "taskkill"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "taskkill"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["rm"],
     decision = "forbidden",
     justification = "Use pnpm task rm <path> instead: it moves files to tasks/.trash/ (AGENTS.md §1).",
@@ -393,6 +645,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "rm"],
+    decision = "forbidden",
+    justification = "Use pnpm task rm <path> instead: it moves files to tasks/.trash/ (AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "rm"],
+    decision = "forbidden",
+    justification = "Use pnpm task rm <path> instead: it moves files to tasks/.trash/ (AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "rm"],
     decision = "forbidden",
     justification = "Use pnpm task rm <path> instead: it moves files to tasks/.trash/ (AGENTS.md §1).",
 )
@@ -416,6 +680,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "sudo"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "sudo"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["chmod"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -429,6 +705,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "chmod"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "chmod"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "chmod"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -452,6 +740,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "chown"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "chown"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["dd"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -465,6 +765,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "dd"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "dd"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "dd"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -488,6 +800,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "mount"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "mount"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["umount"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -501,6 +825,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "umount"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "umount"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "umount"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -524,6 +860,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "systemctl"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "systemctl"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["mkfs"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -537,6 +885,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "mkfs"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "mkfs"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "mkfs"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -560,6 +920,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "fdisk"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "fdisk"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["parted"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -573,6 +945,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "parted"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "parted"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "parted"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -596,6 +980,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "git", "push", "--force"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "git", "push", "--force"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["git", "reset", "--hard"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -609,6 +1005,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "git", "reset", "--hard"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "git", "reset", "--hard"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "git", "reset", "--hard"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -632,6 +1040,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "git", "clean", "-fd"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "git", "clean", "-fd"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["git", "branch", "-D"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -645,6 +1065,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "git", "branch", "-D"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "git", "branch", "-D"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "git", "branch", "-D"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -668,6 +1100,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "git", "tag", "-d"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "git", "tag", "-d"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["pnpm", "publish"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
@@ -681,6 +1125,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "pnpm", "publish"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "pnpm", "publish"],
+    decision = "forbidden",
+    justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "pnpm", "publish"],
     decision = "forbidden",
     justification = "Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).",
 )
@@ -704,6 +1160,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "kill", "-9"],
+    decision = "prompt",
+    justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "kill", "-9"],
+    decision = "prompt",
+    justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["pkill"],
     decision = "prompt",
     justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
@@ -717,6 +1185,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "pkill"],
+    decision = "prompt",
+    justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "pkill"],
+    decision = "prompt",
+    justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "pkill"],
     decision = "prompt",
     justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
 )
@@ -740,6 +1220,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "killall"],
+    decision = "prompt",
+    justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "killall"],
+    decision = "prompt",
+    justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["git", "push"],
     decision = "prompt",
     justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
@@ -753,6 +1245,18 @@ prefix_rule(
 
 prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "git", "push"],
+    decision = "prompt",
+    justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "git", "push"],
+    decision = "prompt",
+    justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "git", "push"],
     decision = "prompt",
     justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
 )
@@ -776,6 +1280,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "git", "rebase"],
+    decision = "prompt",
+    justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "git", "rebase"],
+    decision = "prompt",
+    justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
+)
+
+prefix_rule(
     pattern = ["git", "merge"],
     decision = "prompt",
     justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
@@ -791,4 +1307,28 @@ prefix_rule(
     pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "git", "merge"],
     decision = "prompt",
     justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "git", "merge"],
+    decision = "prompt",
+    justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "git", "merge"],
+    decision = "prompt",
+    justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
+)
+
+prefix_rule(
+    pattern = ["rtk", "run"],
+    decision = "prompt",
+    justification = "rtk run hides the command it runs from these rules: ask the user first, or run the command without rtk.",
+)
+
+prefix_rule(
+    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "run"],
+    decision = "prompt",
+    justification = "rtk run hides the command it runs from these rules: ask the user first, or run the command without rtk.",
 )

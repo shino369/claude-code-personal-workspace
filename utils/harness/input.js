@@ -44,6 +44,15 @@ const PATCH_HEADER_RE =
  * command with `rtk` or `rtk proxy`, so guardrails must look past it.
  */
 export const RTK_PASSTHROUGH = ['proxy', 'bypass', 'err', 'test', 'summary'];
+/** rtk's global flags (`rtk --help`); none takes a value. */
+export const RTK_FLAGS = [
+  '-v',
+  '-vv',
+  '-vvv',
+  '--verbose',
+  '--ultra-compact',
+  '--skip-env',
+];
 /** An optional `rtk [-flags] [passthrough]` prefix (`rtk git status` too). */
 const RTK_PREFIX = String.raw`(?:(?:\S*[\\/])?rtk(?:\s+-[\w-]+)*\s+(?:(?:${RTK_PASSTHROUGH.join('|')})\s+)?)?`;
 /**
@@ -60,6 +69,10 @@ const APPLY_PATCH_RE = new RegExp(
   String.raw`^\s*${RTK_PREFIX}(?:(?:\S*[\\/])?(?:bash|zsh|sh|pwsh|powershell|cmd)(?:\.exe)?\s+(?:-NoProfile\s+)?(?:-lc|-c|-Command|\/c)\s+)?(?:['"]\s*)?(?:cd\s+("[^"]*"|'[^']*'|[^\s&;|'"]+)\s*&&\s*)?${RTK_PREFIX}(?:apply_patch|applypatch)\b`,
   'i'
 );
+
+/** `apply_patch` anywhere, and a patch's first line (both linear). */
+const APPLY_PATCH_WORD_RE = /\b(?:apply_patch|applypatch)\b/i;
+const PATCH_BEGIN_RE = /^[ \t'"(]*\*\*\* Begin Patch\b/m;
 
 /**
  * The harness named by `--harness`, else `claude`.
@@ -131,7 +144,14 @@ export function toolEvent(input) {
 
   if (SHELL_TOOLS.has(name)) {
     const patch = APPLY_PATCH_RE.exec(command);
-    if (!patch) return event('shell');
+    if (!patch) {
+      // Any other shape that runs apply_patch on a patch (`env apply_patch`,
+      // `true && apply_patch`, `rtk run "apply_patch …"`) still applies it:
+      // over-detect, so the guard checks its paths.
+      return APPLY_PATCH_WORD_RE.test(command) && PATCH_BEGIN_RE.test(command)
+        ? event('edit', patchFiles(command))
+        : event('shell');
+    }
     return event(
       'edit',
       patchFiles(command),

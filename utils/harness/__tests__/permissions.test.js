@@ -79,6 +79,23 @@ describe('renderCodexRules', () => {
     expect(text.endsWith(')\n')).toBe(true);
   });
 
+  test('should cover the rtk global flags and ask before rtk run', () => {
+    const text = renderCodexRules(PERMS);
+    expect(text).toContain(
+      `    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "rm"],
+    decision = "forbidden",`
+    );
+    expect(text).toContain(
+      `    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], ["proxy", "bypass", "err", "test", "summary"], "rm"],`
+    );
+    expect(text).toContain(`    pattern = ["rtk", "run"],
+    decision = "prompt",`);
+    expect(text).toContain(
+      `    pattern = ["rtk", ["-v", "-vv", "-vvv", "--verbose", "--ultra-compact", "--skip-env"], "run"],
+    decision = "prompt",`
+    );
+  });
+
   test('should forbid the rtk-wrapped forms of each command rule too', () => {
     const text = renderCodexRules(PERMS);
     expect(text).toContain(`    pattern = ["rtk", "rm"],
@@ -91,10 +108,8 @@ describe('renderCodexRules', () => {
     decision = "prompt",`);
   });
 
-  test('should write only the header when there are no command rules', () => {
-    expect(
-      renderCodexRules(readPermissions({})).trim().split('\n')
-    ).toHaveLength(2);
+  test('should write only the header and the rtk run rules when there are no command rules', () => {
+    expect(renderCodexRules(readPermissions({}))).not.toContain('forbidden');
   });
 });
 
@@ -141,6 +156,11 @@ describe('commandMatch', () => {
       'push',
     ]);
     expect(commandMatch(`rtk run 'rm -rf x'`, prefixes)).toEqual(['rm']);
+    expect(commandMatch('rtk run git push --force', prefixes)).toEqual([
+      'git',
+      'push',
+    ]);
+    expect(commandMatch(`rtk run -c 'rm x'`, prefixes)).toEqual(['rm']);
     expect(commandMatch('rtk proxy env FOO=1 rm x', prefixes)).toEqual(['rm']);
   });
 

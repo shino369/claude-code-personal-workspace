@@ -385,6 +385,29 @@ describe('auto_format in Codex and DSH', () => {
     fs.rmSync(outside, { recursive: true, force: true });
   });
 
+  test("should resolve a patch's paths against its leading cd", () => {
+    fs.mkdirSync(path.join(project, 'sub'));
+    fs.writeFileSync(path.join(project, 'sub', 'a.js'), 'x');
+    const input = {
+      hook_event_name: 'PostToolUse',
+      session_id: 's-1',
+      cwd: project,
+      tool_name: 'Bash',
+      tool_input: { command: `cd sub && ${patch}` },
+    };
+    expect(processOtherHarness(input, 'dsh', options({}))).toEqual([
+      path.join(project, 'sub', 'a.js'),
+    ]);
+    const { cwd: _cwd, ...noCwd } = input;
+    expect(
+      processOtherHarness(
+        noCwd,
+        'dsh',
+        options({ env: { CLAUDE_PROJECT_DIR: project } })
+      )
+    ).toEqual([path.join(project, 'sub', 'a.js')]);
+  });
+
   test('should ignore tools that edit nothing', () => {
     const input = {
       hook_event_name: 'PostToolUse',

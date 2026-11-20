@@ -85,7 +85,10 @@ export function processOtherHarness(
   const targets =
     event.kind === 'edit'
       ? formatTargets(event.files, {
-          cwd: input.cwd,
+          // A leading `cd <dir> &&` moves the patch's paths, as in the guard.
+          cwd: event.dir
+            ? path.resolve(input.cwd ?? dir, event.dir)
+            : input.cwd,
           projectDir: dir,
           extraRoots,
         })
