@@ -1,0 +1,240 @@
+/**
+ * Tests for utils/memory/personalize.js
+ */
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { MemoryError, memoryDir } from '../store.js';
+import {
+  PERSONALIZATION_BUDGET,
+  PERSONALIZATION_FILE,
+  PERSONA_SCOPE_RULES,
+  listPresets,
+  normalizePersonalization,
+  readPersonalization,
+  readPreset,
+  renderPersonalization,
+  writePersonalization,
+} from '../personalize.js';
+
+// Fake secret assembled at runtime so secret scanners don't flag this file.
+const FAKE_GH_TOKEN = 'gh' + 'p_' + 'a'.repeat(36);
+
+/**
+ * @param {() => unknown} fn
+ * @returns {MemoryError}
+ */
+function caught(fn) {
+  try {
+    fn();
+  } catch (error) {
+    if (error instanceof MemoryError) return error;
+    throw error;
+  }
+  throw new Error('expected a MemoryError');
+}
+
+describe('normalizePersonalization', () => {
+  test('should trim fields and drop empty ones', () => {
+    expect(
+      normalizePersonalization({
+        callMe: ' Sam ',
+        tone: '',
+        traits: [' direct ', 'Direct', ''],
+        extra: '   ',
+      })
+    ).toEqual({ callMe: 'Sam', traits: ['direct'] });
+  });
+
+  test('should keep every known field', () => {
+    const all = {
+      callMe: 'Sam',
+      aboutMe: 'Builds browser extensions.',
+      language: 'English',
+      persona: 'A calm senior engineer.',
+      tone: 'concise',
+      traits: ['direct'],
+      extra: 'Ask before big refactors.',
+    };
+
+    expect(normalizePersonalization(all)).toEqual(all);
+  });
+
+  test.each([
+    ['not an object', null, /must be an object/],
+    ['an unknown field', { nickname: 'x' }, /Unknown field "nickname"/],
+    ['a field that is not text', { tone: 3 }, /tone must be text/],
+    [
+      'traits that are not a list',
+      { traits: 'direct' },
+      /traits must be a list/,
+    ],
+    ['a trait that is not text', { traits: [1] }, /every trait must be text/],
+    [
+      'too many traits',
+      { traits: Array.from({ length: 11 }, (_, i) => `t${i}`) },
+      /at most 10 traits/,
+    ],
+  ])('should refuse %s', (_label, input, message) => {
+    const error = caught(() =>
+      normalizePersonalization(/** @type {any} */ (input))
+    );
+
+    expect(error.code).toBe('invalid');
+    expect(error.message).toMatch(message);
+  });
+
+  test('should refuse settings over the budget and show the size', () => {
+    const error = caught(() =>
+      normalizePersonalization({ persona: 'p'.repeat(PERSONALIZATION_BUDGET) })
+    );
+
+    expect(error.code).toBe('invalid');
+    expect(error.message).toMatch(/\d+ characters; the limit is 1500/);
+  });
+
+  test('should refuse a secret', () => {
+    const error = caught(() =>
+      normalizePersonalization({ extra: `token ${FAKE_GH_TOKEN}` })
+    );
+
+    expect(error.code).toBe('secret');
+  });
+
+  test('should refuse a secret in a trait', () => {
+    const error = caught(() =>
+      normalizePersonalization({ traits: [FAKE_GH_TOKEN] })
+    );
+
+    expect(error.code).toBe('secret');
+  });
+});
+
+describe('renderPersonalization', () => {
+  test('should be empty without settings', () => {
+    expect(renderPersonalization({})).toBe('');
+  });
+
+  test('should list the settings in a fixed order, then the scope rules', () => {
+    const text = renderPersonalization({
+      traits: ['direct', 'no emoji'],
+      callMe: 'Sam',
+      tone: 'concise',
+      persona: 'A calm senior engineer.',
+      language: 'English',
+      aboutMe: 'Builds browser extensions.',
+      extra: 'Ask before big refactors.',
+    });
+
+    expect(text.split('\n')).toEqual([
+      '## Personalization',
+      '',
+      'How to talk with the user (set with `pnpm memory personalize`):',
+      '',
+      '- Call the user: Sam',
+      '- About the user: Builds browser extensions.',
+      '- Language: English',
+      '- Persona: A calm senior engineer.',
+      '- Tone: concise',
+      '- Traits: direct, no emoji',
+      '- Also: Ask before big refactors.',
+      '',
+      PERSONA_SCOPE_RULES,
+    ]);
+  });
+
+  test('should state that the persona never applies to artifacts or behavior', () => {
+    expect(PERSONA_SCOPE_RULES).toMatch(/conversation with the user only/);
+    expect(PERSONA_SCOPE_RULES).toMatch(/commit messages, PR text, code/i);
+    expect(PERSONA_SCOPE_RULES).toMatch(/authorizes nothing/);
+    expect(PERSONA_SCOPE_RULES).toMatch(/reviewer and verifier/);
+  });
+});
+
+describe('personalization file', () => {
+  /** @type {string} */
+  let dir;
+
+  beforeEach(() => {
+    dir = memoryDir(fs.mkdtempSync(path.join(os.tmpdir(), 'memory-persona-')));
+  });
+
+  afterEach(() => {
+    fs.rmSync(path.dirname(dir), { recursive: true, force: true });
+  });
+
+  test('should read nothing without a file', () => {
+    expect(readPersonalization(dir)).toEqual({});
+  });
+
+  test('should write normalized settings and read them back', () => {
+    writePersonalization(dir, { callMe: ' Sam ', tone: '' });
+
+    expect(readPersonalization(dir)).toEqual({ callMe: 'Sam' });
+    expect(
+      JSON.parse(fs.readFileSync(path.join(dir, PERSONALIZATION_FILE), 'utf-8'))
+    ).toEqual({ callMe: 'Sam' });
+  });
+
+  test('should refuse a file that is not JSON', () => {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, PERSONALIZATION_FILE), '{nope');
+
+    const error = caught(() => readPersonalization(dir));
+
+    expect(error.code).toBe('invalid');
+    expect(error.message).toMatch(/personalization\.json is not valid JSON/);
+  });
+
+  test('should refuse a file with invalid settings', () => {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, PERSONALIZATION_FILE), '{"tone": 1}');
+
+    expect(caught(() => readPersonalization(dir)).code).toBe('invalid');
+  });
+});
+
+describe('presets', () => {
+  test('should list the committed presets with descriptions', () => {
+    const presets = listPresets();
+
+    expect(presets.map((p) => p.name)).toEqual([
+      'concise',
+      'default',
+      'friendly',
+      'mentor',
+      'playful',
+    ]);
+    for (const preset of presets) expect(preset.description).not.toBe('');
+  });
+
+  test('should read a preset as settings without its description', () => {
+    const preset = readPreset('concise');
+
+    expect(preset).not.toHaveProperty('description');
+    expect(preset.tone).toMatch(/concise/i);
+  });
+
+  test.each(listPresets().map((p) => p.name))(
+    'preset %s should be valid settings',
+    (name) => {
+      expect(() => normalizePersonalization(readPreset(name))).not.toThrow();
+    }
+  );
+
+  test('should report an unknown preset with the known ones', () => {
+    const error = caught(() => readPreset('pirate'));
+
+    expect(error.code).toBe('not-found');
+    expect(error.message).toMatch(
+      /No preset "pirate"; presets: concise, default/
+    );
+  });
+
+  test.each(['../store', 'Concise', 'a/b', ''])(
+    'should refuse the preset name %j',
+    (name) => {
+      expect(caught(() => readPreset(name)).code).toBe('invalid');
+    }
+  );
+});
