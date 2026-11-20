@@ -22,7 +22,7 @@
  * Fails open: any error means no output and exit 0, so a broken hook never
  * traps a session.
  */
-import { flushFormatQueue } from '#utils/harness/format.js';
+import { flushFormatQueue, taskRepoRoots } from '#utils/harness/format.js';
 import { parseHarness } from '#utils/harness/input.js';
 import { runIfMain } from '#utils/module-runner.js';
 import { defaultDeps } from '#utils/task/deps.js';
@@ -60,7 +60,10 @@ export function processHookInput(
 ) {
   if (harness === 'codex') {
     try {
-      flush(input?.session_id, { projectDir: rootDir });
+      flush(input?.session_id, {
+        projectDir: rootDir,
+        extraRoots: taskRepoRoots(rootDir, input?.session_id),
+      });
     } catch {
       // Formatting is best effort; the verify reports what is left.
     }

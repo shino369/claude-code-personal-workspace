@@ -67,7 +67,10 @@ describe('task_loop processHookInput', () => {
       { rootDir: root, harness: 'codex', run, flush }
     );
     expect(order).toEqual(['flush', 'run']);
-    expect(flush).toHaveBeenCalledWith('cx-1', { projectDir: root });
+    expect(flush).toHaveBeenCalledWith('cx-1', {
+      projectDir: root,
+      extraRoots: [],
+    });
   });
 
   test('should still run the loop when formatting fails', () => {

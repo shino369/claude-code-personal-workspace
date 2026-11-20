@@ -19,6 +19,7 @@ import {
   prettierBin,
   queueFiles,
   runPrettier,
+  taskRepoRoots,
 } from '#utils/harness/format.js';
 import { parseHarness, projectDir, toolEvent } from '#utils/harness/input.js';
 import { runIfMain } from '#utils/module-runner.js';
@@ -79,10 +80,15 @@ export function processOtherHarness(
   { rootDir = ROOT_DIR, env = process.env, tmpDir } = {}
 ) {
   const dir = projectDir({ harness, env, rootDir });
+  const extraRoots = taskRepoRoots(rootDir, input.session_id);
   const event = toolEvent(input);
   const targets =
     event.kind === 'edit'
-      ? formatTargets(event.files, { cwd: input.cwd, projectDir: dir })
+      ? formatTargets(event.files, {
+          cwd: input.cwd,
+          projectDir: dir,
+          extraRoots,
+        })
       : [];
   if (harness === 'codex' && input.hook_event_name === 'PreToolUse') {
     queueFiles(input.session_id, targets, { tmpDir });
@@ -90,6 +96,7 @@ export function processOtherHarness(
   }
   return flushFormatQueue(input.session_id, {
     projectDir: dir,
+    extraRoots,
     extra: targets,
     tmpDir,
   });

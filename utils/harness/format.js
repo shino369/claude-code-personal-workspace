@@ -16,7 +16,7 @@ import fs from 'fs';
 import { createRequire } from 'module';
 import os from 'os';
 import path from 'path';
-import { SESSION_ID_RE } from '../task/store.js';
+import { loadTask, SESSION_ID_RE, sessionTask } from '../task/store.js';
 
 /** Extensions Prettier formats. */
 export const FORMATTABLE_EXTENSIONS = [
@@ -111,18 +111,42 @@ const isInside = (dir, file) => {
 
 /**
  * The formattable files among `files` (as an edit reported them: absolute,
- * or relative to the session's cwd), as absolute paths inside the project.
- * Anything outside the project is dropped, so a crafted patch cannot make
- * the formatter rewrite other files.
+ * or relative to the session's cwd), as absolute paths inside the project
+ * or one of `extraRoots` (the session task's --repo). Anything else is
+ * dropped, so a crafted patch cannot make the formatter rewrite other files.
  *
  * @param {string[]} files
- * @param {{ cwd?: string, projectDir: string }} options
+ * @param {{ cwd?: string, projectDir: string, extraRoots?: string[] }} options
  * @returns {string[]}
  */
-export function formatTargets(files, { cwd, projectDir }) {
+export function formatTargets(files, { cwd, projectDir, extraRoots = [] }) {
+  const roots = [projectDir, ...extraRoots];
   return files
     .map((file) => path.resolve(cwd ?? projectDir, file))
-    .filter((file) => isFormattable(file) && isInside(projectDir, file));
+    .filter(
+      (file) =>
+        isFormattable(file) && roots.some((root) => isInside(root, file))
+    );
+}
+
+/**
+ * The repository the session's task works in (`pnpm task … --repo`), as a
+ * list of zero or one roots for `extraRoots`. Empty when the session has no
+ * task, the task has no repo, or the folder is gone.
+ *
+ * @param {string} rootDir
+ * @param {string | null | undefined} session
+ * @returns {string[]}
+ */
+export function taskRepoRoots(rootDir, session) {
+  try {
+    const task = sessionTask(rootDir, session);
+    const repo = task ? loadTask(rootDir, task.name).state?.repo : null;
+    return repo && fs.existsSync(repo) ? [repo] : [];
+  } catch {
+    // A broken task is pnpm task's to report; format the project only.
+    return [];
+  }
 }
 
 /**
@@ -253,24 +277,36 @@ export function takeQueue(session, options = {}) {
 
 /**
  * Format the session's queued files, plus `extra`, that still exist and
- * really are inside the project (a symlink may point out of it).
+ * really are inside the project or an extra root (a symlink may point out
+ * of them). Prettier runs in the innermost root holding the file: it reads
+ * the ignore files from its cwd, not from wherever the hook process started
+ * (a cwd's `tmp/` rule would otherwise match a path like /tmp/… and skip the
+ * file silently).
  *
  * @param {string | null | undefined} session
- * @param {{ projectDir: string, extra?: string[], tmpDir?: string, run?: (file: string) => boolean, realpath?: (file: string) => string }} options
+ * @param {{ projectDir: string, extraRoots?: string[], extra?: string[], tmpDir?: string, run?: (file: string, root: string) => boolean, realpath?: (file: string) => string }} options
  * @returns {string[]} the files formatted
  */
 export function flushFormatQueue(
   session,
-  { projectDir, extra = [], tmpDir, run, realpath = fs.realpathSync }
+  {
+    projectDir,
+    extraRoots = [],
+    extra = [],
+    tmpDir,
+    run = (file, root) => runPrettier(file, undefined, root),
+    realpath = fs.realpathSync,
+  }
 ) {
-  const root = realpath(projectDir);
-  // Prettier reads the ignore files from its cwd: run it in the project, not
-  // wherever the hook process started (a cwd's `tmp/` rule would otherwise
-  // match a path like /tmp/… and skip the file silently).
-  const format = run ?? ((file) => runPrettier(file, undefined, root));
+  const roots = [projectDir, ...extraRoots]
+    .filter((root) => fs.existsSync(root))
+    .map((root) => realpath(root))
+    .sort((a, b) => b.length - a.length);
   const files = [...new Set([...takeQueue(session, { tmpDir }), ...extra])];
-  return files.filter(
-    (file) =>
-      fs.existsSync(file) && isInside(root, realpath(file)) && format(file)
-  );
+  return files.filter((file) => {
+    if (!fs.existsSync(file)) return false;
+    const real = realpath(file);
+    const root = roots.find((dir) => isInside(dir, real));
+    return root !== undefined && run(file, root);
+  });
 }

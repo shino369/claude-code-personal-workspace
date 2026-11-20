@@ -9,7 +9,10 @@ import {
   queueFiles,
   queuePath,
   takeQueue,
+  taskRepoRoots,
 } from '../format.js';
+import { createState } from '../../task/state.js';
+import { saveState, writeSession } from '../../task/store.js';
 
 /** @type {string} */
 let project;
@@ -45,6 +48,33 @@ describe('isFormattable', () => {
   });
 });
 
+describe('taskRepoRoots', () => {
+  /** @param {string} name @param {string} state */
+  const task = (name, state) => {
+    const dir = path.join(project, 'tasks', name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'state.json'), state);
+    writeSession(project, 's-1', { task: name, engaged: true });
+  };
+
+  test('should give the repo of the session task when its folder exists', () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'fmt-r-'));
+    const dir = path.join(project, 'tasks', 'demo-261121');
+    fs.mkdirSync(dir, { recursive: true });
+    saveState(dir, createState({ name: 'demo-261121', goal: 'G', repo }));
+    writeSession(project, 's-1', { task: 'demo-261121', engaged: true });
+    expect(taskRepoRoots(project, 's-1')).toEqual([repo]);
+    fs.rmSync(repo, { recursive: true, force: true });
+    expect(taskRepoRoots(project, 's-1')).toEqual([]);
+  });
+
+  test('should give nothing without a session task or with a broken one', () => {
+    expect(taskRepoRoots(project, 'nobody')).toEqual([]);
+    task('broken-261121', '{not json');
+    expect(taskRepoRoots(project, 's-1')).toEqual([]);
+  });
+});
+
 describe('formatTargets', () => {
   test('should resolve paths against the cwd and keep formattable ones in the project', () => {
     expect(
@@ -68,6 +98,17 @@ describe('formatTargets', () => {
         }
       )
     ).toEqual([path.join(project, 'in.js')]);
+  });
+
+  test("should keep files in the extra roots too (a task's --repo)", () => {
+    const repo = path.join(os.tmpdir(), 'fmt-repo-x');
+    expect(
+      formatTargets([path.join(repo, 'r.js'), '/etc/x.js'], {
+        cwd: project,
+        projectDir: project,
+        extraRoots: [repo],
+      })
+    ).toEqual([path.join(repo, 'r.js')]);
   });
 
   test('should use the project dir when there is no cwd', () => {
@@ -118,7 +159,7 @@ describe('flushFormatQueue', () => {
       flushFormatQueue('s-1', { tmpDir, projectDir: project, run })
     ).toEqual([a]);
     expect(run).toHaveBeenCalledTimes(1);
-    expect(run).toHaveBeenCalledWith(a);
+    expect(run).toHaveBeenCalledWith(a, project);
     expect(takeQueue('s-1', { tmpDir })).toEqual([]);
   });
 
@@ -175,6 +216,46 @@ describe('flushFormatQueue', () => {
       file,
     ]);
     expect(fs.readFileSync(file, 'utf-8')).toBe('const a = 1;\n');
+  });
+
+  test('should format files in an extra root, with Prettier run in that root', () => {
+    const repo = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'fmt-repo-'))
+    );
+    const inRepo = path.join(repo, 'r.js');
+    const inProject = touch('p.js');
+    fs.writeFileSync(inRepo, 'x');
+    const outside = path.join(tmpDir, 'o.js');
+    fs.writeFileSync(outside, 'x');
+    queueFiles('s-1', [inRepo, inProject, outside], { tmpDir });
+    const run = vi.fn(() => true);
+    expect(
+      flushFormatQueue('s-1', {
+        tmpDir,
+        projectDir: project,
+        extraRoots: [repo],
+        run,
+      })
+    ).toEqual([inRepo, inProject]);
+    expect(run.mock.calls).toEqual([
+      [inRepo, repo],
+      [inProject, project],
+    ]);
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  test('should run Prettier in the innermost root holding the file', () => {
+    const nested = path.join(project, 'sub');
+    const file = touch('sub/n.js');
+    queueFiles('s-1', [file], { tmpDir });
+    const run = vi.fn(() => true);
+    flushFormatQueue('s-1', {
+      tmpDir,
+      projectDir: project,
+      extraRoots: [nested],
+      run,
+    });
+    expect(run).toHaveBeenCalledWith(file, nested);
   });
 
   test('should do nothing when nothing is queued', () => {

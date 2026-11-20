@@ -336,6 +336,55 @@ describe('auto_format in Codex and DSH', () => {
     fs.rmSync(elsewhere, { recursive: true, force: true });
   });
 
+  test("should format a Codex edit in the session task's --repo", async () => {
+    const { saveState, writeSession } = await import('#utils/task/store.js');
+    const { createState } = await import('#utils/task/state.js');
+    const repo = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'fmt-repo-'))
+    );
+    fs.writeFileSync(path.join(repo, 'r.js'), 'x');
+    const dir = path.join(project, 'tasks', 'demo-261121');
+    fs.mkdirSync(dir, { recursive: true });
+    saveState(dir, createState({ name: 'demo-261121', goal: 'G', repo }));
+    writeSession(project, 'cx-1', { task: 'demo-261121', engaged: true });
+    const input = {
+      hook_event_name: 'PostToolUse',
+      session_id: 'cx-1',
+      cwd: repo,
+      tool_name: 'apply_patch',
+      tool_input: {
+        command: '*** Begin Patch\n*** Update File: r.js\n*** End Patch',
+      },
+    };
+    expect(processOtherHarness(input, 'codex', options({}))).toEqual([
+      path.join(repo, 'r.js'),
+    ]);
+    expect(spawnSync).toHaveBeenCalledWith(
+      process.execPath,
+      [BIN, '--write', path.join(repo, 'r.js')],
+      expect.objectContaining({ cwd: repo })
+    );
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  test('should not format outside the project for a session with no task repo', () => {
+    const outside = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'fmt-out-'))
+    );
+    fs.writeFileSync(path.join(outside, 'r.js'), 'x');
+    const input = {
+      hook_event_name: 'PostToolUse',
+      session_id: 'cx-2',
+      cwd: outside,
+      tool_name: 'apply_patch',
+      tool_input: {
+        command: '*** Begin Patch\n*** Update File: r.js\n*** End Patch',
+      },
+    };
+    expect(processOtherHarness(input, 'codex', options({}))).toEqual([]);
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+
   test('should ignore tools that edit nothing', () => {
     const input = {
       hook_event_name: 'PostToolUse',
