@@ -1,8 +1,12 @@
 {
-  "name": "claude-code-personal-workspace",
-  "version": "1.0.0",
+  "name": "kyoten",
+  "version": "0.1.0",
   "private": true,
-  "description": "Personal Claude Code workspace with reusable rules, agents, skills, hooks, and quality gates",
+  "description": "kyoten (拠点): a home base for coding agents (Claude Code, Codex, DeepSeek) with shared rules, tasks, memory, skills, hooks, and quality gates",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shino369/kyoten.git"
+  },
   "type": "module",
   "imports": {
     "#utils/*": "./utils/*"

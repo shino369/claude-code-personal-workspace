@@ -1,11 +1,11 @@
-# Claude Code Personal Workspace
+# kyoten
 
-[![Test CI](https://github.com/shino369/claude-code-personal-workspace/actions/workflows/test.yml/badge.svg)](https://github.com/shino369/claude-code-personal-workspace/actions/workflows/test.yml)
+[![Test CI](https://github.com/shino369/kyoten/actions/workflows/test.yml/badge.svg)](https://github.com/shino369/kyoten/actions/workflows/test.yml)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](./LICENSE)
 
-A personal Claude Code workspace for programming, documentation, research, translation, and
-generative-AI work. It packages reusable rules, subagents, skills, hooks, and a repeatable quality
-gate.
+kyoten (拠点, "base of operations") is a workspace for coding agents (Claude Code, Codex, and the
+DeepSeek harness) for programming, documentation, research, translation, and generative-AI work. It
+packages shared rules, tasks, memory, subagents, skills, hooks, and a repeatable quality gate.
 
 ## Table of Contents
 
@@ -437,7 +437,7 @@ adjust the paths for your machine.
 
 ## Contributing
 
-This is a personal workspace, but forks and suggestions are welcome. Before opening a PR, run
+Forks and suggestions are welcome. Before opening a PR, run
 `pnpm check`.
 
 Third-party skills are managed with skills.sh; project-owned skills live in `.agents/skills/`.
