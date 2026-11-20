@@ -5,7 +5,7 @@
 
 Kyoten (拠点) is a supercharged personal workspace for programming, documentation, research, translation, and
 generative-AI work. It packages reusable rules, subagents, skills, hooks, and a repeatable quality
-gate.
+gate. Mainly designed for Claude Code, but also works for Codex / DSH.
 
 ## Table of Contents
 
@@ -78,6 +78,9 @@ Quality gate (typecheck, lint, format check, tests at 100% coverage):
 ```bash
 pnpm check
 ```
+
+Then simply run the agent inside this workspace.
+
 
 ## Repository Layout
 
