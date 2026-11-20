@@ -243,6 +243,23 @@ describe('toolEvent', () => {
       }
     );
 
+    test('should keep the cd dirs before a wrapped apply_patch', () => {
+      expect(event(`cd secrets && env apply_patch ${body}`).dir).toBe(
+        'secrets'
+      );
+      expect(event(`cd a && cd 'b c' && true && apply_patch ${body}`).dir).toBe(
+        'a/b c'
+      );
+      expect(event(`cd a; cd /abs && env apply_patch ${body}`).dir).toBe(
+        '/abs'
+      );
+      expect(event(`cd a && cd ~/x && env apply_patch ${body}`).dir).toBe(
+        '~/x'
+      );
+      expect(event(`env apply_patch ${body}`).dir).toBeUndefined();
+      expect(event(`env apply_patch ${body} && cd later`).dir).toBeUndefined();
+    });
+
     test('should not treat other commands as patches', () => {
       expect(event(`bash -x apply_patch`).kind).toBe('shell');
       expect(event(`cat notes.md <<'EOF'\n*** Begin Patch\nEOF`).kind).toBe(

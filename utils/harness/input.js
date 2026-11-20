@@ -74,6 +74,29 @@ const APPLY_PATCH_RE = new RegExp(
 const APPLY_PATCH_WORD_RE = /\b(?:apply_patch|applypatch)\b/i;
 const PATCH_BEGIN_RE = /^[ \t'"(]*\*\*\* Begin Patch\b/m;
 
+/** A `cd <dir>` (group 1 the dir), as in APPLY_PATCH_RE; linear. */
+const CD_RE = /(?:^|[\s;&|(])cd\s+("[^"]*"|'[^']*'|[^\s&;|'"()]+)/g;
+
+/**
+ * Where the `cd`s in `before` (the text up to `apply_patch`) leave the
+ * patch's relative paths: each one joined to the last, an absolute or `~`
+ * dir starting over. Undefined without a `cd`.
+ *
+ * @param {string} before
+ * @returns {string | undefined}
+ */
+function cdDir(before) {
+  let dir;
+  for (const [, raw] of before.matchAll(CD_RE)) {
+    const next = raw.replace(/^(["'])(.*)\1$/, '$2');
+    dir =
+      dir === undefined || /^(?:[\\/]|~|[A-Za-z]:)/.test(next)
+        ? next
+        : `${dir}/${next}`;
+  }
+  return dir;
+}
+
 /**
  * The harness named by `--harness`, else `claude`.
  *
@@ -148,8 +171,13 @@ export function toolEvent(input) {
       // Any other shape that runs apply_patch on a patch (`env apply_patch`,
       // `true && apply_patch`, `rtk run "apply_patch …"`) still applies it:
       // over-detect, so the guard checks its paths.
-      return APPLY_PATCH_WORD_RE.test(command) && PATCH_BEGIN_RE.test(command)
-        ? event('edit', patchFiles(command))
+      const word = APPLY_PATCH_WORD_RE.exec(command);
+      return word && PATCH_BEGIN_RE.test(command)
+        ? event(
+            'edit',
+            patchFiles(command),
+            cdDir(command.slice(0, word.index))
+          )
         : event('shell');
     }
     return event(
