@@ -31,8 +31,7 @@
       "Bash(killall:*)",
       "Bash(git push:*)",
       "Bash(git rebase:*)",
-      "Bash(git merge:*)",
-      "Bash(git cherry-pick:*)"
+      "Bash(git merge:*)"
     ],
     "deny": [
       "Read(./.env)",

@@ -264,9 +264,3 @@ prefix_rule(
     decision = "prompt",
     justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
 )
-
-prefix_rule(
-    pattern = ["git", "cherry-pick"],
-    decision = "prompt",
-    justification = "Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).",
-)

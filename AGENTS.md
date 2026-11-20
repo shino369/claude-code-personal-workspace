@@ -250,8 +250,9 @@ The `commit-msg` hook enforces the header; `pnpm workspace:setup` enables it.
 - PR title: same format as a commit. Body: **what** and **why**, **how to verify** (commands run),
   breaking changes and follow-ups.
 - **Commit locally without asking** once verify is green: on a `<type>/<desc>` branch (if you
-  are on `main`, `git switch -c <type>/<desc>` first), one logical change per commit. In another
-  repository (`--repo`), follow its conventions. **Never push** unless the user asks.
+  are on `main`, `git switch -c <type>/<desc>` first), one logical change per commit. That includes
+  cherry-picking a subagent's worktree commit onto your working branch (never onto `main`). In
+  another repository (`--repo`), follow its conventions. **Never push** unless the user asks.
 
 ## 6. Dependencies
 
