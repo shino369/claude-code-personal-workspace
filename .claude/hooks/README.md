@@ -1,6 +1,22 @@
 # Claude Code Hooks
 
-This directory contains hook scripts for Claude Code that automatically execute during various events.
+This directory contains hook scripts that automatically execute during various events. They run in
+Claude Code, Codex, and DSH. `utils/harness/hooks.js` lists each hook once, with its event and
+matcher per harness; `pnpm harness sync` writes `.codex/hooks.json` and `.dsh/hooks.json` from it,
+and `pnpm harness check` fails when they or `.claude/settings.json` differ from it. Every script
+takes `--harness claude|codex|dsh` (default `claude`). DSH is untested: it is built from its
+source. Details: `docs/harness.md`, "Three harnesses".
+
+| Hook                   | Claude Code | Codex                                            | DSH (untested)         |
+| ---------------------- | ----------- | ------------------------------------------------ | ---------------------- |
+| `audit_logger.js`      | yes         | yes (edits from PreToolUse)                      | yes                    |
+| `auto_format.js`       | yes         | yes, queued; formatted at the next tool or Stop  | yes                    |
+| `context_monitor.js`   | yes         | yes (from the rollout)                           | no (no transcript)     |
+| `session_start.js`     | yes         | yes                                              | yes                    |
+| `pre_compact.js`       | yes         | yes                                              | no (no event)          |
+| `task_loop.js`         | yes         | yes                                              | yes                    |
+| `guard.js`             | no (native) | patches only (shell commands use the rules file) | commands, reads, edits |
+| `utils/memory/hook.js` | yes         | yes, with extraction                             | recall only            |
 
 ## Installed Hooks
 
@@ -168,14 +184,30 @@ walk through the quality loop (review round → triage → fixes; AGENTS.md §4.
 The task logic lives in `utils/task/` (the `pnpm task` CLI), so other harnesses get the same brief
 by running `pnpm task status`.
 
-### 7. Memory (`utils/memory/hook.js`)
+### 7. Guard (`guard.js`)
+
+**Event:** PreToolUse (Codex: `Bash|apply_patch`; DSH: `bash|pwsh|read|edit|write|apply_patch|str_replace_editor`)
+**Purpose:** Enforces the `permissions` of `.claude/settings.json` where the harness does not.
+
+**What it does:**
+
+- Not wired in Claude Code, which enforces its own permissions
+- Codex: denies a patch that edits a protected path (secrets). Shell commands are covered by
+  `.codex/rules/workspace.rules`, which `pnpm harness sync` generates from the same permissions
+- DSH: also denies reads of protected paths, and denies or asks (`permissionDecision: ask`) for
+  shell commands, since DSH has no command rules
+- Handles only `Bash`, `Read`, and `Edit` rules; other kinds (web fetch, MCP) stay Claude-only
+- A guardrail, not a sandbox; fails open on any error
+
+### 8. Memory (`utils/memory/hook.js`)
 
 **Events:** SessionStart, UserPromptSubmit, PreToolUse (`Bash`), PostToolUseFailure (`Bash`),
 SessionEnd
 **Purpose:** Personal memory (`pnpm memory`): recall notes from earlier sessions when they are
 relevant, and learn new ones after a session. The same script serves Codex through
-`.codex/hooks.json` (`--harness codex`; trust it once with `/hooks`); Codex has no extraction
-yet (no transcript adapter).
+`.codex/hooks.json` (`--harness codex`; trust it once with `/hooks`; extraction reads the Codex
+rollout through `condenseCodex`) and DSH through `.dsh/hooks.json` (`--harness dsh`; recall only,
+no SessionEnd; untested).
 
 **What it does:**
 
@@ -206,7 +238,8 @@ yet (no transcript adapter).
 
 ## Hook Configuration
 
-Hooks are configured in `.claude/settings.json`:
+Claude Code hooks are configured in `.claude/settings.json`. Edit the manifest
+`utils/harness/hooks.js` together with it, then run `pnpm harness sync`:
 
 ```json
 {

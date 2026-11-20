@@ -40,8 +40,10 @@ Everything above (AGENTS.md) applies. These notes cover only what is specific to
   tools). It stays silent for the `reviewer` and `verifier` subagents. Save notes yourself with
   `pnpm memory add` as §13 says; the extraction only catches what you missed.
 - **Hooks** (`.claude/settings.json`): `audit_logger.js` appends redacted tool calls to
-  `logs/<YYYYMMDD>/logging.jsonl`, and `auto_format.js` runs Prettier after Edit/Write. These run
-  only in Claude Code; the git hooks from `pnpm workspace:setup` cover every harness.
+  `logs/<YYYYMMDD>/logging.jsonl`, and `auto_format.js` runs Prettier after Edit/Write. All hooks are listed once in
+  `utils/harness/hooks.js`: edit that manifest together with `.claude/settings.json`, then run
+  `pnpm harness sync`; `pnpm harness check` catches drift. The git hooks from
+  `pnpm workspace:setup` cover every harness.
 - **Skills:** Claude Code discovers skills through the `.claude/skills/<name>` links into
   `.agents/skills/`. If a skill is missing, run `pnpm skills:link` and restart the session.
 - **Workflows** (`.claude/workflows/`, run only when the user asks for a workflow):

@@ -10,8 +10,8 @@ The rules agents follow are in `AGENTS.md`. This document explains how the piece
 
 - **One source of truth for every harness.** Rules live in `AGENTS.md`, task state in
   `tasks/<task>/state.json`, and both are reached through plain `pnpm` commands, so a weaker model
-  in any harness can follow the same procedure. Claude-only hooks add convenience on top; they are
-  never the only way to do something.
+  in any harness can follow the same procedure. Hooks add convenience on top (in Claude Code, Codex, and DSH:
+  see "Three harnesses"); they are never the only way to do something.
 - **Machines decide "done", not the agent's opinion.** Verify commands, lint, types, and a
   recorded review gate the work.
 - **Independent review.** The agent that wrote the code never reviews it. A fresh agent reviews,
@@ -27,9 +27,9 @@ The rules agents follow are in `AGENTS.md`. This document explains how the piece
          ┌────────────────────────────────────┼────────────────────────────────────┐
          ▼                                    ▼                                    ▼
    Claude Code session                 Codex / DSH session                Unattended runs
-   hooks: SessionStart brief,          reads AGENTS.md,                   pnpm loop  (one worktree)
-   Stop = inner loop + review          runs pnpm task …                   pnpm swarm (worktree per step)
-   reminders, PreCompact note                                             pnpm agent ask (one turn)
+   hooks: SessionStart brief,          the same hooks, from               pnpm loop  (one worktree)
+   Stop = inner loop + review          utils/harness/hooks.js             pnpm swarm (worktree per step)
+   reminders, PreCompact note          (DSH: untested)                    pnpm agent ask (one turn)
          │                                    │                                    │
          └────────────────────────────────────┼────────────────────────────────────┘
                                               ▼
@@ -39,6 +39,96 @@ The rules agents follow are in `AGENTS.md`. This document explains how the piece
                                               ▼
                  gates: pnpm task check · verify commands · review rounds · pnpm check
 ```
+
+## Three harnesses
+
+Claude Code is the first-class harness: `.claude/settings.json` is hand-written, and nothing there
+is made slower or worse for the others. Codex and DSH run the same hook scripts, started with
+`--harness codex|dsh` and reading their payload through `utils/harness/input.js`. The generated
+files are `.codex/hooks.json`, `.codex/rules/workspace.rules`, `.codex/agents/*.toml`,
+`.dsh/hooks.json`, and `.dsh/workspace.patch.yml`.
+
+**DSH is untested.** DSH is not installed on the machine that built this, so every DSH cell below
+comes from reading its source and docs. Codex was tested live (Codex 0.155): a smoke test of the
+task brief, the Stop verify, formatting of a patch, audit entries, `rm` refused by the rules, and a
+`.env` patch refused by the guard passed 7 of 7.
+
+### Behavior matrix
+
+✅ same behavior · 🟡 close equivalent · ❌ gap
+
+| Behavior                       | Claude Code                     | Codex                                                                           | DSH (untested)                                                                  |
+| ------------------------------ | ------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `AGENTS.md` rules              | ✅ through `@AGENTS.md`         | ✅ native (the file must stay under 32 KiB)                                     | ✅ native                                                                       |
+| Memory core block              | ✅ `CLAUDE.local.md`            | ✅ SessionStart hook                                                            | ✅ loads `AGENTS.local.md` natively                                             |
+| Memory recall                  | ✅                              | ✅ a failed command is a PostToolUse with a non-zero exit                       | 🟡 prompt and triggers; failures only if the output shows an exit code          |
+| Memory extraction              | ✅ SessionEnd                   | ✅ SessionEnd (3 s cap, queues only) and `condenseCodex` on the rollout         | ❌ no SessionEnd                                                                |
+| Task brief at session start    | ✅ SessionStart                 | ✅ SessionStart                                                                 | ✅ SessionStart                                                                 |
+| `pnpm task` knows the session  | ✅ `CLAUDE_CODE_SESSION_ID`     | ✅ `CODEX_THREAD_ID`                                                            | ✅ `DSH_SESSION_ID` (equal to the hook's `session_id`: unverified)              |
+| Inner loop, review reminders   | ✅ Stop, `--reset` on a prompt  | ✅ same                                                                         | ✅ same; it ignores DSH's "Background subagent … finished" notice               |
+| Wait for a reviewer            | ✅ `background_tasks`           | 🟡 by instruction: `wait_agent` before the turn ends                            | 🟡 a subagent always runs in the background; wait for its notice by instruction |
+| Reviewer and verifier roles    | ✅ `.claude/agents/*.md`        | ✅ generated `.codex/agents/*.toml`                                             | 🟡 the prompt says to follow `.claude/agents/<role>.md`                         |
+| Compaction checkpoint in NOTES | ✅ PreCompact                   | ✅ PreCompact                                                                   | ❌ no event; AGENTS.md says to note before you stop                             |
+| Context-usage warnings         | ✅ transcript usage             | ✅ rollout `token_count`, with the real window size                             | ❌ hooks get no transcript                                                      |
+| Format after edits             | ✅ PostToolUse `Edit\|Write`    | 🟡 queued at PreToolUse of `apply_patch`, formatted at the next tool or at Stop | ✅ PostToolUse on its edit tools                                                |
+| Audit log of tool calls        | ✅                              | ✅ edits are logged from PreToolUse                                             | ✅                                                                              |
+| Command guardrails             | ✅ `permissions.deny` and `ask` | ✅ generated rules (`forbidden`, `prompt`)                                      | 🟡 `guard.js` on `bash\|pwsh` (deny, or ask)                                    |
+| Secret files                   | ✅ `Read` and `Edit` deny       | 🟡 `guard.js` refuses patches to them; reads by instruction                     | 🟡 `guard.js` on `read`, `edit`, `write`                                        |
+| Skills                         | ✅ `.claude/skills` links       | ✅ native `.agents/skills`                                                      | ✅ native `.agents/skills`                                                      |
+| Path-scoped rules              | ✅ `.claude/rules`              | 🟡 AGENTS.md §7 says to read them                                               | 🟡 same                                                                         |
+| Workflows                      | ✅ `.claude/workflows`          | 🟡 `pnpm swarm`, `pnpm loop --review`                                           | 🟡 same                                                                         |
+| Headless runs                  | ✅                              | ✅                                                                              | ✅ the adapter adds `--patch`                                                   |
+
+Notes:
+
+- **Codex formatting.** Codex sends only PreToolUse for a shell-run `apply_patch`. That hook queues
+  the patch's files (`utils/harness/format.js`, in `tasks/.sessions/`). The next PostToolUse
+  formats them, and the Stop hook formats what is left before it verifies, so the pre-commit hook
+  does not reject the files. Paths outside the workspace are skipped.
+- **Guardrails.** Claude Code enforces `.claude/settings.json` `permissions` itself, so the guard is
+  not wired there. Codex gets shell rules from `.codex/rules/workspace.rules` and path checks on
+  patches from `.claude/hooks/guard.js`. DSH has no command rules, so `guard.js` also covers its
+  commands. Like Claude's rules, this is a guardrail, not a sandbox.
+- **Subagent ids.** In Codex, `CODEX_THREAD_ID` of a subagent is its own thread, while hooks see
+  the root's id, so a subagent's `pnpm task` command acts on the default task unless it passes
+  `--task`.
+
+### Setup per harness
+
+| Harness     | Once                                                                                                                                                       | After a change                                                                                |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Claude Code | `pnpm workspace:setup`                                                                                                                                     | nothing                                                                                       |
+| Codex       | open `codex` in this folder and trust the project (without it Codex ignores `.codex/`), then run `/hooks` to trust the hooks                               | run `/hooks` again when `pnpm harness sync` changed a hook; rules apply from the next session |
+| DSH         | `dsh plugin add @deepseek-ai/dsh-hooks-claude-code` (the bridge), then always start with `dsh --patch .dsh/workspace.patch.yml`: DSH has no project config | nothing; `pnpm loop`, `pnpm swarm`, and `pnpm agent ask` pass `--patch` themselves            |
+
+`pnpm workspace:setup` runs `pnpm harness sync`. When Codex is installed it prints a
+`harness-codex` line (a warning if the checkout is not trusted). When DSH is installed it prints a
+`harness-dsh` line with the launch command (it cannot check the bridge plugin yet).
+
+### Changing a hook, a permission, or a role
+
+1. **Hook.** Edit `.claude/settings.json` and the manifest `utils/harness/hooks.js` together (the
+   manifest lists each hook with its event and matcher per harness), then run `pnpm harness sync`.
+   Commit the generated `.codex/` and `.dsh/` files.
+2. **Permission.** Edit `permissions` in `.claude/settings.json`, then `pnpm harness sync`. It
+   regenerates `.codex/rules/workspace.rules`; `guard.js` reads the same file for DSH and for Codex
+   patches.
+3. **Role.** Edit `.claude/agents/<role>.md`, then `pnpm harness sync`. It regenerates
+   `.codex/agents/<role>.toml` (no `model` key, so the role inherits the main model).
+
+`pnpm harness check` fails on a stale generated file, and when the `hooks` in
+`.claude/settings.json` differ from the manifest. It never rewrites `.claude/settings.json`.
+`pnpm workspace:check` runs it, so drift is caught.
+
+### What stays Claude-only
+
+| Feature                                                    | Why                                                                                               |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Workflows (`.claude/workflows`)                            | They need Claude's workflow runtime; `pnpm swarm` and `pnpm loop --review` do the same unattended |
+| Path-scoped rules (`.claude/rules`)                        | Only Claude loads them by path; the others get an instruction in AGENTS.md                        |
+| `background_tasks` waiting                                 | Only Claude's Stop input lists running subagents; Codex and DSH wait by instruction               |
+| Permission kinds other than Bash, Read, and Edit           | Web fetch domains and MCP tools have no equivalent in the Codex rules or the guard                |
+| PreCompact, context warnings, and memory extraction in DSH | DSH has no event for the first, no transcript for the second, and no SessionEnd for the third     |
 
 ## Building blocks
 
@@ -92,9 +182,9 @@ someone else: never the agent's next step, does not hold back a review, keeps th
 ### 3. Resume
 
 `pnpm task status` prints a brief: goal, progress, next step, steps waiting on someone else, last
-verify, the task's repository and git state, and the last note. Claude's `SessionStart` hook
-injects the session's task's brief on startup, resume, `/clear`, and compaction, plus a `Tools:`
-line. The `PreCompact` hook appends a mechanical checkpoint to that task's `NOTES.md` once the
+verify, the task's repository and git state, and the last note. The `SessionStart` hook
+(Claude Code, Codex, DSH) injects the session's task's brief on startup, resume, `/clear`, and compaction, plus a `Tools:`
+line. The `PreCompact` hook (Claude Code, Codex) appends a mechanical checkpoint to that task's `NOTES.md` once the
 session has worked on it. A new session checks the brief's `Git:` line (a `!` marks a branch that
 differs from the last note's), then continues from `Next`.
 
@@ -160,10 +250,10 @@ digests, at most 3,000 characters) that every session loads. Rules for agents: A
 - **Recall** is lexical (BM25F over tags and text, `Intl.Segmenter` for Japanese and Chinese) with
   a gate, so unrelated prompts inject nothing; at most 4 notes, 1,200 characters, once per session.
   Tags written at save time carry the synonyms and other languages.
-- **Hooks:** one script, `utils/memory/hook.js`, for Claude Code (`.claude/settings.json`) and
-  Codex (`.codex/hooks.json`, trusted once with `/hooks`). It fails open and stays silent for the
-  reviewer and verifier roles.
-- **Extraction (B):** SessionEnd queues the session; a detached worker reads what the transcript
+- **Hooks:** one script, `utils/memory/hook.js`, for Claude Code (`.claude/settings.json`), Codex
+  (`.codex/hooks.json`, trusted once with `/hooks`), and DSH (`.dsh/hooks.json`, untested; recall
+  only). It fails open and stays silent for the reviewer and verifier roles.
+- **Extraction (B)** (Claude Code and Codex; DSH has no SessionEnd): SessionEnd queues the session; a detached worker reads what the transcript
   gained, condenses it (prompts, final replies, failed commands; secrets left out), and makes one
   read-only `claude -p` call without tools for ADD/UPDATE/DELETE ops on the related notes. Secrets
   are refused, instruction-like ops wait in `memory/inbox.jsonl`, and the next session announces
@@ -341,9 +431,10 @@ commands, the last verify to have passed.
 - **Memory recall is by words, not meaning.** A note without the words a later prompt uses is
   not recalled; specific tags (with synonyms and other languages) are the fix. In a small store, one
   generic tag word can recall a note; that fades as the store grows.
-- **Claude hooks run only in Claude Code.** Other harnesses get the same state through
-  `pnpm task status`, and the same enforcement through git hooks and the `done` gate. DSH can run
-  Claude hooks through its opt-in bridge.
+- **Hooks differ per harness.** See the matrix in "Three harnesses". Where a harness lacks a hook
+  event, it gets the same state through `pnpm task status`, and the same enforcement through git
+  hooks and the `done` gate. Codex needs a one-time trust (`/hooks`); DSH needs the bridge plugin
+  and `--patch` (untested).
 
 ## Where the code lives
 
@@ -354,7 +445,9 @@ commands, the last verify to have passed.
 | `utils/swarm/`                 | `pnpm swarm`: dispatcher, worker processes, git helpers                                                      |
 | `utils/agent/`, `utils/tools/` | `pnpm agent ask`, `pnpm tools`                                                                               |
 | `utils/memory/`                | `pnpm memory`: store, tokenizer, recall, render, hook, extraction, export/import, personalization            |
-| `.claude/hooks/`               | session_start, pre_compact, task_loop, context_monitor, audit_logger, auto_format                            |
+| `.claude/hooks/`               | session_start, pre_compact, task_loop, context_monitor, audit_logger, auto_format, guard                     |
+| `utils/harness/`               | `pnpm harness`: hook manifest, hook input parsing, Codex format queue, permissions, Codex roles              |
+| `.codex/`, `.dsh/`             | generated by `pnpm harness sync`: hooks, rules, roles, the DSH overlay                                       |
 | `.claude/agents/`              | role prompts (planner, reviewer, verifier, …)                                                                |
 | `.claude/workflows/`           | Claude workflows: review-changes, implement-plan, research                                                   |
 | `templates/task/`              | plan.md, NOTES.md, REVIEW.md, STUDIES.md templates                                                           |
