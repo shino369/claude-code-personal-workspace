@@ -283,7 +283,7 @@ function isWorkspaceHooks(value, deps) {
     roots.push(path.dirname(String(common.stdout).trim()));
   }
   return roots.some(
-    (root) => path.resolve(value) === path.join(root, '.githooks')
+    (root) => path.resolve(value) === path.resolve(root, '.githooks')
   );
 }
 
