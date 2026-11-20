@@ -14,7 +14,8 @@
  * - PreToolUse: notes whose triggers are in the command (no scoring).
  * - PostToolUseFailure (Claude) or PostToolUse with a non-zero exit (Codex):
  *   notes recalled for the command and its error output.
- * - Extraction (path B, harnesses with a transcript adapter: Claude Code):
+ * - Extraction (path B, harnesses with a transcript adapter: Claude Code
+ *   and Codex; DSH has no SessionEnd and gives hooks no transcript):
  *   SessionStart records the session as open, queues sessions that ended
  *   without a SessionEnd, and starts the worker (also when consolidation is
  *   due); SessionEnd queues the
