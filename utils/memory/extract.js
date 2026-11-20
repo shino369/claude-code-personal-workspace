@@ -16,14 +16,14 @@
  * (no project instructions or hooks), with EXTRACT_ENV set so memory hooks
  * stay silent, on the session's own model unless `pnpm memory set
  * --extract-model` chose one. Run as a script, this file is the detached
- * worker hooks start (queue.js kickWorker): it extracts the queue and exits.
+ * Every run that changes notes takes a snapshot first (undo.js reverts it).
+ * The detached worker (worker.js) runs runWorker, then consolidation.
  */
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { answerOf } from '../agent/cli.js';
 import { buildCommand, runAgent as defaultRunAgent } from '../loop/adapters.js';
-import { runIfMain } from '../module-runner.js';
 import { redactSecrets } from '../redact.js';
 import { INNER_LOOP_ENV } from '../task/loop.js';
 import { commandFor } from '../tools/registry.js';
@@ -53,6 +53,7 @@ import {
 } from './queue.js';
 import { loadIndex, scoreTerms } from './recall.js';
 import { mainCheckout, repoName } from './repo.js';
+import { takeSnapshot } from './snapshot.js';
 import {
   MemoryError,
   addNote,
@@ -472,9 +473,15 @@ const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
  */
 export function formatRun(run) {
   const { session } = run;
-  if (run.status === 'applied') {
+  const name = run.job === 'consolidation' ? 'the consolidation' : session;
+  if (run.status === 'applied' || run.status === 'consolidated') {
     const details = [
       ...run.changes.map(formatChange),
+      ...(run.profile > 0
+        ? [
+            `Profile: ${count(run.profile, 'line', 'lines')} (memory/profile.md)`,
+          ]
+        : []),
       ...(run.quarantined > 0
         ? [
             `${run.quarantined} held for review in memory/inbox.jsonl (${run.quarantined === 1 ? 'it reads' : 'they read'} like an instruction)`,
@@ -494,16 +501,23 @@ export function formatRun(run) {
         (/** @type {string} */ problem) => `Skipped ${problem}`
       ),
     ];
+    const title =
+      run.status === 'applied' ? `Extracted ${session}` : 'Consolidated memory';
     return details.length === 0
-      ? [`Extracted ${session}: nothing new to remember.`]
-      : [`Extracted ${session}:`, ...details.map((line) => `  ${line}`)];
+      ? [
+          `${title}: ${run.status === 'applied' ? 'nothing new to remember' : 'nothing to change'}.`,
+        ]
+      : [`${title}:`, ...details.map((line) => `  ${line}`)];
   }
   if (run.status === 'dry-run') {
     return [
-      `Would send ${session} to the extraction model (${run.model ?? "the agent's default model"}):`,
+      `Would send ${name} to the extraction model (${run.model ?? "the agent's default model"}):`,
       '',
       run.prompt,
     ];
+  }
+  if (run.status === 'failed' && run.job === 'consolidation') {
+    return [`Failed the consolidation (retried after a day): ${run.error}`];
   }
   if (run.status === 'failed') {
     return [
@@ -516,6 +530,7 @@ export function formatRun(run) {
     off: `Skipped ${session}: saving is off.`,
     missing: `Skipped ${session}: its transcript is gone.`,
     empty: `Nothing new in ${session}.`,
+    nothing: 'Nothing to consolidate yet.',
   };
   return [skipped[run.status]];
 }
@@ -557,7 +572,7 @@ export function extractCommand({ agent, model, rootDir }) {
  * @param {import('../loop/adapters.js').AgentCommand} command
  * @param {string} prompt
  */
-function callAgent(deps, command, prompt) {
+export function callAgent(deps, command, prompt) {
   const cwd = fs.mkdtempSync(path.join(deps.tmpdir(), 'memory-extract-'));
   let result;
   try {
@@ -651,6 +666,12 @@ export function extractEntry(entry, deps) {
   /** @type {Source} */
   const source = { via: 'extract', harness, session };
   const checked = validateOps(rawOps, { related, repo, source });
+  // Every op below has this run's time, which is how undo finds them.
+  const snapshot =
+    checked.apply.length > 0
+      ? takeSnapshot(deps.rootDir, { reason: 'extract', now, detail: session })
+          .id
+      : null;
   const { changes, errors } = applyOps(dir, checked.apply, { now, source });
   const warnings = changes.length > 0 ? refreshAfterWrite(deps.rootDir) : [];
   appendInbox(
@@ -667,6 +688,7 @@ export function extractEntry(entry, deps) {
       quarantined: checked.quarantined.length,
       refused: checked.refused,
       invalid: [...checked.invalid, ...errors, ...warnings],
+      snapshot,
       durationMs: result.durationMs,
     },
     chunk.end
@@ -744,9 +766,14 @@ export function announcement(dir) {
     dir,
     runs.reduce((last, run) => (run.at > last ? run.at : last), since)
   );
-  const lines = runs.flatMap((run) =>
-    Array.isArray(run.changes) ? run.changes.map(formatChange) : []
-  );
+  const lines = runs.flatMap((run) => [
+    ...(Array.isArray(run.changes) ? run.changes.map(formatChange) : []),
+    ...(run.status === 'consolidated' && run.profile > 0
+      ? [
+          `Profile rewritten from your notes (${count(run.profile, 'line', 'lines')}): memory/profile.md`,
+        ]
+      : []),
+  ]);
   const held = runs.reduce(
     (sum, run) =>
       sum + (Number.isInteger(run.quarantined) ? run.quarantined : 0),
@@ -757,7 +784,7 @@ export function announcement(dir) {
   ).length;
   if (lines.length === 0 && held === 0 && gaveUp === 0) return null;
   return [
-    '[Memory] Saved by automatic extraction after earlier sessions (pnpm memory show <id>; undo one with pnpm memory rm <id> -m "why"):',
+    '[Memory] Saved by automatic extraction or consolidation after earlier sessions (pnpm memory show <id>; pnpm memory undo reverts the last job):',
     ...lines.map((line) => `- ${line}`),
     ...(held > 0
       ? [
@@ -786,17 +813,3 @@ export function defaultExtractDeps(overrides = {}) {
     ...overrides,
   };
 }
-
-/* c8 ignore start - the detached worker's entry point; runWorker is tested */
-function main() {
-  try {
-    runWorker(defaultExtractDeps());
-  } catch {
-    // Detached, with nobody to tell: the queue keeps the entries for the
-    // next session's catch-up.
-  }
-  process.exit(0);
-}
-/* c8 ignore stop */
-
-runIfMain(import.meta.url, main);

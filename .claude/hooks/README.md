@@ -196,7 +196,9 @@ yet (no transcript adapter).
   `memory/inbox.jsonl` (`pnpm memory inbox`). A session that ended without SessionEnd is queued
   by a later SessionStart once its transcript is idle for an hour. The next SessionStart announces
   what was saved (to the agent, and to you as a system message). `pnpm memory extract` runs it
-  by hand (`--dry-run` shows the prompt)
+  by hand (`--dry-run` shows the prompt). The same worker runs the weekly consolidation when
+  SessionStart finds it due (merge duplicates, retire superseded notes, rewrite
+  `memory/profile.md`); every job takes a snapshot first, and `pnpm memory undo` reverts the last one
 - Injects a note once per session (`memory/cache/sessions/`), counts recalls (`usage.json`),
   skips the `reviewer` and `verifier` roles and the extraction agent (`MEMORY_EXTRACT=1`), stays
   silent before `pnpm memory init`, and fails open on any error. About 40 ms per call, most of it

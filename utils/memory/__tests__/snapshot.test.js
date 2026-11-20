@@ -5,9 +5,12 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import {
+  MAX_SNAPSHOTS,
   SNAPSHOTS_DIR,
   SNAPSHOT_FILES,
   listSnapshots,
+  markUndone,
+  snapshotDir,
   takeSnapshot,
 } from '../snapshot.js';
 
@@ -53,6 +56,7 @@ describe('takeSnapshot', () => {
       at: NOW.toISOString(),
       detail: 'memory-export-261120.tar.gz',
       files: ['memory/log.jsonl', 'AGENTS.local.md'],
+      logBytes: 13,
     });
   });
 
@@ -92,5 +96,38 @@ describe('listSnapshots', () => {
 
   test('should list nothing before the first snapshot', () => {
     expect(listSnapshots(root)).toEqual([]);
+  });
+});
+
+describe('snapshot upkeep', () => {
+  test('should record an empty log as zero bytes', () => {
+    fs.rmSync(path.join(root, 'memory', 'log.jsonl'));
+
+    takeSnapshot(root, { reason: 'import', now: NOW });
+
+    expect(listSnapshots(root)[0].logBytes).toBe(0);
+  });
+
+  test('should keep only the newest snapshots', () => {
+    for (let i = 0; i <= MAX_SNAPSHOTS; i++) {
+      takeSnapshot(root, {
+        reason: 'extract',
+        now: new Date(NOW.getTime() + i * 1000),
+      });
+    }
+
+    const kept = listSnapshots(root);
+
+    expect(kept).toHaveLength(MAX_SNAPSHOTS);
+    expect(kept.at(-1)?.at).toBe(new Date(NOW.getTime() + 1000).toISOString());
+  });
+
+  test('should mark a snapshot undone', () => {
+    const { id, dir } = takeSnapshot(root, { reason: 'import', now: NOW });
+
+    markUndone(root, id, NOW);
+
+    expect(snapshotDir(root, id)).toBe(dir);
+    expect(listSnapshots(root)[0].undone).toBe(NOW.toISOString());
   });
 });

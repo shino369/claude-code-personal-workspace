@@ -427,7 +427,7 @@ describe('kickWorker', () => {
 
   test('should point at the worker script', () => {
     expect(fs.existsSync(WORKER_SCRIPT)).toBe(true);
-    expect(path.basename(WORKER_SCRIPT)).toBe('extract.js');
+    expect(path.basename(WORKER_SCRIPT)).toBe('worker.js');
   });
 
   test('should name the open and queue folders', () => {

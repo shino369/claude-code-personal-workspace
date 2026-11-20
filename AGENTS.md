@@ -394,7 +394,9 @@ done` writes a digest; add lessons with `--learn "…"`), or anything found only
 - When the session start says saving is off (`pnpm memory off`), save only when the user asks.
 
 In Claude Code, a background job also extracts what was missed from each finished session and
-announces it at the next session start; `pnpm memory inbox` lists the changes it held back.
+announces it at the next session start, and a weekly consolidation merges duplicates and rewrites
+the profile; `pnpm memory inbox` lists the changes they held back, and `pnpm memory undo` reverts
+the last such job (or import).
 
 **Personalization** (`pnpm memory personalize`: name, tone, persona) applies to conversation with
 the user only. Commit messages, PR text, code, comments, docs, translations, and reviews keep the

@@ -552,6 +552,26 @@ describe('extraction hooks', () => {
     expect(kick).toHaveBeenCalledTimes(1);
   });
 
+  test('should start the worker when consolidation is due', () => {
+    for (let i = 0; i < 20; i++) {
+      addNote(
+        dir,
+        {
+          scope: 'machine',
+          type: 'fact',
+          text: `Filler fact ${i} about builds.`,
+          tags: [`f${i}`],
+        },
+        { now: NOW }
+      );
+    }
+
+    lifecycle('SessionStart');
+
+    expect(readQueue(dir)).toEqual([]);
+    expect(kick).toHaveBeenCalledTimes(1);
+  });
+
   test('should announce what extraction saved, to the agent and the user', () => {
     appendJournal(dir, {
       at: '2026-11-20T11:00:00.000Z',

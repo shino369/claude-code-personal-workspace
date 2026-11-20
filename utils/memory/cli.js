@@ -23,6 +23,12 @@ import { SESSION_ID_RE, sessionFromEnv } from '../task/store.js';
 import { ROOT_DIR } from '../workspace-config.js';
 import { readConfig, savingOff, setSaving, writeConfig } from './config.js';
 import {
+  consolidate,
+  consolidateLocked,
+  consolidationDue,
+  readConsolidated,
+} from './consolidate.js';
+import {
   ANNOUNCE_CHARS,
   announceSave,
   kindLabel,
@@ -55,6 +61,7 @@ import {
   workerRunning,
 } from './queue.js';
 import { RECALL_LIMIT, loadIndex, noteLabels, recall } from './recall.js';
+import { formatUndo, undoLast } from './undo.js';
 import {
   AGENTS_LOCAL_FILE,
   CLAUDE_LOCAL_FILE,
@@ -117,6 +124,10 @@ Extraction (automatic after each Claude Code session)
                                 be sent to the model and changes nothing
   inbox [--reset]               Changes extraction held back for you to review (they read
                                 like instructions); --reset clears the list
+  consolidate [--dry-run]       Tidy the notes and rewrite the profile now (normally weekly,
+                                in the background)
+  undo [--dry-run]              Revert the last extraction, consolidation, or import, one
+                                per call (notes saved since are kept)
 
 Move or back up (an explicit step; nothing is synced)
   export [--include memory,personalization,tasks,resources] [--tasks a,b] [--out <file>]
@@ -651,6 +662,47 @@ export const COMMANDS = {
     return 0;
   },
 
+  consolidate(options, deps) {
+    if (!fs.existsSync(dirOf(deps))) {
+      throw new Error('Memory is not set up. Fix: pnpm memory init');
+    }
+    const extractDeps = defaultExtractDeps({
+      rootDir: deps.rootDir,
+      env: deps.env,
+      now: deps.now,
+      runAgent: deps.runAgent,
+      dryRun: options.dryRun,
+    });
+    const run = options.dryRun
+      ? consolidate(extractDeps)
+      : consolidateLocked(extractDeps);
+    if (run === null) {
+      output(
+        deps,
+        options,
+        { running: true },
+        'An extraction or consolidation is already running; try again in a moment.'
+      );
+      return 0;
+    }
+    output(deps, options, { run }, formatRun(run).join('\n'));
+    return run.status === 'failed' ? 1 : 0;
+  },
+
+  undo(options, deps) {
+    const result = undoLast(deps.rootDir, {
+      now: deps.now(),
+      dryRun: options.dryRun,
+    });
+    output(
+      deps,
+      options,
+      { undone: result && { ...result, log: undefined } },
+      formatUndo(result).join('\n')
+    );
+    return 0;
+  },
+
   inbox(options, deps) {
     const dir = dirOf(deps);
     const items = readInbox(dir);
@@ -723,6 +775,11 @@ export const COMMANDS = {
       lastRun: last ? { at: last.at, status: last.status } : null,
       inbox: readInbox(dir).length,
     };
+    const consolidated = readConsolidated(dir);
+    const consolidation = {
+      last: consolidated?.at ?? null,
+      due: consolidationDue(deps.rootDir, { now }),
+    };
     const lastRun = extraction.running
       ? 'running now'
       : extraction.lastRun
@@ -742,6 +799,7 @@ export const COMMANDS = {
         saving,
         extractModel,
         extraction,
+        consolidation,
         missing,
         warnings,
       },
@@ -756,6 +814,7 @@ export const COMMANDS = {
           `Saving: ${saving}${off ? ' (pnpm memory on)' : ''}`,
           `Extraction model: ${extractModel ?? "the main session's model"}`,
           `Extraction: ${plural(extraction.queued, 'session')} queued; ${lastRun}`,
+          `Consolidation: ${consolidation.last ? `last ${localTime(consolidation.last)}` : 'not yet'}${consolidation.due ? `; due (${consolidation.due})` : ''}`,
           ...(extraction.inbox > 0
             ? [
                 `Inbox: ${plural(extraction.inbox, 'change')} held for review (pnpm memory inbox)`,

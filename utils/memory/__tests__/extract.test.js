@@ -40,6 +40,7 @@ import {
 } from '../queue.js';
 import { buildIndex } from '../recall.js';
 import { AGENTS_LOCAL_FILE, initLocal } from '../render.js';
+import { listSnapshots } from '../snapshot.js';
 import { addNote, loadNotes, memoryDir, setPinned } from '../store.js';
 
 /** @type {string} */
@@ -826,6 +827,63 @@ describe('formatChange and formatRun', () => {
     ]);
   });
 
+  test('should summarize a consolidation', () => {
+    expect(
+      formatRun({
+        job: 'consolidation',
+        status: 'consolidated',
+        changes: [{ ...change, action: 'updated' }],
+        profile: 3,
+        quarantined: 0,
+        refused: 0,
+        invalid: [],
+      })
+    ).toEqual([
+      'Consolidated memory:',
+      '  Updated memory: m3 (user, preference) The user wants pnpm.',
+      '  Profile: 3 lines (memory/profile.md)',
+    ]);
+    expect(
+      formatRun({
+        job: 'consolidation',
+        status: 'consolidated',
+        changes: [],
+        profile: 0,
+        quarantined: 0,
+        refused: 0,
+        invalid: [],
+      })
+    ).toEqual(['Consolidated memory: nothing to change.']);
+    expect(
+      formatRun({
+        job: 'consolidation',
+        status: 'consolidated',
+        changes: [],
+        profile: 1,
+        quarantined: 0,
+        refused: 0,
+        invalid: [],
+      })[1]
+    ).toBe('  Profile: 1 line (memory/profile.md)');
+  });
+
+  test('should report a consolidation that failed or had nothing to do', () => {
+    expect(
+      formatRun({ job: 'consolidation', status: 'failed', error: 'timeout' })
+    ).toEqual(['Failed the consolidation (retried after a day): timeout']);
+    expect(formatRun({ job: 'consolidation', status: 'nothing' })).toEqual([
+      'Nothing to consolidate yet.',
+    ]);
+    expect(
+      formatRun({
+        job: 'consolidation',
+        status: 'dry-run',
+        model: 'm',
+        prompt: 'P',
+      })[0]
+    ).toBe('Would send the consolidation to the extraction model (m):');
+  });
+
   test('should print the prompt of a dry run', () => {
     expect(
       formatRun({
@@ -934,6 +992,24 @@ describe('extractEntry', () => {
       expect.objectContaining({ status: 'applied', at: NOW.toISOString() }),
     ]);
     expect(loadNotes(dir).notes).toHaveLength(1);
+  });
+
+  test('should take a snapshot before changing notes, and none otherwise', () => {
+    richSession();
+
+    const run = extractEntry(
+      queued(),
+      deps({ runAgent: agentReturning({ ops: [ADD_PNPM] }) })
+    );
+    fs.appendFileSync(
+      transcript,
+      `${JSON.stringify(typed('x'.repeat(300)))}\n`
+    );
+    const quiet = extractEntry(queued(), deps());
+
+    expect(run.snapshot).toMatch(/-extract$/);
+    expect(quiet.snapshot).toBeNull();
+    expect(listSnapshots(root).map((s) => s.reason)).toEqual(['extract']);
   });
 
   test('should send only what the transcript gained since the last run', () => {
@@ -1279,7 +1355,7 @@ describe('announcement', () => {
 
     expect(text).toBe(
       [
-        '[Memory] Saved by automatic extraction after earlier sessions (pnpm memory show <id>; undo one with pnpm memory rm <id> -m "why"):',
+        '[Memory] Saved by automatic extraction or consolidation after earlier sessions (pnpm memory show <id>; pnpm memory undo reverts the last job):',
         '- Saved to memory: m3 (user, preference) The user wants pnpm.',
         '- 1 change held for review in memory/inbox.jsonl (it reads like an instruction)',
         '- Extraction gave up on 1 session (errors: memory/extract/journal.jsonl)',
@@ -1318,6 +1394,34 @@ describe('announcement', () => {
       changes: [change],
     });
     expect(announcement(dir)).toBeNull();
+  });
+
+  test('should announce a rewritten profile', () => {
+    journal({
+      at: '2026-11-20T10:00:00.000Z',
+      status: 'consolidated',
+      changes: [],
+      profile: 4,
+    });
+    journal({
+      at: '2026-11-20T10:01:00.000Z',
+      status: 'consolidated',
+      changes: [],
+      profile: 1,
+    });
+    journal({
+      at: '2026-11-20T10:02:00.000Z',
+      status: 'consolidated',
+      changes: [],
+      profile: 0,
+    });
+
+    const lines = announcement(dir)?.split('\n');
+
+    expect(lines?.slice(1)).toEqual([
+      '- Profile rewritten from your notes (4 lines): memory/profile.md',
+      '- Profile rewritten from your notes (1 line): memory/profile.md',
+    ]);
   });
 
   test('should say nothing without a journal', () => {

@@ -16,7 +16,8 @@
  *   notes recalled for the command and its error output.
  * - Extraction (path B, harnesses with a transcript adapter: Claude Code):
  *   SessionStart records the session as open, queues sessions that ended
- *   without a SessionEnd, and starts the worker; SessionEnd queues the
+ *   without a SessionEnd, and starts the worker (also when consolidation is
+ *   due); SessionEnd queues the
  *   session and starts the worker (detached, so nothing waits). SessionStart
  *   also announces what extraction saved since the last session.
  *
@@ -32,6 +33,7 @@ import { runIfMain } from '../module-runner.js';
 import { SESSION_ID_RE } from '../task/store.js';
 import { ROOT_DIR } from '../workspace-config.js';
 import { readConfig, savingOff } from './config.js';
+import { consolidationDue } from './consolidate.js';
 import { taskContext } from './context.js';
 import { announcement } from './extract.js';
 import {
@@ -259,17 +261,18 @@ export function handleHook(
     cwd: input.cwd,
     at: now.toISOString(),
   };
-  const startWorker = () => {
-    if (readQueue(dir).length > 0 && !workerRunning(dir)) {
-      kick({ rootDir: home, env });
-    }
+  const startWorker = (/** @type {boolean} */ orConsolidate) => {
+    const work =
+      readQueue(dir).length > 0 ||
+      (orConsolidate && consolidationDue(home, { now }) !== null);
+    if (work && !workerRunning(dir)) kick({ rootDir: home, env });
   };
 
   if (event === 'SessionEnd') {
     // Headless runs (--no-session-persistence) leave no transcript to read.
     const saved =
       typeof entry.transcript === 'string' && fs.existsSync(entry.transcript);
-    if (extracts && saved && enqueue(dir, entry)) startWorker();
+    if (extracts && saved && enqueue(dir, entry)) startWorker(false);
     return null;
   }
   if (event === 'SessionStart') {
@@ -278,7 +281,7 @@ export function handleHook(
     if (extracts) {
       registerOpen(dir, entry);
       catchUp(dir, { current: session, now });
-      startWorker();
+      startWorker(true);
     }
     const news = announcement(dir);
     const off = savingOff(readConfig(dir), session);

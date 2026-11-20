@@ -45,7 +45,7 @@ export const MAX_ATTEMPTS = 3;
 export const EXTRACT_ENV = 'MEMORY_EXTRACT';
 export const WORKER_SCRIPT = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
-  'extract.js'
+  'worker.js'
 );
 
 /**

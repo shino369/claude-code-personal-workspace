@@ -696,6 +696,109 @@ describe('export and import', () => {
   });
 });
 
+describe('consolidate and undo', () => {
+  /** @param {unknown} answer */
+  const agent = (answer) =>
+    vi.fn(() => {
+      const stdout = JSON.stringify(answer);
+      return { code: 0, signal: null, stdout, output: stdout, durationMs: 3 };
+    });
+
+  beforeEach(() => {
+    run(['init']);
+    save({
+      scope: 'user',
+      type: 'preference',
+      text: 'Prefers short answers in chat.',
+    });
+  });
+
+  test('should consolidate now, and undo it', () => {
+    const runAgent = agent({ profile: ['Prefers short answers.'], ops: [] });
+
+    const done = run(['consolidate'], { runAgent });
+    const undone = run(['undo']);
+
+    expect(done.out).toBe(
+      'Consolidated memory:\n  Profile: 1 line (memory/profile.md)'
+    );
+    expect(undone.out).toMatch(
+      /^Undid the consolidation of 2026-11-20 14:03: 0 changes reverted; 0 later changes kept\.\nThe state before the undo: memory\/snapshots\/.*-undo$/
+    );
+    expect(fs.existsSync(path.join(dir, 'profile.md'))).toBe(false);
+    expect(run(['undo']).out).toBe(
+      'Nothing to undo: no extraction, consolidation, or import left to revert.'
+    );
+  });
+
+  test('should dry-run both', () => {
+    const runAgent = agent({ profile: ['x'], ops: [] });
+
+    expect(run(['consolidate', '--dry-run'], { runAgent }).out).toMatch(
+      /^Would send the consolidation to the extraction model/
+    );
+    expect(runAgent).not.toHaveBeenCalled();
+    run(['consolidate'], { runAgent });
+    expect(run(['undo', '--dry-run']).out).toMatch(
+      /^Would undo the consolidation .* Nothing was changed\.$/
+    );
+    expect(fs.existsSync(path.join(dir, 'profile.md'))).toBe(true);
+  });
+
+  test('should print JSON, and exit 1 when consolidation failed', () => {
+    const runAgent = vi.fn(() => ({
+      code: 1,
+      signal: null,
+      stdout: '',
+      output: 'no auth',
+      durationMs: 1,
+    }));
+
+    const failed = run(['consolidate'], { runAgent });
+    const json = JSON.parse(run(['undo', '--json']).out);
+
+    expect(failed.code).toBe(1);
+    expect(failed.out).toMatch(/^Failed the consolidation/);
+    expect(json).toEqual({ undone: null });
+  });
+
+  test('should leave the work to a running worker', () => {
+    const lock = tryLock(dir);
+
+    expect(run(['consolidate']).out).toBe(
+      'An extraction or consolidation is already running; try again in a moment.'
+    );
+    lock?.release();
+  });
+
+  test('should refuse before memory is set up', () => {
+    fs.rmSync(dir, { recursive: true });
+
+    expect(() => run(['consolidate'])).toThrow(/Fix: pnpm memory init/);
+  });
+
+  test('should show when consolidation last ran and whether it is due', () => {
+    expect(run(['status']).out).toMatch(/^Consolidation: not yet$/m);
+    run(['consolidate'], { runAgent: agent({ profile: [], ops: [] }) });
+
+    const json = runJson(['status']);
+
+    expect(run(['status']).out).toMatch(
+      /^Consolidation: last 2026-11-20 14:03$/m
+    );
+    expect(json.consolidation).toEqual({ last: NOW.toISOString(), due: null });
+  });
+
+  test('should say when consolidation is due', () => {
+    for (let i = 0; i < 20; i++)
+      save({ text: `Filler fact ${i} about the build.`, tags: [`f${i}`] });
+
+    expect(run(['status']).out).toMatch(
+      /^Consolidation: not yet; due \(weekly\)$/m
+    );
+  });
+});
+
 describe('status', () => {
   test('should be the default command', () => {
     expect(run([]).out).toBe(run(['status']).out);
