@@ -152,7 +152,7 @@ describe('undoLast', () => {
     expect(undoLast(root, { now: LATER })).toBeNull();
   });
 
-  test('should restore the profile and settings, removing ones the job created', () => {
+  test('should restore the profile after a consolidation, but not the settings', () => {
     fs.writeFileSync(
       path.join(dir, 'personalization.json'),
       '{"tone":"calm"}\n'
@@ -168,8 +168,46 @@ describe('undoLast', () => {
 
     expect(
       fs.readFileSync(path.join(dir, 'personalization.json'), 'utf-8')
-    ).toBe('{"tone":"calm"}\n');
+    ).toBe('{"tone":"loud"}\n');
     expect(fs.existsSync(path.join(dir, 'profile.md'))).toBe(false);
+  });
+
+  test('should restore settings and persona.md after an import, never removing persona.md', () => {
+    fs.writeFileSync(path.join(dir, 'persona.md'), 'Calm engineer.\n');
+    takeSnapshot(root, { reason: 'import', now: JOB });
+    fs.writeFileSync(
+      path.join(dir, 'personalization.json'),
+      '{"persona":"Cat"}\n'
+    );
+    fs.writeFileSync(path.join(dir, 'persona.md'), 'Cat\n');
+
+    undoLast(root, { now: LATER });
+
+    expect(fs.existsSync(path.join(dir, 'personalization.json'))).toBe(false);
+    expect(fs.readFileSync(path.join(dir, 'persona.md'), 'utf-8')).toBe(
+      'Calm engineer.\n'
+    );
+
+    fs.rmSync(path.join(dir, 'persona.md'));
+    takeSnapshot(root, {
+      reason: 'import',
+      now: new Date(LATER.getTime() + 5000),
+    });
+    fs.writeFileSync(path.join(dir, 'persona.md'), 'Written later.\n');
+    undoLast(root, { now: new Date(LATER.getTime() + 9000) });
+
+    expect(fs.readFileSync(path.join(dir, 'persona.md'), 'utf-8')).toBe(
+      'Written later.\n'
+    );
+  });
+
+  test('should change only notes when undoing an extraction', () => {
+    takeSnapshot(root, { reason: 'extract', now: JOB });
+    fs.writeFileSync(path.join(dir, 'profile.md'), '- profile\n');
+
+    undoLast(root, { now: LATER });
+
+    expect(fs.existsSync(path.join(dir, 'profile.md'))).toBe(true);
   });
 
   test('should restore the instructions only for an import', () => {

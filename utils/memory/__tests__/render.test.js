@@ -327,6 +327,28 @@ describe('local files', () => {
       expect(result).toEqual({ created: [], updated: [], warnings: [] });
     });
 
+    test('should apply memory/persona.md and render it', () => {
+      initLocal(root);
+      fs.writeFileSync(path.join(dir, 'persona.md'), 'A calm engineer.\n');
+
+      const result = initLocal(root);
+
+      expect(result.updated).toEqual([
+        'memory/personalization.json (from memory/persona.md)',
+        AGENTS_LOCAL_FILE,
+      ]);
+      expect(read(AGENTS_LOCAL_FILE)).toContain('- Persona: A calm engineer.');
+    });
+
+    test('should pass on a persona.md it could not apply', () => {
+      initLocal(root);
+      fs.writeFileSync(path.join(dir, 'persona.md'), 'x'.repeat(2000));
+
+      expect(initLocal(root).warnings[0]).toMatch(
+        /persona\.md was not applied/
+      );
+    });
+
     test('should add the import to a CLAUDE.local.md that lacks it', () => {
       fs.writeFileSync(path.join(root, CLAUDE_LOCAL_FILE), 'My notes.\n');
 

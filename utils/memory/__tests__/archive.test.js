@@ -792,6 +792,43 @@ describe('planImport and applyImport', () => {
     expect(result.snapshot).not.toBeNull();
   });
 
+  test('should replace memory/persona.md with the imported persona', () => {
+    initLocal(source);
+    writePersonalization(memoryDir(source), { persona: 'Imported cat.' });
+    initLocal(target);
+    fs.writeFileSync(
+      path.join(memoryDir(target), 'persona.md'),
+      '<!-- empty -->\n'
+    );
+    const archive = readArchive(exportAll({ parts: ['personalization'] }).file);
+    const p = planImport(target, archive, { include: null, replace: false });
+
+    applyImport(target, archive, p, { now: NOW, detail: 'x' });
+
+    expect(
+      fs.readFileSync(path.join(memoryDir(target), 'persona.md'), 'utf-8')
+    ).toBe('Imported cat.\n');
+  });
+
+  test('should leave memory/persona.md alone when the persona is not imported', () => {
+    initLocal(source);
+    writePersonalization(memoryDir(source), { tone: 'calm' });
+    initLocal(target);
+    writePersonalization(memoryDir(target), { persona: 'Mine.' });
+    fs.writeFileSync(
+      path.join(memoryDir(target), 'persona.md'),
+      'Mine, edited.\n'
+    );
+    const archive = readArchive(exportAll({ parts: ['personalization'] }).file);
+    const p = planImport(target, archive, { include: null, replace: false });
+
+    applyImport(target, archive, p, { now: NOW, detail: 'x' });
+
+    expect(
+      fs.readFileSync(path.join(memoryDir(target), 'persona.md'), 'utf-8')
+    ).toBe('Mine, edited.\n');
+  });
+
   test('should say when the instructions are already the same', () => {
     seedSource();
     fs.mkdirSync(target, { recursive: true });

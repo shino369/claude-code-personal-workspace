@@ -24,6 +24,8 @@ import { refreshAfterWrite } from './context.js';
 import {
   normalizePersonalization,
   readPersonalization,
+  storedPersona,
+  syncPersonaFile,
   writePersonalization,
 } from './personalize.js';
 import {
@@ -740,7 +742,12 @@ export function applyImport(
     fs.rmSync(path.join(dir, CACHE_DIR), { recursive: true, force: true });
   }
   for (const input of notes) addNote(dir, input, { now, merge: false });
-  if (settings) writePersonalization(dir, settings.settings);
+  if (settings) {
+    const before = storedPersona(dir);
+    const written = writePersonalization(dir, settings.settings);
+    // memory/persona.md follows the imported persona, so init keeps it.
+    if (written.persona !== before) syncPersonaFile(dir, written.persona);
+  }
   if (instructions !== null) {
     const file = path.join(rootDir, AGENTS_LOCAL_FILE);
     const current = readIfExists(file);

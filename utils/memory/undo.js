@@ -7,9 +7,10 @@
  * job, so the log becomes the snapshot's log plus every later op except the
  * job's own (they carry the job's time) and ops on notes the job created.
  * When the job replaced the log (`import --replace`), later ops cannot be
- * kept and are counted as lost. The settings and the profile are put back
- * as they were; AGENTS.local.md only for an import (the only job that
- * changes it). The state before the undo is kept as an `undo` snapshot,
+ * kept and are counted as lost. Only the files the job could change are put
+ * back: for an import the settings, memory/persona.md, and AGENTS.local.md;
+ * for a consolidation the profile; an extraction changes notes only. The
+ * state before the undo is kept as an `undo` snapshot,
  * which undo itself never picks.
  */
 import fs from 'fs';
@@ -34,11 +35,19 @@ import {
   parseLog,
 } from './store.js';
 
-/** Files put back as they were (removed when the job created them). */
-const RESTORED = [
-  `${MEMORY_DIR}/personalization.json`,
-  `${MEMORY_DIR}/profile.md`,
-];
+/**
+ * The files each job may change, put back as they were. A file the job
+ * created is removed, except the user's own (AGENTS.local.md, persona.md).
+ */
+const RESTORED = {
+  import: [
+    `${MEMORY_DIR}/personalization.json`,
+    `${MEMORY_DIR}/persona.md`,
+    AGENTS_LOCAL_FILE,
+  ],
+  consolidate: [`${MEMORY_DIR}/profile.md`],
+};
+const NEVER_REMOVED = [AGENTS_LOCAL_FILE, `${MEMORY_DIR}/persona.md`];
 const JOBS = {
   extract: 'extraction',
   consolidate: 'consolidation',
@@ -109,9 +118,8 @@ export function undoLast(rootDir, { now = new Date(), dryRun = false } = {}) {
         return plan && { ...plan, backup: null, warnings: [] };
       const from = snapshotDir(rootDir, plan.snapshot.id);
       const files =
-        plan.snapshot.reason === 'import'
-          ? [...RESTORED, AGENTS_LOCAL_FILE]
-          : RESTORED;
+        RESTORED[/** @type {keyof typeof RESTORED} */ (plan.snapshot.reason)] ??
+        [];
       // Read what to put back before the backup snapshot may prune old ones.
       const restore = files.map((file) => ({
         file,
@@ -128,7 +136,9 @@ export function undoLast(rootDir, { now = new Date(), dryRun = false } = {}) {
       for (const { file, content } of restore) {
         const target = path.join(rootDir, file);
         if (content !== null) fs.writeFileSync(target, content);
-        else if (file !== AGENTS_LOCAL_FILE) fs.rmSync(target, { force: true });
+        else if (!NEVER_REMOVED.includes(file)) {
+          fs.rmSync(target, { force: true });
+        }
       }
       fs.rmSync(path.join(dir, CACHE_DIR, NOTES_CACHE_FILE), { force: true });
       markUndone(rootDir, plan.snapshot.id, now);

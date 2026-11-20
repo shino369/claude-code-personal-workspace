@@ -829,6 +829,22 @@ describe('personalize --persona-file', () => {
     );
   });
 
+  test('should keep memory/persona.md in step when the persona changes', () => {
+    run(['init']);
+    const kept = path.join(dir, 'persona.md');
+    fs.writeFileSync(kept, 'Old persona.\n');
+    run(['init']);
+
+    run(['personalize', '--tone', 'calm']);
+    expect(fs.readFileSync(kept, 'utf-8')).toBe('Old persona.\n');
+    run(['personalize', '--persona', 'A new persona.']);
+    expect(fs.readFileSync(kept, 'utf-8')).toBe('A new persona.\n');
+    run(['personalize', '--reset']);
+
+    expect(fs.readFileSync(kept, 'utf-8')).toMatch(/^<!-- No persona/);
+    expect(readPersonalization(dir)).toEqual({});
+  });
+
   test('should refuse --persona with --persona-file', () => {
     const file = personaFile('x');
 

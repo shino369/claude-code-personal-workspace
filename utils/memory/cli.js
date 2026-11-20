@@ -47,6 +47,8 @@ import {
   listPresets,
   personaFromMarkdown,
   readPersonalization,
+  storedPersona,
+  syncPersonaFile,
   readPreset,
   renderPersonalization,
   writePersonalization,
@@ -93,7 +95,8 @@ export const HELP = `Usage: pnpm memory [command] [options]
 Status
   status                        (the default) Notes, core block size, personalization,
                                 saving on/off, warnings
-  init                          Create memory/, AGENTS.local.md, CLAUDE.local.md (idempotent)
+  init                          Create memory/, AGENTS.local.md, CLAUDE.local.md (idempotent);
+                                applies memory/persona.md when you keep one
 
 Save and change
   add "<text>" --scope user|machine|repo --type preference|fact|howto|episode
@@ -150,7 +153,10 @@ Settings
                                 flags, shows the settings. --presets lists the presets;
                                 an empty value clears a field. --persona-file reads the
                                 persona from markdown (comments and headings marks
-                                dropped; the same 1,500-character limit)
+                                dropped; the same 1,500-character limit). Keep the
+                                persona in memory/persona.md instead and pnpm memory init
+                                (or workspace:setup) applies your edits; persona changes
+                                here and by import rewrite it
   set [--extract-model <model>|default] [--budget <characters>|default]
                                 Extraction model and core block budget
   off [--session] · on [--session]
@@ -1190,7 +1196,9 @@ export const COMMANDS = {
           : value;
       } else settings[key] = value;
     }
+    const before = storedPersona(dir);
     const written = writePersonalization(dir, settings);
+    if (written.persona !== before) syncPersonaFile(dir, written.persona);
     const warnings = refreshAfterWrite(deps.rootDir);
     output(
       deps,

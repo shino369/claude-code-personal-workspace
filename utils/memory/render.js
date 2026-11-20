@@ -15,7 +15,12 @@ import path from 'path';
 import { readIfExists, writeFileAtomic } from '../task/store.js';
 import { ROOT_DIR } from '../workspace-config.js';
 import { DEFAULT_CONFIG, readConfig } from './config.js';
-import { readPersonalization, renderPersonalization } from './personalize.js';
+import {
+  PERSONA_FILE,
+  applyPersonaFile,
+  readPersonalization,
+  renderPersonalization,
+} from './personalize.js';
 import { MemoryError, loadNotes, memoryDir } from './store.js';
 
 export const AGENTS_LOCAL_FILE = 'AGENTS.local.md';
@@ -319,8 +324,9 @@ export function renderLocal(rootDir) {
 
 /**
  * Create what memory needs in a checkout: memory/, AGENTS.local.md (from
- * the template), and CLAUDE.local.md importing it. Idempotent; never
- * touches the user's instructions.
+ * the template), and CLAUDE.local.md importing it, and apply
+ * memory/persona.md when the user keeps one. Idempotent; never touches the
+ * user's instructions.
  *
  * @param {string} rootDir
  * @returns {{ created: string[], updated: string[], warnings: string[] }}
@@ -335,8 +341,17 @@ export function initLocal(rootDir) {
     fs.mkdirSync(dir, { recursive: true });
     created.push('memory/');
   }
+  const persona = applyPersonaFile(dir);
+  if (persona.changed) {
+    updated.push(`memory/personalization.json (from memory/${PERSONA_FILE})`);
+  }
   const agentsExisted = fs.existsSync(path.join(rootDir, AGENTS_LOCAL_FILE));
-  const { changed, warnings } = renderLocal(rootDir);
+  const rendered = renderLocal(rootDir);
+  const { changed } = rendered;
+  const warnings = [
+    ...(persona.warning ? [persona.warning] : []),
+    ...rendered.warnings,
+  ];
   if (!agentsExisted) created.push(AGENTS_LOCAL_FILE);
   else if (changed) updated.push(AGENTS_LOCAL_FILE);
   const claudeFile = path.join(rootDir, CLAUDE_LOCAL_FILE);

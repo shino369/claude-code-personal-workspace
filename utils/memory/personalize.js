@@ -15,6 +15,15 @@ import { ROOT_DIR } from '../workspace-config.js';
 import { MemoryError } from './store.js';
 
 export const PERSONALIZATION_FILE = 'personalization.json';
+/**
+ * memory/persona.md: the persona in markdown, when the user keeps one.
+ * `pnpm memory init` (and workspace:setup) apply it; any other persona
+ * change (personalize, import) rewrites it, so init never brings back an
+ * old persona.
+ */
+export const PERSONA_FILE = 'persona.md';
+export const PERSONA_PLACEHOLDER =
+  '<!-- No persona. Write one here in markdown, then run pnpm memory init (or pnpm workspace:setup). -->\n';
 export const PRESETS_DIR = path.join(
   ROOT_DIR,
   'templates',
@@ -254,4 +263,62 @@ export function personaFromMarkdown(markdown) {
     .map((line) => line.trim().replace(/^#{1,6}\s+/, ''))
     .filter(Boolean)
     .join('\n');
+}
+
+/**
+ * The stored persona, or undefined (also when the settings are broken).
+ *
+ * @param {string} dir the memory directory
+ */
+export function storedPersona(dir) {
+  try {
+    return readPersonalization(dir).persona;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Rewrite memory/persona.md, when the user keeps one, to hold `persona` (a
+ * placeholder when there is none). Called when the stored persona changed.
+ *
+ * @param {string} dir the memory directory
+ * @param {string | undefined} persona
+ * @returns {boolean} whether the file changed
+ */
+export function syncPersonaFile(dir, persona) {
+  const file = path.join(dir, PERSONA_FILE);
+  if (!fs.existsSync(file)) return false;
+  const content = persona ? `${persona}\n` : PERSONA_PLACEHOLDER;
+  if (readIfExists(file) === content) return false;
+  writeFileAtomic(file, content);
+  return true;
+}
+
+/**
+ * Apply memory/persona.md to the stored settings (init). A file without
+ * persona text changes nothing; settings the checks refuse come back as a
+ * warning and are not applied.
+ *
+ * @param {string} dir the memory directory
+ * @returns {{ changed: boolean, warning: string | null }}
+ */
+export function applyPersonaFile(dir) {
+  const none = { changed: false, warning: null };
+  const markdown = readIfExists(path.join(dir, PERSONA_FILE));
+  if (markdown === null) return none;
+  const persona = personaFromMarkdown(markdown);
+  if (!persona) return none;
+  try {
+    const current = readPersonalization(dir);
+    if (current.persona === persona) return none;
+    writePersonalization(dir, { ...current, persona });
+    return { changed: true, warning: null };
+  } catch (error) {
+    if (!(error instanceof MemoryError)) throw error;
+    return {
+      changed: false,
+      warning: `memory/${PERSONA_FILE} was not applied: ${error.message}`,
+    };
+  }
 }

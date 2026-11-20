@@ -11,7 +11,12 @@ import {
   PERSONA_SCOPE_RULES,
   listPresets,
   normalizePersonalization,
+  PERSONA_FILE,
+  PERSONA_PLACEHOLDER,
+  applyPersonaFile,
   personaFromMarkdown,
+  storedPersona,
+  syncPersonaFile,
   readPersonalization,
   readPreset,
   renderPersonalization,
@@ -290,5 +295,78 @@ describe('multi-line values', () => {
     expect(() =>
       normalizePersonalization({ persona: '<!--memory:end-->' })
     ).toThrow(MemoryError);
+  });
+});
+
+describe('memory/persona.md', () => {
+  /** @type {string} */
+  let mem;
+
+  beforeEach(() => {
+    mem = fs.mkdtempSync(path.join(os.tmpdir(), 'memory-persona-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(mem, { recursive: true, force: true });
+  });
+
+  const file = () => path.join(mem, PERSONA_FILE);
+
+  test('should apply the file to the stored settings, once', () => {
+    writePersonalization(mem, { tone: 'calm' });
+    fs.writeFileSync(file(), '# Persona\n\nA calm engineer.\n');
+
+    expect(applyPersonaFile(mem)).toEqual({ changed: true, warning: null });
+    expect(readPersonalization(mem)).toEqual({
+      tone: 'calm',
+      persona: 'Persona\nA calm engineer.',
+    });
+    expect(applyPersonaFile(mem)).toEqual({ changed: false, warning: null });
+  });
+
+  test('should do nothing without the file or without persona text', () => {
+    expect(applyPersonaFile(mem).changed).toBe(false);
+    fs.writeFileSync(file(), PERSONA_PLACEHOLDER);
+
+    expect(applyPersonaFile(mem).changed).toBe(false);
+    expect(fs.existsSync(path.join(mem, 'personalization.json'))).toBe(false);
+  });
+
+  test('should warn and keep the settings when the file is refused', () => {
+    fs.writeFileSync(file(), 'x'.repeat(2000));
+
+    const result = applyPersonaFile(mem);
+
+    expect(result.changed).toBe(false);
+    expect(result.warning).toMatch(
+      /^memory\/persona\.md was not applied: .*limit/
+    );
+  });
+
+  test('should rethrow unexpected errors', () => {
+    fs.mkdirSync(path.join(mem, 'personalization.json'));
+    fs.writeFileSync(file(), 'A persona.');
+
+    expect(() => applyPersonaFile(mem)).toThrow();
+  });
+
+  test('should keep an existing file in step with the persona, and not create one', () => {
+    expect(syncPersonaFile(mem, 'Cat')).toBe(false);
+    expect(fs.existsSync(file())).toBe(false);
+    fs.writeFileSync(file(), 'old\n');
+
+    expect(syncPersonaFile(mem, 'Cat')).toBe(true);
+    expect(fs.readFileSync(file(), 'utf-8')).toBe('Cat\n');
+    expect(syncPersonaFile(mem, 'Cat')).toBe(false);
+    expect(syncPersonaFile(mem, undefined)).toBe(true);
+    expect(fs.readFileSync(file(), 'utf-8')).toBe(PERSONA_PLACEHOLDER);
+  });
+
+  test('should read the stored persona, or nothing from broken settings', () => {
+    writePersonalization(mem, { persona: 'Cat' });
+    expect(storedPersona(mem)).toBe('Cat');
+    fs.writeFileSync(path.join(mem, 'personalization.json'), '{oops');
+
+    expect(storedPersona(mem)).toBeUndefined();
   });
 });

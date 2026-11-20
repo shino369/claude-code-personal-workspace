@@ -14,6 +14,7 @@ export const SNAPSHOTS_DIR = 'snapshots';
 export const SNAPSHOT_FILES = [
   `${MEMORY_DIR}/log.jsonl`,
   `${MEMORY_DIR}/personalization.json`,
+  `${MEMORY_DIR}/persona.md`,
   `${MEMORY_DIR}/profile.md`,
   'AGENTS.local.md',
 ];
