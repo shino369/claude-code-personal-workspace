@@ -321,7 +321,9 @@ commands, the last verify to have passed.
   NOTES "Open". That is deliberate: reviews always find something, and unbounded rounds burn time
   on style.
 - **Reminders fire once.** If an agent cannot run subagents, it says so and stops. The loop never
-  traps it.
+  traps it. While a round is open and a `reviewer` or `verifier` subagent still runs in the
+  background (the Stop input's `background_tasks`), the stop goes through silently and the reminder
+  is kept: the agent's completion notice starts a new turn, and the stop after it reminds as usual.
 - **The review starts only when every step is done.** `pnpm task review` refuses otherwise (unless
   `--force`), and `pnpm loop --review` stops with `steps-open`.
 - **Severity only goes down in triage.** `pnpm loop --review` rejects a triage that raises one; when

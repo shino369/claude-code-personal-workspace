@@ -34,7 +34,21 @@ describe('task_loop processHookInput', () => {
     expect(run).toHaveBeenCalledWith({
       deps: expect.objectContaining({ rootDir: root }),
       session: null,
+      pendingAgents: [],
     });
+  });
+
+  test('should pass the running reviewer and verifier subagents to the loop', () => {
+    const run = vi.fn(() => ({ action: /** @type {const} */ ('skip') }));
+    const background_tasks = [
+      { id: 'a1', type: 'subagent', status: 'running', agent_type: 'reviewer' },
+      { id: 'a2', type: 'subagent', status: 'running', agent_type: 'Explore' },
+      { id: 'b1', type: 'shell', status: 'running', command: 'sleep 9' },
+    ];
+    processHookInput({ background_tasks }, { rootDir: root, run });
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ pendingAgents: ['a1'] })
+    );
   });
 
   test("should pass the hook's session id to the loop", () => {

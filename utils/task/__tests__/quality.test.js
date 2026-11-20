@@ -4,6 +4,7 @@ import {
   decideQuality,
   formatQuality,
   freshQuality,
+  pendingReviewAgents,
   toFix,
   validateQuality,
 } from '../quality.js';
@@ -202,6 +203,50 @@ describe('toFix and countFindings', () => {
   });
 });
 
+describe('pendingReviewAgents', () => {
+  /** @param {Record<string, unknown>} [overrides] */
+  const task = (overrides = {}) => ({
+    id: 'a1',
+    type: 'subagent',
+    status: 'running',
+    agent_type: 'reviewer',
+    description: 'Review round 1',
+    ...overrides,
+  });
+
+  test('should return the ids of running reviewer and verifier subagents', () => {
+    const tasks = [
+      task(),
+      task({ id: 'a2', agent_type: 'verifier' }),
+      task({ id: 'a3', status: 'pending' }),
+    ];
+    expect(pendingReviewAgents(tasks)).toEqual(['a1', 'a2', 'a3']);
+  });
+
+  test('should ignore other agents, shells, and finished or unknown statuses', () => {
+    const tasks = [
+      task({ id: 'b1', agent_type: 'Explore' }),
+      task({ id: 'b2', type: 'shell', agent_type: undefined }),
+      task({ id: 'b3', type: 'shell' }),
+      task({ id: 'b4', status: 'completed' }),
+      task({ id: 'b5', status: 'killed' }),
+      task({ id: 'b6', status: undefined }),
+    ];
+    expect(pendingReviewAgents(tasks)).toEqual([]);
+  });
+
+  test('should find none when the field is missing or malformed', () => {
+    for (const value of [undefined, null, 'running', 3, { 0: task() }]) {
+      expect(pendingReviewAgents(value)).toEqual([]);
+    }
+  });
+
+  test('should skip malformed entries and use a placeholder for a missing id', () => {
+    const tasks = [null, 'reviewer', [task()], task({ id: undefined })];
+    expect(pendingReviewAgents(tasks)).toEqual(['?']);
+  });
+});
+
 describe('decideQuality', () => {
   /**
    * @param {Partial<import('../quality.js').Quality>} [q]
@@ -273,6 +318,38 @@ describe('decideQuality', () => {
     expect(result.reason).toContain(
       'Review round 1/2 for demo is open but not recorded.'
     );
+  });
+
+  test('should stay silent while a review agent runs for the open round', () => {
+    const state = code({ phase: 'review', reviewRounds: 1 });
+    const result = decideQuality({
+      state,
+      fingerprint: 'fp2',
+      pendingAgents: ['a1'],
+    });
+    expect(result).toEqual({ action: 'allow', quality: state.quality });
+  });
+
+  test('should keep the reminder for the stop after the review agents finish', () => {
+    const state = code({ phase: 'review', reviewRounds: 1 });
+    const waited = decideQuality({
+      state,
+      fingerprint: 'fp2',
+      pendingAgents: ['a1'],
+    });
+    const result = decide({ ...state, quality: waited.quality });
+    expect(result.action).toBe('block');
+    expect(result.reason).toContain('is open but not recorded');
+  });
+
+  test('should ignore running review agents when no round is open', () => {
+    const result = decideQuality({
+      state: code(),
+      fingerprint: 'fp2',
+      pendingAgents: ['a1'],
+    });
+    expect(result.action).toBe('block');
+    expect(result.reason).toContain('run review round 1/2');
   });
 
   test('should still remind about an open round when there is no fingerprint', () => {

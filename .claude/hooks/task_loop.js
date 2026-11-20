@@ -15,17 +15,22 @@
  * Run with `--reset` on UserPromptSubmit: a prompt the user types starts the
  * count over. Stop events never reset it (see decideInner for why).
  *
+ * The quality loop's "open review round" reminder waits while the Stop
+ * input's `background_tasks` lists a running reviewer or verifier subagent
+ * (see pendingReviewAgents): its completion notice leads to another stop.
+ *
  * Fails open: any error means no output and exit 0, so a broken hook never
  * traps a session.
  */
 import { runIfMain } from '#utils/module-runner.js';
 import { defaultDeps } from '#utils/task/deps.js';
 import { resetInnerLoop, runInnerLoop } from '#utils/task/loop.js';
+import { pendingReviewAgents } from '#utils/task/quality.js';
 import { touchSession } from '#utils/task/store.js';
 import { ROOT_DIR } from '#utils/workspace-config.js';
 
 /**
- * @typedef {{ prompt?: unknown, session_id?: string }} HookInput
+ * @typedef {{ prompt?: unknown, session_id?: string, background_tasks?: unknown }} HookInput
  * @typedef {{ decision?: 'block', reason?: string, systemMessage?: string }} HookOutput
  * @typedef {Partial<import('#utils/task/deps.js').Deps>} DepsOverrides
  */
@@ -46,6 +51,7 @@ export function processHookInput(
     decision = run({
       deps: defaultDeps({ rootDir, ...deps }),
       session: input?.session_id ?? null,
+      pendingAgents: pendingReviewAgents(input?.background_tasks),
     });
   } catch {
     return null;
