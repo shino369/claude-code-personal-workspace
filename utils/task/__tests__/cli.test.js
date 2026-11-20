@@ -22,6 +22,7 @@ import {
   updateState,
   writeSession,
 } from '../store.js';
+import { FOLDER_BASE } from '../review.js';
 import { DEFAULT_CONFIG, writeConfig } from '../../memory/config.js';
 import { loadNotes, memoryDir } from '../../memory/store.js';
 
@@ -1177,6 +1178,45 @@ describe('review', () => {
     );
     expect(brief).toContain(`- tasks/${NAME}/scripts/gen.sh`);
     expect(brief).not.toContain('skills-lock.json');
+  });
+
+  test('should review the task folder with --folder and keep later rounds on it', () => {
+    newTask(['--verify', 'pnpm test']);
+    finishSteps();
+    fs.mkdirSync(path.join(taskDir(), 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(taskDir(), 'scripts', 'gen.py'), 'print(1)\n');
+    run(['verify']);
+    /** @type {import('../review.js').RunGit} */
+    const runGit = (args) =>
+      args[0] === 'merge-base' ? 'abc' : args[0] === 'diff' ? 'utils/x.js' : '';
+    const folder = {
+      base: null,
+      since: null,
+      files: [`tasks/${NAME}/scripts/gen.py`],
+    };
+
+    const first = JSON.parse(
+      run(['review', '--folder', '--json'], { runGit }).out
+    );
+    run(['review', 'record'], { runGit });
+    const second = JSON.parse(run(['review', '--json'], { runGit }).out);
+
+    expect(first.scope).toEqual(folder);
+    expect(second).toMatchObject({ round: 2, scope: folder });
+    expect(state().quality?.base).toBe(FOLDER_BASE);
+  });
+
+  test('should refuse --folder with --base, or for a folder without code', () => {
+    newTask(['--verify', 'pnpm test']);
+    finishSteps();
+    run(['verify']);
+
+    expect(() => run(['review', '--folder', '--base', 'main'])).toThrow(
+      /--folder or --base, not both/
+    );
+    expect(() => run(['review', '--folder'])).toThrow(
+      `Nothing to review for ${NAME}: its task folder has no code`
+    );
   });
 
   /**

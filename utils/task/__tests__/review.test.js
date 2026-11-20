@@ -6,6 +6,7 @@ import { vi } from 'vitest';
 import { freshQuality } from '../quality.js';
 import {
   FINDINGS_HEADER,
+  FOLDER_BASE,
   SEVERITY_RUBRIC,
   defaultRunGit,
   findingsTemplate,
@@ -20,6 +21,7 @@ import {
   reviewBase,
   reviewFiles,
   reviewScope,
+  roundBase,
   scopeRoot,
   splitRow,
   taskFolderNotes,
@@ -178,6 +180,22 @@ describe('reviewBase', () => {
     expect(reviewBase({ quality, taskDir: taskDir() })).toBeNull();
   });
 
+  test('should stay on the task folder once a round chose it with --folder', () => {
+    const stored = { ...freshQuality(), reviewRounds: 1, base: FOLDER_BASE };
+    expect(
+      reviewBase({ quality: { ...stored, phase: 'fix' }, taskDir: taskDir() })
+    ).toBeNull();
+    expect(
+      reviewBase({
+        quality: { ...stored, phase: 'review' },
+        taskDir: taskDir(),
+      })
+    ).toBeNull();
+    expect(reviewBase({ quality: stored, taskDir: taskDir(), base: 'x' })).toBe(
+      'x'
+    );
+  });
+
   test('should review a page in docs/ from the task folder, but not a design doc', () => {
     touch(taskDir(), 'docs/design.md', 'docs/shot.png', 'data.json');
     expect(reviewBase({ quality: freshQuality(), taskDir: taskDir() })).toBe(
@@ -277,6 +295,28 @@ describe('taskReviewScope', () => {
     });
   });
 
+  test('should keep the task folder that --folder chose, beside git changes', () => {
+    const taskDir = path.join(root, 'tasks', NAME);
+    touch(taskDir, 'scripts/clean.py');
+    const runGit = vi.fn((/** @type {string[]} */ args) =>
+      args[0] === 'merge-base' ? 'abc' : args[0] === 'diff' ? 'utils/x.js' : ''
+    );
+    const state = codeState({
+      quality: {
+        ...freshQuality(),
+        phase: 'complete',
+        reviewRounds: 1,
+        base: FOLDER_BASE,
+      },
+    });
+
+    expect(taskReviewScope({ rootDir: root, taskDir, state, runGit })).toEqual({
+      base: null,
+      since: null,
+      files: [`tasks/${NAME}/scripts/clean.py`],
+    });
+  });
+
   test('should keep an empty git scope when the task folder has no code', () => {
     const taskDir = path.join(root, 'tasks', NAME);
     const runGit = vi.fn((/** @type {string[]} */ args) =>
@@ -304,6 +344,26 @@ describe('taskReviewScope', () => {
           args[0] === 'diff' || args[0] === 'ls-files' ? '' : runGit(),
       }).files
     ).toEqual([]);
+  });
+});
+
+describe('roundBase', () => {
+  const folderScope = { base: null, since: null, files: ['a.js'] };
+
+  test("should record a git scope's base as it is", () => {
+    const scope = { base: 'main', since: 'abc', files: [] };
+    expect(roundBase(scope, freshQuality(), true)).toBe('main');
+  });
+
+  test('should record a folder chosen now or by an earlier round', () => {
+    expect(roundBase(folderScope, freshQuality(), true)).toBe(FOLDER_BASE);
+    expect(
+      roundBase(folderScope, { ...freshQuality(), base: FOLDER_BASE })
+    ).toBe(FOLDER_BASE);
+  });
+
+  test('should leave an automatic folder scope unrecorded', () => {
+    expect(roundBase(folderScope, freshQuality())).toBeNull();
   });
 });
 

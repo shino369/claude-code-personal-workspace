@@ -199,7 +199,7 @@ this order:
    refuses otherwise; `--force` for an early review), run
    `pnpm task review`. It writes `reviews/BRIEF_<task>-r<N>.md` and an empty findings table
    `reviews/REVIEW_<task>-r<N>.md`. The scope is the task's git changes or, when the task keeps
-   its code in its folder, that code in any language (`docs/` included; `docs/harness.md`). A
+   its code in its folder, that code in any language, `docs/` included (see `docs/harness.md`). A
    **different, fresh** agent reviews from the brief only (role:
    `.claude/agents/reviewer.md`; in Claude Code the `reviewer` subagent, elsewhere
    `pnpm agent ask --agent <other> "…"`). Never review your own code yourself: you know why you

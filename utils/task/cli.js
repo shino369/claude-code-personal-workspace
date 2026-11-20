@@ -77,6 +77,7 @@ import {
   recordFindings,
   reviewFiles,
   scopeRoot,
+  roundBase,
   taskFolderNotes,
   taskReviewScope,
 } from './review.js';
@@ -131,13 +132,14 @@ Work
   set --loop on|off [--loop-max N]
                                 Inner loop (Claude Stop hook): keep working until the
                                 fast verify passes, at most N times (default 5)
-  review [--base <ref>] [--force]
+  review [--base <ref> | --folder] [--force]
                                 Code tasks: open the next review round (max 2) and write the
                                 brief + findings file for clean-context reviewers. Scope: the
                                 task's code (no git), else git changes since --base (default:
                                 the default branch as fetched, e.g. origin/main, else main;
                                 for work committed on it, the commit the task started from;
-                                an explicit --base is used as given)
+                                an explicit --base is used as given). --folder: the task
+                                folder's code, this round and the next
   review record [file]          Read the triaged findings table; CONFIRMED must-fix/high
                                 findings become fix: steps
   rm <path>…                    Delete files or folders inside this workspace or the task's
@@ -190,6 +192,7 @@ const BOOLEAN_FLAGS = {
   '--fast': 'fast',
   '--all': 'all',
   '--force': 'force',
+  '--folder': 'folder',
   '--fix': 'fix',
   '--no-check': 'noCheck',
   '--help': 'help',
@@ -205,7 +208,7 @@ const BOOLEAN_FLAGS = {
  *   repo?: string,
  *   step: string[], verify: string[], verifyFast: string[], learn: string[],
  *   json: boolean, fast: boolean, all: boolean, force: boolean, help: boolean,
- *   fix: boolean, noCheck: boolean,
+ *   fix: boolean, noCheck: boolean, folder: boolean,
  * }} Options
  * @typedef {import('./deps.js').Deps} Deps
  */
@@ -229,6 +232,7 @@ export function parseArgs(argv) {
     help: false,
     fix: false,
     noCheck: false,
+    folder: false,
   };
   const record = /** @type {Record<string, unknown>} */ (options);
 
@@ -1140,7 +1144,7 @@ export const COMMANDS = {
     if (sub === 'record') return recordReview(options, deps);
     if (sub !== undefined) {
       throw new Error(
-        'Usage: pnpm task review [--base <ref>] [--force] | pnpm task review record [file]'
+        'Usage: pnpm task review [--base <ref> | --folder] [--force] | pnpm task review record [file]'
       );
     }
     const name = pickTask(options, deps, { engage: true });
@@ -1150,16 +1154,29 @@ export const COMMANDS = {
         `${name} has no ${STATE_FILE}.\nFix: pnpm task init ${name} --verify "<test command>"`
       );
     }
+    if (options.folder && options.base !== undefined) {
+      throw new Error(
+        'Review the task folder or git changes: --folder or --base, not both.\nFix: pnpm task review --folder (the task folder) or pnpm task review --base <ref> (git changes)'
+      );
+    }
     const quality = task.state.quality ?? freshQuality();
+    const taskRel = path
+      .relative(deps.rootDir, task.dir)
+      .split(path.sep)
+      .join('/');
     const scope = taskReviewScope({
       rootDir: deps.rootDir,
       taskDir: task.dir,
       state: task.state,
-      base: options.base,
+      base: options.folder ? null : options.base,
       runGit: deps.runGit,
     });
     if (scope.files.length === 0 && quality.phase !== 'review') {
-      // A null base means task code, which is never empty: this is a git scope.
+      if (scope.base === null) {
+        throw new Error(
+          `Nothing to review for ${name}: its task folder has no code (${taskRel}/).\nFix: pnpm task review --base <ref> to review git changes instead`
+        );
+      }
       const noStart =
         task.state.startCommit === undefined && options.base === undefined
           ? ` ${name} has no recorded start commit (it predates them), so work committed on ${scope.base} itself cannot be found.`
@@ -1182,8 +1199,13 @@ export const COMMANDS = {
       (current) => {
         const result = openRound(current, {
           fingerprint: print,
-          // The base actually used (the start commit when the work is on main)
-          base: scope.base,
+          // The base actually used (the start commit when the work is on main;
+          // FOLDER_BASE when the folder was chosen)
+          base: roundBase(
+            scope,
+            current.quality ?? freshQuality(),
+            options.folder
+          ),
           force: options.force,
         });
         round = result.round;
@@ -1192,10 +1214,6 @@ export const COMMANDS = {
       },
       { now, agent }
     );
-    const taskRel = path
-      .relative(deps.rootDir, task.dir)
-      .split(path.sep)
-      .join('/');
     const files = reviewFiles(name, round);
     fs.mkdirSync(path.join(task.dir, 'reviews'), { recursive: true });
     fs.writeFileSync(

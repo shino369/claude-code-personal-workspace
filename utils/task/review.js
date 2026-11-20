@@ -29,6 +29,11 @@ import { relPosix } from '../paths.js';
 
 /** Fallback base when the repository has no `origin/HEAD`. */
 export const DEFAULT_BASE = 'main';
+/**
+ * The base a round records when `--folder` chose the task folder, so later
+ * rounds and the Stop hook stay on it. Never a git ref: refs cannot hold ':'.
+ */
+export const FOLDER_BASE = ':task-folder';
 export const STANDARDS = [
   'AGENTS.md',
   '.claude/rules/working-with-script.md',
@@ -134,14 +139,15 @@ const hasFolderCode = (taskDir) =>
   fs.existsSync(taskDir) && listReviewFiles(taskDir).some(isSourceFile);
 
 /**
- * The base a round reviews against: an open round keeps its own; otherwise
- * `--base`, else the git base an earlier round used (so the Stop hook and the
- * next round compare the same files), else the default branch for a task in
- * another repository, else none for a task with product code in its folder
- * (its folder is the scope; git is not used), else the default branch (see
- * `reviewScope` for where the changes are counted from).
+ * The base a round reviews against (null: the task folder, no git): an open
+ * round keeps its own; otherwise `--base` (null for `--folder`), else the
+ * base an earlier round recorded (so the Stop hook and the next round compare
+ * the same files; FOLDER_BASE is the folder), else the default branch for a
+ * task in another repository, else none for a task with product code in its
+ * folder (its folder is the scope; git is not used), else the default branch
+ * (see `reviewScope` for where the changes are counted from).
  *
- * @param {{ quality: import('./quality.js').Quality, taskDir: string, base?: string, defaultBase?: string, repo?: string | null }} options
+ * @param {{ quality: import('./quality.js').Quality, taskDir: string, base?: string | null, defaultBase?: string, repo?: string | null }} options
  * @returns {string | null}
  */
 export function reviewBase({
@@ -151,9 +157,10 @@ export function reviewBase({
   defaultBase = DEFAULT_BASE,
   repo = null,
 }) {
-  if (quality.phase === 'review') return quality.base ?? null;
+  const recorded = quality.base === FOLDER_BASE ? null : quality.base;
+  if (quality.phase === 'review') return recorded ?? null;
   if (base !== undefined) return base;
-  if (quality.base) return quality.base;
+  if (quality.base) return recorded ?? null;
   if (repo) return defaultBase;
   return hasProductCode(taskDir) ? null : defaultBase;
 }
@@ -244,11 +251,27 @@ export function scopeRoot(rootDir, state, scope) {
 }
 
 /**
- * The scope of a task's next (or open) round: `reviewBase`, then
- * `reviewScope`. An explicit `--base` is used as given; only the default base
- * falls back to the task's start commit.
+ * The base to record for a round over `scope`: a git scope's own base;
+ * FOLDER_BASE when the folder was chosen (`folder`: `--folder` now, or an
+ * earlier round's FOLDER_BASE); else null (the folder, chosen automatically,
+ * which the next round chooses again).
  *
- * @param {{ rootDir: string, taskDir: string, state: TaskState, base?: string, runGit?: RunGit }} options
+ * @param {Scope} scope
+ * @param {import('./quality.js').Quality} quality
+ * @param {boolean} [folder] `--folder` was given
+ * @returns {string | null}
+ */
+export function roundBase(scope, quality, folder = false) {
+  if (scope.base !== null) return scope.base;
+  return folder || quality.base === FOLDER_BASE ? FOLDER_BASE : null;
+}
+
+/**
+ * The scope of a task's next (or open) round: `reviewBase`, then
+ * `reviewScope`. An explicit `--base` is used as given (null: `--folder`);
+ * only the default base falls back to the task's start commit.
+ *
+ * @param {{ rootDir: string, taskDir: string, state: TaskState, base?: string | null, runGit?: RunGit }} options
  * @returns {Scope}
  */
 export function taskReviewScope({

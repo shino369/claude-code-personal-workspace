@@ -345,10 +345,14 @@ describe('lintOverrides', () => {
 });
 
 describe('runEslint', () => {
-  /** A workspace-like config: ignores tasks/, like the real one. */
+  /**
+   * A workspace-like config: ignores tasks/, like the real one. `.mjs`, so
+   * Node never guesses its module type from a package.json above the temp
+   * dir (MODULE_TYPELESS_PACKAGE_JSON under a Windows home).
+   */
   const config = (/** @type {string} */ level) =>
     fs.writeFileSync(
-      path.join(root, 'eslint.config.js'),
+      path.join(root, 'eslint.config.mjs'),
       `export default [{ ignores: ['**/tasks/**'] }, { files: ['**/*.js'], rules: { 'prefer-const': '${level}', 'no-undef': 'error' } }];\n`
     );
   const lint = (

@@ -341,14 +341,17 @@ plan ─▶ build test-first ─▶ e2e (if required) ─▶ review round N ─�
    beside a git scope). Never in a scope or that list: dot-folders, dependency and build folders
    (`node_modules`, `venv`, `dist`, `build`, `coverage`, …), file kinds outside the allowlist, and
    config named like credentials (`credentials.json`, `secrets.yaml`, a service-account key), which
-   a reviewer agent must not read.
+   a reviewer agent must not read. Code is reviewed whatever its name (`secrets.py`, `tokens.ts`):
+   a hardcoded key is found only by reading the code.
 
    Git changes count from the commit the task started from (recorded by `pnpm task new`, `init`,
    or `set --repo`) when that commit is in HEAD's history after the branch point, so work that was
    already on the branch (another task's) is not reviewed again, or when the work is on the
    default branch itself. Otherwise they count from the branch point with the default branch
    (`origin/HEAD` as last fetched, else `main`). An explicit `--base` is used as given
-   (`--base main` reviews the whole branch). An empty scope refuses to open a round.
+   (`--base main` reviews the whole branch). `--folder` reviews the task folder instead, and later
+   rounds stay on it (for an open task whose earlier round went to git; `pnpm task reopen` already
+   lets the next round choose again). An empty scope refuses to open a round.
 
 2. **Reviewer** (`.claude/agents/reviewer.md`): a fresh agent that works from the brief only. Each
    finding needs a concrete failure scenario: inputs or state → wrong result.
