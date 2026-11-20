@@ -10,7 +10,9 @@
  */
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { spawnSync } from 'child_process';
+import { main as harnessMain } from './harness/cli.js';
 import { initLocal } from './memory/render.js';
 import { mainCheckout } from './memory/repo.js';
 import { runIfMain } from './module-runner.js';
@@ -60,6 +62,10 @@ export const MEMORY_PATHS = ['AGENTS.local.md', 'CLAUDE.local.md', 'memory/'];
  *   checkSkills: typeof checkSkills,
  *   linkSkills: typeof linkSkills,
  *   tools: ToolsDeps,
+ *   harness: typeof harnessMain,
+ *   env: Record<string, string | undefined>,
+ *   homedir: () => string,
+ *   readFile: (p: string) => string,
  * }} Deps
  * @typedef {{
  *   scan: () => void,
@@ -486,6 +492,171 @@ export function stepTools(options, deps) {
 }
 
 /**
+ * Run `pnpm harness <command>` in-process and capture its log lines.
+ *
+ * @param {Deps} deps
+ * @param {string} command
+ * @returns {{ code: number, lines: string[] }}
+ */
+function runHarness(deps, command) {
+  /** @type {string[]} */
+  const lines = [];
+  const code = deps.harness({
+    argv: [command],
+    deps: { rootDir: deps.rootDir, log: (line) => lines.push(line) },
+  });
+  return { code, lines };
+}
+
+/**
+ * Keep every harness's generated config current (pnpm harness): setup writes
+ * it, check only compares.
+ *
+ * @param {Options} options
+ * @param {Deps} deps
+ * @returns {StepResult}
+ */
+export function stepHarness(options, deps) {
+  const { code, lines } = runHarness(deps, options.check ? 'check' : 'sync');
+  const problems = lines.filter((line) => line.startsWith('✗'));
+  if (options.check) {
+    if (code === 0) {
+      return {
+        id: 'harness',
+        status: 'ok',
+        detail: 'generated harness files match utils/harness/hooks.js',
+      };
+    }
+    const settingsOnly =
+      problems.length > 0 &&
+      problems.every((line) => line.includes('.claude/settings.json'));
+    return {
+      id: 'harness',
+      status: 'fail',
+      detail: problems.join('; ') || 'pnpm harness check failed',
+      fix: settingsOnly ? 'pnpm harness check' : 'pnpm harness sync',
+    };
+  }
+  if (code !== 0) {
+    return {
+      id: 'harness',
+      status: 'fail',
+      detail:
+        problems.join('; ') ||
+        '.claude/settings.json hooks differ from manifest',
+      fix: 'pnpm harness check',
+    };
+  }
+  const wrote = lines
+    .filter((line) => line.startsWith('Wrote '))
+    .map((line) => line.slice('Wrote '.length));
+  if (wrote.length === 0) {
+    return {
+      id: 'harness',
+      status: 'ok',
+      detail: 'generated harness files are up to date',
+    };
+  }
+  const hint = wrote.includes('.codex/hooks.json')
+    ? '; run /hooks in Codex to trust the changed hooks'
+    : '';
+  return {
+    id: 'harness',
+    status: 'done',
+    detail: `wrote ${wrote.join(', ')}${hint}`,
+  };
+}
+
+/**
+ * Whether Codex config text marks `root` as a trusted project: a
+ * `[projects."<root>"]` table holding `trust_level = "trusted"`. The text is
+ * only matched, never printed.
+ *
+ * @param {string} text
+ * @param {string} root
+ * @returns {boolean}
+ */
+export function codexTrustsProject(text, root) {
+  let inTable = false;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    const header =
+      /^\[\s*projects\s*\.\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)')\s*\]/.exec(line);
+    if (header) {
+      const name = header[2] ?? header[1].replace(/\\(.)/g, '$1');
+      inTable = name === root;
+    } else if (line.startsWith('[')) {
+      inTable = false;
+    } else if (inTable && /^trust_level\s*=\s*["']trusted["']/.test(line)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Per-agent hints for the generated config: Codex ignores `.codex/` in a
+ * project it does not trust, and DSH has no project config, so it must be
+ * started with the workspace patch. Only for agents on this machine.
+ *
+ * @param {Deps} deps
+ * @returns {StepResult[]}
+ */
+export function stepHarnessAgents(deps) {
+  /** @type {Set<string>} */
+  let installed;
+  try {
+    installed = new Set(
+      deps.tools
+        .registry()
+        .tools.filter((t) => t.ok)
+        .map((t) => t.name)
+    );
+  } catch {
+    return [];
+  }
+  /** @type {StepResult[]} */
+  const results = [];
+  if (installed.has('codex')) {
+    const home = deps.env.CODEX_HOME || path.join(deps.homedir(), '.codex');
+    let trusted = false;
+    try {
+      trusted = codexTrustsProject(
+        deps.readFile(path.join(home, 'config.toml')),
+        deps.rootDir
+      );
+    } catch {
+      // No readable config: the project is not trusted.
+    }
+    results.push(
+      trusted
+        ? {
+            id: 'harness-codex',
+            status: 'ok',
+            detail:
+              'this checkout is trusted in Codex; run /hooks to trust hooks',
+          }
+        : {
+            id: 'harness-codex',
+            status: 'warn',
+            detail:
+              'this checkout is not trusted in Codex, so it ignores .codex/ (hooks, rules, roles)',
+            fix: 'run codex in this folder and trust it, then run /hooks to trust the hooks',
+          }
+    );
+  }
+  if (installed.has('dsh')) {
+    results.push({
+      id: 'harness-dsh',
+      status: 'ok',
+      detail:
+        'start DSH with: dsh --patch .dsh/workspace.patch.yml (bridge plugin needed once: dsh plugin add @deepseek-ai/dsh-hooks-claude-code; not checkable yet)',
+    });
+  }
+  return results;
+}
+
+/**
  * Run every step in order. Links run before and after the skills install:
  * the first pass migrates legacy copies, the second repairs links.
  *
@@ -512,6 +683,7 @@ export async function runSteps(options, deps) {
   results.push(stepMemory(options, deps));
   results.push(stepBrowsers(options, deps));
   results.push(stepTools(options, deps));
+  results.push(stepHarness(options, deps), ...stepHarnessAgents(deps));
   return results;
 }
 
@@ -548,6 +720,10 @@ export async function main({ argv = process.argv.slice(2), deps = {} } = {}) {
     checkSkills,
     linkSkills,
     tools: setupTools(ROOT_DIR),
+    harness: harnessMain,
+    env: process.env,
+    homedir: os.homedir,
+    readFile: (p) => fs.readFileSync(p, 'utf-8'),
     ...deps,
   };
   const options = parseArgs(argv);
