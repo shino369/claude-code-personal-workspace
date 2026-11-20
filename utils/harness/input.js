@@ -22,7 +22,7 @@ export const TAIL_CHUNK_BYTES = 256 * 1024;
 
 /**
  * @typedef {typeof HARNESSES[number]} Harness
- * @typedef {{ kind: 'shell' | 'edit' | 'read' | 'other', name: string, command: string, files: string[] }} ToolEvent
+ * @typedef {{ kind: 'shell' | 'edit' | 'read' | 'other', name: string, command: string, files: string[], dir?: string }} ToolEvent
  */
 
 const SHELL_TOOLS = new Set(['Bash', 'bash', 'pwsh']);
@@ -35,9 +35,19 @@ const EDIT_TOOLS = new Set([
   'write',
 ]);
 const READ_TOOLS = new Set(['Read', 'read']);
+// Linear: `[^\n]*` cannot backtrack, and the trimming is done in code.
 const PATCH_HEADER_RE =
-  /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+?)\s*$/gm;
-const APPLY_PATCH_RE = /^\s*apply_patch\b/;
+  /^[ \t]*\*\*\* (?:Add File|Update File|Delete File|Move to): ([^\n]*)/gm;
+/**
+ * The shell invocations Codex treats as `apply_patch`
+ * (codex-rs/apply-patch/src/invocation.rs, `maybe_parse_apply_patch`):
+ * `apply_patch`/`applypatch` directly; inside `bash|zsh|sh -c|-lc`,
+ * `pwsh|powershell [-NoProfile] -Command`, or `cmd /c`; with an optional
+ * `cd <dir> &&` first (group 1 is that dir). Looser than Codex on quoting:
+ * a guard should over-detect.
+ */
+const APPLY_PATCH_RE =
+  /^\s*(?:(?:\S*[\\/])?(?:bash|zsh|sh|pwsh|powershell|cmd)(?:\.exe)?\s+(?:-NoProfile\s+)?(?:-lc|-c|-Command|\/c)\s+)?(?:['"]\s*)?(?:cd\s+("[^"]*"|'[^']*'|[^\s&;|'"]+)\s*&&\s*)?(?:apply_patch|applypatch)\b/i;
 
 /**
  * The harness named by `--harness`, else `claude`.
@@ -72,9 +82,10 @@ export function projectDir({ harness, env, rootDir }) {
  */
 export function patchFiles(text) {
   if (typeof text !== 'string') return [];
-  return [
-    ...new Set([...text.matchAll(PATCH_HEADER_RE)].map((match) => match[1])),
-  ];
+  const files = [...text.matchAll(PATCH_HEADER_RE)]
+    .map((match) => match[1].trim())
+    .filter(Boolean);
+  return [...new Set(files)];
 }
 
 /** @param {unknown} value */
@@ -95,15 +106,25 @@ export function toolEvent(input) {
   const command = Array.isArray(args.command)
     ? args.command.join(' ')
     : stringOrEmpty(args.command);
-  /** @param {ToolEvent['kind']} kind @param {string[]} [files] */
-  const event = (kind, files = []) => ({ kind, name, command, files });
+  /** @param {ToolEvent['kind']} kind @param {string[]} [files] @param {string} [dir] */
+  const event = (kind, files = [], dir) => ({
+    kind,
+    name,
+    command,
+    files,
+    ...(dir ? { dir } : {}),
+  });
   /** @param {unknown} file */
   const one = (file) => (typeof file === 'string' ? [file] : []);
 
   if (SHELL_TOOLS.has(name)) {
-    return APPLY_PATCH_RE.test(command)
-      ? event('edit', patchFiles(command))
-      : event('shell');
+    const patch = APPLY_PATCH_RE.exec(command);
+    if (!patch) return event('shell');
+    return event(
+      'edit',
+      patchFiles(command),
+      patch[1]?.replace(/^(["'])(.*)\1$/, '$2')
+    );
   }
   if (name === 'apply_patch') {
     return event('edit', patchFiles(command || args.input));

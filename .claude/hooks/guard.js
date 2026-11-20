@@ -24,6 +24,15 @@ import { ROOT_DIR } from '#utils/workspace-config.js';
  * @typedef {{ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny' | 'ask', permissionDecisionReason: string } }} HookOutput
  */
 
+/** @param {string} file */
+function softRealpath(file) {
+  try {
+    return fs.realpathSync(file);
+  } catch {
+    return file;
+  }
+}
+
 /**
  * @param {Record<string, any>} input
  * @param {{ harness: import('#utils/harness/input.js').Harness, rootDir?: string, env?: NodeJS.ProcessEnv, home?: string }} options
@@ -45,6 +54,7 @@ export function processHookInput(
     harness,
     projectDir: projectDir({ harness, env, rootDir }),
     home,
+    realpath: softRealpath,
   });
   return decision
     ? {

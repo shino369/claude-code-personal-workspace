@@ -123,42 +123,122 @@ export function formatTargets(files, { cwd, projectDir }) {
 }
 
 /**
+ * @typedef {{ tmpDir?: string, getuid?: (() => number) | null, username?: string, lstat?: (file: string) => { isSymbolicLink(): boolean, isDirectory(): boolean, uid: number }, constants?: { O_APPEND: number, O_CREAT: number, O_WRONLY: number, O_NOFOLLOW?: number } }} QueueOptions
+ *   Everything the queue reads from the system, injectable for tests.
+ */
+
+/* c8 ignore next 4 - process.getuid is missing only on Windows; tests inject getuid */
+const OWN_UID =
+  typeof process.getuid === 'function'
+    ? process.getuid.bind(process)
+    : undefined;
+
+/**
+ * @param {QueueOptions} options
+ * @returns {string} who owns the queue: the uid, or the user name on Windows
+ */
+function queueOwner({ getuid = OWN_UID, username } = {}) {
+  const owner = getuid
+    ? String(getuid())
+    : (username ?? os.userInfo().username);
+  return owner.replace(/[^A-Za-z0-9._-]/g, '_');
+}
+
+/**
  * @param {string | null | undefined} session
- * @param {string} [tmpDir]
+ * @param {string | QueueOptions} [options] a temp dir, or options
  * @returns {string | null} the session's queue file, or null for an unsafe id
  */
-export function queuePath(session, tmpDir = os.tmpdir()) {
+export function queuePath(session, options = {}) {
+  const opts = typeof options === 'string' ? { tmpDir: options } : options;
   return session && SESSION_ID_RE.test(session)
-    ? path.join(tmpDir, QUEUE_DIR, `${session}.txt`)
+    ? path.join(
+        opts.tmpDir ?? os.tmpdir(),
+        `${QUEUE_DIR}-${queueOwner(opts)}`,
+        `${session}.txt`
+      )
     : null;
 }
 
 /**
- * Add files (absolute paths) to the session's queue.
+ * Whether a queue path is safe to use: not a symlink, and (where uids exist)
+ * owned by this user. A path that does not exist yet is safe.
+ *
+ * @param {string} target
+ * @param {boolean} directory it must be a directory
+ * @param {QueueOptions} options
+ */
+function trusted(
+  target,
+  directory,
+  { getuid = OWN_UID, lstat = fs.lstatSync } = {}
+) {
+  let stat;
+  try {
+    stat = lstat(target);
+  } catch (error) {
+    return (
+      /** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT' &&
+      !directory
+    );
+  }
+  if (stat.isSymbolicLink() || (directory && !stat.isDirectory())) return false;
+  return !getuid || stat.uid === getuid();
+}
+
+/**
+ * Add files (absolute paths) to the session's queue. Does nothing, and does
+ * not throw, when the queue directory or file is a symlink or belongs to
+ * another user (a shared temp dir is not trusted).
  *
  * @param {string | null | undefined} session
  * @param {string[]} files
- * @param {{ tmpDir?: string }} [options]
+ * @param {QueueOptions} [options]
  */
-export function queueFiles(session, files, { tmpDir } = {}) {
-  const file = queuePath(session, tmpDir);
+export function queueFiles(session, files, options = {}) {
+  const file = queuePath(session, options);
   if (!file || files.length === 0) return;
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.appendFileSync(file, `${files.join('\n')}\n`);
+  const dir = path.dirname(file);
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    if (!trusted(dir, true, options) || !trusted(file, false, options)) return;
+    const { constants = fs.constants } = options;
+    const fd = fs.openSync(
+      file,
+      constants.O_APPEND |
+        constants.O_CREAT |
+        constants.O_WRONLY |
+        (constants.O_NOFOLLOW ?? 0),
+      0o600
+    );
+    try {
+      fs.writeSync(fd, `${files.join('\n')}\n`);
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    // An unusable queue only means these files are not formatted.
+  }
 }
 
 /**
  * The session's queued files, each once, emptying the queue.
  *
  * @param {string | null | undefined} session
- * @param {{ tmpDir?: string }} [options]
+ * @param {QueueOptions} [options]
  * @returns {string[]}
  */
-export function takeQueue(session, { tmpDir } = {}) {
-  const file = queuePath(session, tmpDir);
+export function takeQueue(session, options = {}) {
+  const file = queuePath(session, options);
   if (!file) return [];
   const taken = `${file}.${process.pid}.taking`;
   try {
+    if (
+      !trusted(path.dirname(file), true, options) ||
+      !trusted(file, false, options)
+    ) {
+      return [];
+    }
     fs.renameSync(file, taken);
   } catch {
     return [];

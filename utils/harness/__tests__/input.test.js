@@ -111,6 +111,22 @@ describe('patchFiles', () => {
     ]);
   });
 
+  test('should accept indented headers and skip empty ones', () => {
+    expect(
+      patchFiles(
+        '  *** Add File: a.js\n\t*** Update File:   b.js \n*** Add File: '
+      )
+    ).toEqual(['a.js', 'b.js']);
+  });
+
+  test('should parse a 200k-character decoy line in linear time', () => {
+    const decoy = `*** Add File: a${' '.repeat(200_000)}b`;
+    const start = performance.now();
+    expect(patchFiles(decoy)).toEqual([`a${' '.repeat(200_000)}b`]);
+    expect(patchFiles(`*** Add File: a${' '.repeat(200_000)}`)).toEqual(['a']);
+    expect(performance.now() - start).toBeLessThan(100);
+  });
+
   test('should return nothing for text that is not a patch', () => {
     expect(patchFiles('echo hi')).toEqual([]);
     expect(patchFiles(undefined)).toEqual([]);
@@ -149,6 +165,61 @@ describe('toolEvent', () => {
       name: 'Bash',
       command,
       files: ['hello.txt'],
+    });
+  });
+
+  describe('Codex apply_patch forms (codex-rs/apply-patch invocation.rs)', () => {
+    const body =
+      "<<'EOF'\n*** Begin Patch\n*** Add File: x.txt\n+hi\n*** End Patch\nEOF";
+    /** @param {string} command */
+    const event = (command) =>
+      toolEvent({ tool_name: 'Bash', tool_input: { command } });
+
+    test.each([
+      ['apply_patch'],
+      ['applypatch'],
+      ['  APPLY_PATCH'],
+      [`bash -lc "apply_patch`],
+      [`bash -c 'applypatch`],
+      [`zsh -lc "apply_patch`],
+      [`/bin/sh -c "apply_patch`],
+      [`C:\\Git\\bin\\bash.exe -lc "apply_patch`],
+      [`pwsh -NoProfile -Command "apply_patch`],
+      [`powershell -Command apply_patch`],
+      [`cmd /c apply_patch`],
+    ])('should treat %s as an edit', (prefix) => {
+      expect(event(`${prefix} ${body}`)).toMatchObject({
+        kind: 'edit',
+        files: ['x.txt'],
+      });
+      expect(event(`${prefix} ${body}`).dir).toBeUndefined();
+    });
+
+    test('should read a leading cd as the directory the paths are relative to', () => {
+      expect(event(`cd sub && apply_patch ${body}`)).toMatchObject({
+        kind: 'edit',
+        files: ['x.txt'],
+        dir: 'sub',
+      });
+      expect(event(`bash -lc "cd 'my dir' && applypatch ${body}`).dir).toBe(
+        'my dir'
+      );
+      expect(event(`bash -lc 'cd "../up"&&apply_patch ${body}`).dir).toBe(
+        '../up'
+      );
+    });
+
+    test('should read an argv-style command as one line', () => {
+      const command = ['bash', '-lc', `cd sub && apply_patch ${body}`];
+      expect(
+        toolEvent({ tool_name: 'Bash', tool_input: { command } })
+      ).toMatchObject({ kind: 'edit', dir: 'sub' });
+    });
+
+    test('should not treat other commands as patches', () => {
+      expect(event(`echo apply_patch ${body}`).kind).toBe('shell');
+      expect(event(`bash -lc "ls && apply_patch ${body}`).kind).toBe('shell');
+      expect(event(`bash -x apply_patch`).kind).toBe('shell');
     });
   });
 

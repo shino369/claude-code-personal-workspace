@@ -79,8 +79,9 @@ describe('formatTargets', () => {
 
 describe('queue', () => {
   test('should keep one queue file per safe session id', () => {
+    const owner = process.getuid?.() ?? os.userInfo().username;
     expect(queuePath('s-1', tmpDir)).toBe(
-      path.join(tmpDir, 'workspace-format-queue', 's-1.txt')
+      path.join(tmpDir, `workspace-format-queue-${owner}`, 's-1.txt')
     );
     expect(queuePath('../x', tmpDir)).toBeNull();
     expect(queuePath(null, tmpDir)).toBeNull();
@@ -96,9 +97,7 @@ describe('queue', () => {
   test('should do nothing without a session or files', () => {
     queueFiles(null, ['/p/a.js'], { tmpDir });
     queueFiles('s-1', [], { tmpDir });
-    expect(fs.existsSync(path.join(tmpDir, 'workspace-format-queue'))).toBe(
-      false
-    );
+    expect(fs.readdirSync(tmpDir)).toEqual([]);
     expect(takeQueue(null, { tmpDir })).toEqual([]);
   });
 

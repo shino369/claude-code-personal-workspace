@@ -122,29 +122,152 @@ export function renderCodexRules(permissions) {
   ].join('\n');
 }
 
+/** Words that start a command but are not it. */
+const LEADERS = new Set([
+  'then',
+  'do',
+  'else',
+  'elif',
+  '!',
+  'env',
+  'command',
+  'exec',
+  'nohup',
+  'time',
+  'xargs',
+]);
+/** Wrappers whose own options come before the command (`env -i rm`). */
+const OPTION_WRAPPERS = new Set(['env', 'nohup', 'time', 'xargs', 'sudo']);
+/** Git global options that take the next word as their value. */
+const GIT_VALUE_OPTIONS = new Set(['-C', '-c', '--git-dir', '--work-tree']);
+const GIT_FLAG_OPTIONS =
+  /^(?:--git-dir=|--work-tree=|--namespace=|--no-pager$|--paginate$|-c.+=)/;
+/** `$(…)` and backtick substitutions, which run inside double quotes. */
+const SUBSTITUTION_RE = /\$\(([^)]*)\)|`([^`]*)`/g;
+const SEPARATORS = new Set(['&', '|', ';', '\n', '(', ')', '{', '}', '`']);
+
 /**
- * The simple commands in a shell line: split at `&&`, `||`, `;`, `|`, and
- * newlines; leading `VAR=value` words dropped; `bash|sh|zsh -c '…'` opened.
+ * The words of each command in a shell line, quotes removed. Splits at
+ * `& | ; ( ) { }`, newlines, and backticks outside quotes, so a quoted
+ * `;` or `&&` stays in its word. Command substitutions inside double
+ * quotes come back as extra lines in `nested`.
+ *
+ * @param {string} line
+ * @returns {{ commands: string[][], nested: string[] }}
+ */
+function tokenize(line) {
+  /** @type {string[][]} */
+  const commands = [];
+  /** @type {string[]} */
+  const nested = [];
+  /** @type {string[]} */
+  let words = [];
+  /** @type {string | null} */
+  let word = null;
+  const endWord = () => {
+    if (word !== null) words.push(word);
+    word = null;
+  };
+  const endCommand = () => {
+    endWord();
+    if (words.length > 0) commands.push(words);
+    words = [];
+  };
+  let i = 0;
+  while (i < line.length) {
+    const char = line[i];
+    if (char === "'") {
+      const end = line.indexOf("'", i + 1);
+      const stop = end === -1 ? line.length : end;
+      word = (word ?? '') + line.slice(i + 1, stop);
+      i = stop + 1;
+    } else if (char === '"') {
+      let text = '';
+      i++;
+      while (i < line.length && line[i] !== '"') {
+        if (line[i] === '\\' && i + 1 < line.length) i++;
+        text += line[i++];
+      }
+      i++;
+      word = (word ?? '') + text;
+      for (const match of text.matchAll(SUBSTITUTION_RE)) {
+        nested.push(match[1] ?? match[2]);
+      }
+    } else if (char === '\\') {
+      if (line[i + 1] !== '\n') word = (word ?? '') + (line[i + 1] ?? '');
+      i += 2;
+    } else if (SEPARATORS.has(char)) {
+      endCommand();
+      i++;
+    } else if (/\s/.test(char)) {
+      endWord();
+      i++;
+    } else {
+      word = (word ?? '') + char;
+      i++;
+    }
+  }
+  endCommand();
+  return { commands, nested };
+}
+
+/**
+ * What a command line really runs, from the words of one command: leading
+ * assignments and wrappers dropped, the command word by its basename, git's
+ * global options skipped, and `sh -c '…'` opened. A `sudo` command is kept
+ * as it is too, so a `sudo` rule still matches.
+ *
+ * @param {string[]} input
+ * @returns {string[][]}
+ */
+function realCommands(input) {
+  /** @type {string[][]} */
+  const found = [];
+  let words = input;
+  for (;;) {
+    while (words.length > 0 && ASSIGNMENT_RE.test(words[0])) {
+      words = words.slice(1);
+    }
+    if (words.length === 0) return found;
+    words = [words[0].split(/[\\/]/).pop() || words[0], ...words.slice(1)];
+    const [first] = words;
+    if (!LEADERS.has(first) && first !== 'sudo') break;
+    if (first === 'sudo') found.push(words);
+    words = words.slice(1);
+    if (OPTION_WRAPPERS.has(first)) {
+      while (words[0]?.startsWith('-')) words = words.slice(1);
+    }
+  }
+  if (words[0] === 'git') {
+    let i = 1;
+    while (i < words.length) {
+      if (GIT_VALUE_OPTIONS.has(words[i])) i += 2;
+      else if (GIT_FLAG_OPTIONS.test(words[i])) i++;
+      else break;
+    }
+    words = ['git', ...words.slice(i)];
+  }
+  if (SHELLS.has(words[0]) && /^-\w*c$/.test(words[1] ?? '')) {
+    return [...found, ...simpleCommands(words[2] ?? '')];
+  }
+  return [...found, words];
+}
+
+/**
+ * The simple commands in a shell line, each as the words it really runs
+ * (see `realCommands`). Not a shell parser: it follows quotes, separators,
+ * and common wrappers, which is what a prefix guardrail needs.
  *
  * @param {string} line
  * @returns {string[][]}
  */
 function simpleCommands(line) {
-  return line.split(/&&|\|\||[;|\n]/).flatMap((part) => {
-    const words = part.trim().split(/\s+/).filter(Boolean);
-    while (words.length > 0 && ASSIGNMENT_RE.test(words[0])) words.shift();
-    if (SHELLS.has(words[0]) && /^-\w*c$/.test(words[1] ?? '')) {
-      return simpleCommands(
-        words
-          .slice(2)
-          .join(' ')
-          .replace(/^['"]|['"]$/g, '')
-      );
-    }
-    return words.length > 0 ? [words] : [];
-  });
+  const { commands, nested } = tokenize(line);
+  return [
+    ...commands.flatMap(realCommands),
+    ...nested.flatMap((text) => simpleCommands(text)),
+  ];
 }
-
 /**
  * The first prefix that any simple command in `command` starts with.
  *
@@ -162,6 +285,8 @@ export function commandMatch(command, prefixes) {
   return null;
 }
 
+const CASE_INSENSITIVE = new Set(['darwin', 'win32']);
+
 /** @param {string} value */
 const toSlash = (value) => value.replace(/\\/g, '/');
 
@@ -172,9 +297,15 @@ const toSlash = (value) => value.replace(/\\/g, '/');
  *
  * @param {string} file absolute
  * @param {string} pattern
- * @param {{ projectDir: string, home: string }} where
+ * @param {{ projectDir: string, home: string, platform?: string }} where
+ *   macOS and Windows file systems ignore case by default, so on those
+ *   platforms (`platform`, default this one) the comparison does too.
  */
-export function pathMatches(file, pattern, { projectDir, home }) {
+export function pathMatches(
+  file,
+  pattern,
+  { projectDir, home, platform = process.platform }
+) {
   const anchored = pattern.startsWith('./')
     ? `${toSlash(projectDir)}/${pattern.slice(2)}`
     : pattern.startsWith('~/')
@@ -194,7 +325,8 @@ export function pathMatches(file, pattern, { projectDir, home }) {
             : part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
     )
     .join('');
-  return new RegExp(`^${source}$`).test(toSlash(file));
+  const flags = CASE_INSENSITIVE.has(platform) ? 'i' : '';
+  return new RegExp(`^${source}$`, flags).test(toSlash(file));
 }
 
 /**
@@ -204,9 +336,12 @@ export function pathMatches(file, pattern, { projectDir, home }) {
  *
  * @param {string} cwd
  * @param {string} file
+ * @param {string} home a leading `~/` means this
  */
-function absolute(cwd, file) {
-  const f = toSlash(file);
+function absolute(cwd, file, home) {
+  const f = file.startsWith('~/')
+    ? `${toSlash(home)}/${toSlash(file).slice(2)}`
+    : toSlash(file);
   if (f.startsWith('/') || /^[A-Za-z]:\//.test(f)) return f;
   const parts = `${toSlash(cwd)}/${f}`.split('/');
   /** @type {string[]} */
@@ -225,22 +360,38 @@ function absolute(cwd, file) {
  *
  * @param {Record<string, any>} input PreToolUse payload
  * @param {Permissions} permissions
- * @param {{ harness: import('./input.js').Harness, projectDir: string, home: string }} options
+ * @param {{ harness: import('./input.js').Harness, projectDir: string, home: string, platform?: string, realpath?: (file: string) => string }} options
+ *   `realpath` must fail soft (return its argument for a missing file); a
+ *   file is checked as given and as resolved, so a symlink cannot hide it.
  * @returns {GuardDecision | null}
  */
 export function guardDecision(
   input,
   permissions,
-  { harness, projectDir, home }
+  {
+    harness,
+    projectDir,
+    home,
+    platform = process.platform,
+    realpath = (file) => file,
+  }
 ) {
   const event = toolEvent(input);
-  const where = { projectDir, home };
-  const cwd = typeof input.cwd === 'string' ? input.cwd : projectDir;
+  const wheres = [
+    { projectDir, home, platform },
+    { projectDir: realpath(projectDir), home: realpath(home), platform },
+  ];
+  const base = typeof input.cwd === 'string' ? input.cwd : projectDir;
+  const cwd = event.dir ? absolute(base, event.dir, home) : base;
   /** @param {string[]} patterns @param {string} tool */
   const protectedFile = (patterns, tool) => {
     for (const file of event.files) {
+      const full = absolute(cwd, file, home);
+      const targets = [full, realpath(full)];
       const pattern = patterns.find((p) =>
-        pathMatches(absolute(cwd, file), p, where)
+        wheres.some((where) =>
+          targets.some((target) => pathMatches(target, p, where))
+        )
       );
       if (pattern) {
         return /** @type {GuardDecision} */ ({
