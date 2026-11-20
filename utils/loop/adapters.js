@@ -17,6 +17,8 @@ import { crossSpawn } from '../spawn.js';
 import { HARNESS_SESSION_VARS } from '../task/store.js';
 
 export const AGENTS = /** @type {const} */ (['claude', 'codex', 'dsh']);
+/** The DSH overlay that enables the workspace's hooks (utils/harness/cli.js). */
+export const DSH_PATCH = '.dsh/workspace.patch.yml';
 
 /** @typedef {typeof AGENTS[number]} AgentName */
 
@@ -66,6 +68,10 @@ const ADAPTERS = {
         'workspace-write',
         '--approval-policy',
         'never',
+        // The workspace's hooks through the Claude hooks bridge (pnpm harness
+        // sync writes it; relative to the cwd, as DSH resolves it).
+        '--patch',
+        DSH_PATCH,
         '-',
       ],
       read: [
@@ -75,6 +81,10 @@ const ADAPTERS = {
         'read-only',
         '--approval-policy',
         'never',
+        // The workspace's hooks through the Claude hooks bridge (pnpm harness
+        // sync writes it; relative to the cwd, as DSH resolves it).
+        '--patch',
+        DSH_PATCH,
         '-',
       ],
     },

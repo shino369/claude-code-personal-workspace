@@ -25,7 +25,7 @@ describe('buildCommand', () => {
     });
   });
 
-  test('should build the dsh headless command', () => {
+  test('should build the dsh headless command with the workspace hooks patch', () => {
     expect(buildCommand({ agent: 'dsh' }).args).toEqual([
       '--profile',
       'headless',
@@ -33,6 +33,8 @@ describe('buildCommand', () => {
       'workspace-write',
       '--approval-policy',
       'never',
+      '--patch',
+      '.dsh/workspace.patch.yml',
       '-',
     ]);
   });
@@ -78,6 +80,8 @@ describe('buildCommand', () => {
       'read-only',
       '--approval-policy',
       'never',
+      '--patch',
+      '.dsh/workspace.patch.yml',
       '-',
     ]);
   });

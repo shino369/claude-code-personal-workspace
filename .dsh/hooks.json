@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "bash|pwsh|read|edit|write|apply_patch|str_replace_editor",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard.js --harness dsh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

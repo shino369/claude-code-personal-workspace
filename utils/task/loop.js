@@ -31,6 +31,12 @@ export const MAX_ITERATIONS = 50;
 export const INNER_VERIFY_TIMEOUT_MS = 240 * 1000;
 /** Env switch the outer loop sets so child sessions do not run the inner loop. */
 export const INNER_LOOP_ENV = 'TASK_INNER_LOOP';
+/** Prompts a harness sends on its own, not typed by the user. */
+const NOT_TYPED = [
+  /^<task-notification>/,
+  // DSH subagent settlement notices (packages/subagent/.../continuation-messages.ts).
+  /^Background subagent \S+ (?:finished|was stopped|ran out|declined|failed|ended)\b/,
+];
 /** Loop counters after a pass or a reset. */
 export const FRESH_LOOP = Object.freeze({
   iteration: 0,
@@ -451,15 +457,16 @@ export function runInnerLoop({ deps, session = null, pendingAgents = [] }) {
  * Start the inner-loop count over when the user types a prompt.
  *
  * UserPromptSubmit also fires for queued `<task-notification>` messages
- * (background tasks, rewakes); resetting on those would undo the cap, so they
- * are ignored. A missing prompt does not reset either (fail closed).
+ * (Claude Code's background tasks, rewakes), and may for DSH's "Background
+ * subagent <name> finished…" notices; resetting on those would undo the cap,
+ * so they are ignored. A missing prompt does not reset either (fail closed).
  *
  * @param {{ deps: import('./deps.js').Deps, prompt: unknown, session?: string | null }} input
  * @returns {boolean} true when the count was reset
  */
 export function resetInnerLoop({ deps, prompt, session = null }) {
   const text = typeof prompt === 'string' ? prompt.trimStart() : '';
-  if (!text || text.startsWith('<task-notification>')) return false;
+  if (!text || NOT_TYPED.some((re) => re.test(text))) return false;
   const active = activeLoop(deps, session);
   if (!active) return false;
   const { loop } = active.state;

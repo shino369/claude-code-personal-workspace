@@ -362,6 +362,8 @@ describe('main', () => {
           'read-only',
           '--approval-policy',
           'never',
+          '--patch',
+          '.dsh/workspace.patch.yml',
           '-',
         ],
       },

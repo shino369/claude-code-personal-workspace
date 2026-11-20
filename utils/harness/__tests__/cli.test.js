@@ -126,6 +126,20 @@ describe('pnpm harness sync', () => {
   });
 });
 
+describe('the DSH bridge files', () => {
+  test('should write the hooks in Claude format with DSH commands, and the patch that loads them', () => {
+    run(['sync']);
+    expect(JSON.parse(read('.dsh/hooks.json')).hooks).toEqual(
+      renderHooksConfig('dsh')?.hooks
+    );
+    expect(read('.dsh/hooks.json')).toContain('--harness dsh');
+    const patch = read('.dsh/workspace.patch.yml');
+    expect(patch).toContain("name: '@deepseek-ai/dsh-hooks-claude-code'");
+    expect(patch).toContain('configPath: ./.dsh/hooks.json');
+    expect(patch).toContain('dsh --patch .dsh/workspace.patch.yml');
+  });
+});
+
 describe('the Codex command rules', () => {
   test('should be written from the permissions in .claude/settings.json', () => {
     run(['sync']);
@@ -162,6 +176,8 @@ describe('pnpm harness check', () => {
     expect(lines).toEqual([
       '✓ .claude/settings.json hooks match utils/harness/hooks.js',
       '✓ .codex/hooks.json',
+      '✓ .dsh/hooks.json',
+      '✓ .dsh/workspace.patch.yml',
       '✓ .codex/rules/workspace.rules',
     ]);
   });
