@@ -61,7 +61,6 @@ import {
   readUsage,
   recordHits,
 } from './store.js';
-import { TRANSCRIPT_ADAPTERS } from './transcript.js';
 
 /** Roles that must review in a clean context. */
 export const SKIP_AGENTS = ['reviewer', 'verifier'];
@@ -252,8 +251,6 @@ export function handleHook(
       cwd: typeof input.cwd === 'string' ? input.cwd : rootDir,
     });
 
-  // Extraction needs a transcript adapter for this harness.
-  const extracts = Object.hasOwn(TRANSCRIPT_ADAPTERS, harness);
   const entry = {
     session,
     harness,
@@ -272,17 +269,15 @@ export function handleHook(
     // Headless runs (--no-session-persistence) leave no transcript to read.
     const saved =
       typeof entry.transcript === 'string' && fs.existsSync(entry.transcript);
-    if (extracts && saved && enqueue(dir, entry)) startWorker(false);
+    if (saved && enqueue(dir, entry)) startWorker(false);
     return null;
   }
   if (event === 'SessionStart') {
     if (input.source !== 'resume') writeInjected(dir, session, new Set());
     pruneSessions(dir, now);
-    if (extracts) {
-      registerOpen(dir, entry);
-      catchUp(dir, { current: session, now });
-      startWorker(true);
-    }
+    registerOpen(dir, entry);
+    catchUp(dir, { current: session, now });
+    startWorker(true);
     const news = announcement(dir);
     const off = savingOff(readConfig(dir), session);
     const parts = [

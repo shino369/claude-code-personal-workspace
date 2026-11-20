@@ -8,8 +8,8 @@
  * holds a secret is dropped whole, and secrets in the rest are redacted.
  * Notes refuse secrets anyway (store.js); this keeps them out of the prompt.
  *
- * One adapter per harness transcript format; Claude Code's JSONL is the
- * first (Codex and dsh are later phases).
+ * One adapter per harness transcript format: Claude Code's JSONL and the
+ * Codex rollout (dsh is a later phase).
  */
 import fs from 'fs';
 import { findSecrets, redactSecrets } from '../redact.js';
@@ -160,8 +160,191 @@ export function condenseClaude(text) {
   return { items, model, cwd, dropped };
 }
 
+/** Codex user text that is injected context rather than a typed prompt. */
+const CODEX_CONTEXT_RE =
+  /^(# AGENTS\.md instructions|<(environment_context|user_instructions|instructions|subagent_notification|turn_aborted|user_shell_command|skill|codex_internal_context|goal_context|recommended_plugins|permissions|collaboration_mode|current_time_reminder|model_switch|hook_prompt)\b)/i;
+/** Codex tools that run a shell command. */
+const CODEX_SHELL_TOOLS = ['exec_command', 'shell', 'shell_command'];
+const CODEX_EXIT_RE = /^(?:Process exited with code|Exit code:) (-?\d+)$/m;
+const CODEX_OUTPUT_RE = /\nOutput:\n([\s\S]*)$/;
+
+/**
+ * What the user typed in a Codex user message. Codex labels each content
+ * block (`content_item_kinds`: `user.text` is typed text); without labels,
+ * known injected-context markers are skipped.
+ *
+ * @param {Record<string, any>} payload
+ */
+function codexPromptOf(payload) {
+  const content = Array.isArray(payload.content) ? payload.content : [];
+  const kinds =
+    payload.internal_chat_message_metadata_passthrough?.content_item_kinds;
+  const labeled = Array.isArray(kinds) && kinds.length === content.length;
+  return content
+    .filter(
+      (block, i) =>
+        block?.type === 'input_text' &&
+        typeof block.text === 'string' &&
+        (labeled
+          ? kinds[i] === 'user.text'
+          : !CODEX_CONTEXT_RE.test(block.text.trimStart()))
+    )
+    .map((block) => block.text.replace(REMINDER_RE, '').trim())
+    .filter((text) => text && !NOT_PROMPT_RE.test(text))
+    .join('\n');
+}
+
+/**
+ * A shell command as text: a string, or an argv array joined.
+ *
+ * @param {unknown} value
+ * @returns {string | undefined}
+ */
+function codexCommandOf(value) {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && value.every((part) => typeof part === 'string')) {
+    return value.join(' ');
+  }
+  return undefined;
+}
+
+/**
+ * A command's exit code and output from a function_call_output: the
+ * unified-exec text ("Process exited with code N"), the shell text ("Exit
+ * code: N"), or JSON with `metadata.exit_code`. null when it did not finish.
+ *
+ * @param {unknown} output a string, or content items
+ * @returns {{ code: number, body: string } | null}
+ */
+function codexResultOf(output) {
+  const text = Array.isArray(output)
+    ? output
+        .filter((block) => typeof block?.text === 'string')
+        .map((block) => block.text)
+        .join('\n')
+    : output;
+  if (typeof text !== 'string') return null;
+  if (text.startsWith('{')) {
+    try {
+      const json = JSON.parse(text);
+      const code = json?.metadata?.exit_code;
+      return typeof code === 'number'
+        ? { code, body: String(json.output) }
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  const exit = CODEX_EXIT_RE.exec(text);
+  if (!exit) return null;
+  return { code: Number(exit[1]), body: CODEX_OUTPUT_RE.exec(text)?.[1] ?? '' };
+}
+
+/**
+ * Condense a Codex rollout (JSONL lines): typed prompts from `message`
+ * response items (role user), the last non-commentary assistant message of
+ * each turn, and failed shell commands (`function_call` paired with its
+ * `function_call_output` by call_id).
+ *
+ * @param {string} text
+ * @returns {Condensed}
+ */
+export function condenseCodex(text) {
+  /** @type {Item[]} */
+  const items = [];
+  /** @type {Map<string, string>} call_id → shell command */
+  const commands = new Map();
+  let model = null;
+  let cwd = null;
+  let dropped = 0;
+  let reply = '';
+  const flushReply = () => {
+    if (reply) {
+      items.push({
+        kind: 'reply',
+        text: clip(redactSecrets(reply), ITEM_CHARS.reply),
+      });
+    }
+    reply = '';
+  };
+
+  for (const line of text.split('\n')) {
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!isObject(entry) || !isObject(entry.payload)) continue;
+    const payload = entry.payload;
+
+    if (entry.type === 'session_meta' || entry.type === 'turn_context') {
+      if (typeof payload.cwd === 'string') cwd = payload.cwd;
+      if (typeof payload.model === 'string') model = payload.model;
+    } else if (entry.type === 'response_item') {
+      if (payload.type === 'message' && payload.role === 'user') {
+        const prompt = codexPromptOf(payload);
+        if (prompt) {
+          flushReply();
+          items.push({
+            kind: 'user',
+            text: clip(redactSecrets(prompt), ITEM_CHARS.user),
+          });
+        }
+      } else if (payload.type === 'message' && payload.role === 'assistant') {
+        /** @type {any[]} */
+        const content = Array.isArray(payload.content) ? payload.content : [];
+        const said = content
+          .filter(
+            (block) =>
+              block?.type === 'output_text' && typeof block.text === 'string'
+          )
+          .map((block) => block.text)
+          .join('\n')
+          .trim();
+        if (said && payload.phase !== 'commentary') reply = said;
+      } else if (
+        payload.type === 'function_call' &&
+        CODEX_SHELL_TOOLS.includes(payload.name)
+      ) {
+        let args = null;
+        try {
+          args = JSON.parse(payload.arguments);
+        } catch {
+          continue;
+        }
+        const command = codexCommandOf(
+          isObject(args) ? (args.cmd ?? args.command) : undefined
+        );
+        if (command !== undefined) commands.set(payload.call_id, command);
+      } else if (payload.type === 'local_shell_call') {
+        const command = codexCommandOf(payload.action?.command);
+        if (command !== undefined) commands.set(payload.call_id, command);
+      } else if (payload.type === 'function_call_output') {
+        const command = commands.get(payload.call_id);
+        const result = codexResultOf(payload.output);
+        if (command === undefined || !result || result.code === 0) continue;
+        if (findSecrets(command).length > 0) {
+          dropped += 1;
+          continue;
+        }
+        items.push({
+          kind: 'failure',
+          command: clip(command.trim(), ITEM_CHARS.command),
+          error: clip(redactSecrets(result.body.trim()), ITEM_CHARS.error),
+        });
+      }
+    }
+  }
+  flushReply();
+  return { items, model, cwd, dropped };
+}
+
 /** Transcript adapters by harness. */
-export const TRANSCRIPT_ADAPTERS = { claude: condenseClaude };
+export const TRANSCRIPT_ADAPTERS = {
+  claude: condenseClaude,
+  codex: condenseCodex,
+};
 
 /** @param {Item} item */
 function formatItem(item) {

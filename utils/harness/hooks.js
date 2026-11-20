@@ -51,6 +51,8 @@ export const HOOKS = [
     // Codex reports a failed command as PostToolUse with its exit code.
     codex: [
       { event: 'SessionStart', matcher: SESSION_SOURCES },
+      // Codex clamps SessionEnd hooks to 3 s: enough to queue the session.
+      { event: 'SessionEnd', timeout: 3 },
       { event: 'UserPromptSubmit' },
       { event: 'PreToolUse', matcher: 'Bash' },
       { event: 'PostToolUse', matcher: 'Bash' },

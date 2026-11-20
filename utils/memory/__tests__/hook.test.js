@@ -487,12 +487,23 @@ describe('extraction hooks', () => {
     expect(kick).not.toHaveBeenCalled();
   });
 
-  test('should not register Codex sessions (no transcript adapter yet)', () => {
+  test('should register and queue a Codex session with its rollout', () => {
     lifecycle('SessionStart', {}, { harness: 'codex' });
-    lifecycle('SessionEnd', {}, { harness: 'codex' });
 
-    expect(readOpen(dir)).toEqual([]);
-    expect(readQueue(dir)).toEqual([]);
+    expect(readOpen(dir)).toEqual([
+      expect.objectContaining({ harness: 'codex', transcript }),
+    ]);
+
+    lifecycle('SessionEnd', { reason: 'other' }, { harness: 'codex' });
+
+    expect(readQueue(dir)).toEqual([
+      expect.objectContaining({
+        session: SESSION,
+        harness: 'codex',
+        transcript,
+      }),
+    ]);
+    expect(kick).toHaveBeenCalled();
   });
 
   test('should queue an ended session and start the worker, silently', () => {

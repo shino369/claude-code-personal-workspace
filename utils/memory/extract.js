@@ -631,9 +631,9 @@ export function extractEntry(entry, deps) {
   const offRun = { ...base, status: 'off', from: chunk.start, to: chunk.end };
   if (savingOff(readConfig(dir), session)) return settle(offRun, chunk.end);
   if (!chunk.text) return settle({ ...base, status: 'empty' }, null);
-  const condensed = TRANSCRIPT_ADAPTERS[/** @type {'claude'} */ (harness)](
-    chunk.text
-  );
+  const condensed = TRANSCRIPT_ADAPTERS[
+    /** @type {keyof typeof TRANSCRIPT_ADAPTERS} */ (harness)
+  ](chunk.text);
   const range = {
     from: chunk.start,
     to: chunk.end,
@@ -649,13 +649,17 @@ export function extractEntry(entry, deps) {
   const { notes, index } = loadIndex(dir);
   const related = relatedNotes(notes, index, sessionText, { repo });
   const prompt = buildPrompt({ session: sessionText, related, repo });
-  const model = readConfig(dir).extractModel ?? condensed.model;
+  // The extractor is Claude whatever harness the session came from, so only
+  // a Claude session's own model name is passed on.
+  const model =
+    readConfig(dir).extractModel ??
+    (harness === 'claude' ? condensed.model : null);
   if (deps.dryRun) {
     return { ...base, status: 'dry-run', ...range, model, prompt };
   }
 
   const command = extractCommand({
-    agent: harness,
+    agent: 'claude',
     model,
     rootDir: deps.rootDir,
   });
