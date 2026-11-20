@@ -30,7 +30,8 @@
     "loop": "node utils/loop/cli.js",
     "swarm": "node utils/swarm/cli.js",
     "agent": "node utils/agent/cli.js",
-    "tools": "node utils/tools/cli.js"
+    "tools": "node utils/tools/cli.js",
+    "harness": "node utils/harness/cli.js"
   },
   "keywords": [],
   "author": "shino369",
