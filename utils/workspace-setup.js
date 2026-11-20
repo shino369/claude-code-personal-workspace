@@ -263,6 +263,31 @@ export async function stepSkills(options, deps) {
 }
 
 /**
+ * Whether an absolute core.hooksPath is this workspace's `.githooks`: in
+ * this checkout, or in the main checkout (git's common dir) when this is a
+ * linked worktree. Claude Code's worktree support can rewrite the shared
+ * setting to such an absolute path; the hooks still run.
+ *
+ * @param {string} value
+ * @param {Deps} deps
+ */
+function isWorkspaceHooks(value, deps) {
+  if (!path.isAbsolute(value)) return false;
+  const common = deps.spawn(
+    'git',
+    ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+    { cwd: deps.rootDir, encoding: 'utf8' }
+  );
+  const roots = [deps.rootDir];
+  if (common.status === 0) {
+    roots.push(path.dirname(String(common.stdout).trim()));
+  }
+  return roots.some(
+    (root) => path.resolve(value) === path.join(root, '.githooks')
+  );
+}
+
+/**
  * @param {Options} options
  * @param {Deps} deps
  * @returns {StepResult}
@@ -272,11 +297,12 @@ export function stepGitHooks(options, deps) {
     cwd: deps.rootDir,
     encoding: 'utf8',
   });
-  const configured = String(current.stdout ?? '').trim() === '.githooks';
+  const value = String(current.stdout ?? '').trim();
+  const configured = value === '.githooks' || isWorkspaceHooks(value, deps);
 
   if (options.check) {
     return configured
-      ? { id: 'git-hooks', status: 'ok', detail: 'core.hooksPath=.githooks' }
+      ? { id: 'git-hooks', status: 'ok', detail: `core.hooksPath=${value}` }
       : {
           id: 'git-hooks',
           status: 'fail',
@@ -292,7 +318,7 @@ export function stepGitHooks(options, deps) {
     return {
       id: 'git-hooks',
       status: 'ok',
-      detail: 'core.hooksPath=.githooks',
+      detail: `core.hooksPath=${value}`,
     };
   }
 

@@ -286,6 +286,56 @@ describe('stepGitHooks', () => {
     expect(stepGitHooks(opts(['--check']), deps).status).toBe('fail');
   });
 
+  /**
+   * git answering core.hooksPath with `value` and the common dir with `common`.
+   *
+   * @param {string} value
+   * @param {string} [common]
+   */
+  const gitAnswers = (value, common = '/repo/.git') =>
+    makeDeps({
+      spawn: vi.fn(
+        (/** @type {string} */ _cmd, /** @type {string[]} */ args) =>
+          args.includes('--git-common-dir')
+            ? { status: 0, stdout: `${common}\n` }
+            : { status: 0, stdout: `${value}\n` }
+      ),
+    });
+
+  test("should accept an absolute path to this checkout's hooks", () => {
+    // Claude Code's worktree support can rewrite the shared setting this way.
+    expect(
+      stepGitHooks(opts(['--check']), gitAnswers('/repo/.githooks'))
+    ).toEqual({
+      id: 'git-hooks',
+      status: 'ok',
+      detail: 'core.hooksPath=/repo/.githooks',
+    });
+  });
+
+  test("should accept, in a linked worktree, the main checkout's hooks", () => {
+    const deps = gitAnswers('/main/.githooks', '/main/.git');
+    expect(stepGitHooks(opts(['--check']), deps).status).toBe('ok');
+  });
+
+  test('should accept only this checkout when git cannot name the common dir', () => {
+    const deps = makeDeps({
+      spawn: vi.fn(
+        (/** @type {string} */ _cmd, /** @type {string[]} */ args) =>
+          args.includes('--git-common-dir')
+            ? { status: 128, stdout: '' }
+            : { status: 0, stdout: '/main/.githooks\n' }
+      ),
+    });
+    expect(stepGitHooks(opts(['--check']), deps).status).toBe('fail');
+  });
+
+  test('should fail the check for hooks of another repository', () => {
+    expect(
+      stepGitHooks(opts(['--check']), gitAnswers('/other/.githooks')).status
+    ).toBe('fail');
+  });
+
   test('should make hooks executable and keep existing config', () => {
     const deps = configured();
     expect(stepGitHooks(opts(), deps).status).toBe('ok');
