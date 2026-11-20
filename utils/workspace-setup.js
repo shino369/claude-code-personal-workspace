@@ -12,6 +12,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { spawnSync } from 'child_process';
+import { codexTrustsProject } from './harness/codex-trust.js';
 import { main as harnessMain } from './harness/cli.js';
 import {
   DSH_BRIDGE_INSTALL,
@@ -31,6 +32,9 @@ import {
   MIN_NODE_MAJOR,
   ROOT_DIR,
 } from './workspace-config.js';
+
+// Kept here for existing importers; the rule lives in harness/codex-trust.js.
+export { codexTrustsProject };
 
 export const HELP = `Usage: node utils/workspace-setup.js [options]
 
@@ -596,33 +600,6 @@ export function stepHarness(options, deps) {
     status: 'done',
     detail: `wrote ${wrote.join(', ')}${hint}`,
   };
-}
-
-/**
- * Whether Codex config text marks `root` as a trusted project: a
- * `[projects."<root>"]` table holding `trust_level = "trusted"`. The text is
- * only matched, never printed.
- *
- * @param {string} text
- * @param {string} root
- * @returns {boolean}
- */
-export function codexTrustsProject(text, root) {
-  let inTable = false;
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    const header =
-      /^\[\s*projects\s*\.\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)')\s*\]/.exec(line);
-    if (header) {
-      const name = header[2] ?? header[1].replace(/\\(.)/g, '$1');
-      inTable = name === root;
-    } else if (line.startsWith('[')) {
-      inTable = false;
-    } else if (inTable && /^trust_level\s*=\s*["']trusted["']/.test(line)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /**

@@ -10,6 +10,9 @@ tasks/
 # They hold a full copy of the repo, so lint, tests, and typecheck skip them.
 .claude/worktrees/
 
+# kyoten's record of a home it created, and its update scratch space
+/.kyoten/
+
 # ============================================
 # Environment Variables & Secrets
 # ============================================

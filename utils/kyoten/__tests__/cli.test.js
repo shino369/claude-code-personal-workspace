@@ -1,29 +1,67 @@
 import { EventEmitter } from 'events';
+import { spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { Readable } from 'stream';
+import { PassThrough, Readable } from 'stream';
 import { vi } from 'vitest';
+import { crossSpawn } from '../../spawn.js';
 import { ROOT_DIR } from '../../workspace-config.js';
 import {
   COMMANDS,
+  askLine,
   defaultDeps,
   helpText,
   main,
   packageVersion,
   parseArgs,
+  parseCommandArgs,
 } from '../cli.js';
+import { HOME_INFO } from '../home.js';
 
 const KEY = 'sk-test-token-1234567890';
 const VERSION = JSON.parse(
   fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf-8')
 ).version;
+const realRun = crossSpawn();
 
 /** @type {string} */
 let tmp;
+/** @type {string} */
+let bin;
+/** A committed kyoten source repo: the snapshot `init` installs. */
+let source = '';
+
+beforeAll(() => {
+  source = fs.mkdtempSync(path.join(os.tmpdir(), 'kyoten-cli-src-'));
+  fs.mkdirSync(path.join(source, 'utils', 'kyoten'), { recursive: true });
+  fs.writeFileSync(
+    path.join(source, 'package.json'),
+    JSON.stringify({ name: 'kyoten', version: '0.2.0' })
+  );
+  fs.writeFileSync(path.join(source, 'utils', 'kyoten', 'cli.js'), '// cli\n');
+  fs.writeFileSync(
+    path.join(source, '.gitignore'),
+    '/.kyoten/\nnode_modules/\n'
+  );
+  const git = (/** @type {string[]} */ ...args) =>
+    spawnSync(
+      'git',
+      ['-C', source, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args],
+      { encoding: 'utf-8' }
+    );
+  git('init', '-q');
+  git('add', '-A');
+  git('commit', '-q', '--no-gpg-sign', '-m', 'init');
+});
+
+afterAll(() => {
+  fs.rmSync(source, { recursive: true, force: true });
+});
 
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kyoten-cli-'));
+  bin = path.join(tmp, 'bin');
 });
 
 afterEach(() => {
@@ -31,16 +69,36 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
+/** The path `which` finds for a fake agent in `bin` on this platform. */
+const agentPath = (/** @type {string} */ name) =>
+  path.join(bin, process.platform === 'win32' ? `${name}.EXE` : name);
+
 /** A minimal kyoten workspace. */
-function makeHome() {
-  const home = path.join(tmp, 'home');
-  fs.mkdirSync(path.join(home, 'utils', 'kyoten'), { recursive: true });
+function makeHome(dir = path.join(tmp, 'home')) {
+  fs.mkdirSync(path.join(dir, 'utils', 'kyoten'), { recursive: true });
   fs.writeFileSync(
-    path.join(home, 'package.json'),
+    path.join(dir, 'package.json'),
     JSON.stringify({ name: 'kyoten' })
   );
-  fs.writeFileSync(path.join(home, 'utils', 'kyoten', 'cli.js'), '');
-  return home;
+  fs.writeFileSync(path.join(dir, 'utils', 'kyoten', 'cli.js'), '');
+  return dir;
+}
+
+/**
+ * @param {string} home
+ * @param {string} version
+ */
+function markManaged(home, version) {
+  fs.mkdirSync(path.join(home, '.kyoten'), { recursive: true });
+  fs.writeFileSync(
+    path.join(home, HOME_INFO),
+    JSON.stringify({
+      managed: true,
+      version,
+      sourceCommit: 'x',
+      createdAt: 'then',
+    })
+  );
 }
 
 class FakeChild extends EventEmitter {
@@ -50,18 +108,26 @@ class FakeChild extends EventEmitter {
 }
 
 /**
- * Run main() with fake I/O; the fake agent exits with `exit`.
+ * Run main() with fake I/O. The fake agent exits with `exit`; git runs for
+ * real (with the real PATH), pnpm is faked with `pnpmStatus`.
  *
  * @param {string[]} argv
- * @param {{ env?: NodeJS.ProcessEnv, exit?: number, stdin?: any, cwd?: string }} [options]
+ * @param {{ env?: NodeJS.ProcessEnv, exit?: number, stdin?: any, cwd?: string, answer?: string, pnpmStatus?: number }} [options]
  */
-async function run(argv, { env = {}, exit = 0, stdin, cwd = tmp } = {}) {
+async function run(
+  argv,
+  { env = {}, exit = 0, stdin, cwd = tmp, answer = '', pnpmStatus = 0 } = {}
+) {
   /** @type {string[]} */
   const out = [];
   /** @type {string[]} */
   const err = [];
   /** @type {string[]} */
   const tty = [];
+  /** @type {string[]} */
+  const questions = [];
+  /** @type {string[][]} */
+  const pnpm = [];
   const spawn = vi.fn(
     (
       /** @type {string} */ _bin,
@@ -73,10 +139,22 @@ async function run(argv, { env = {}, exit = 0, stdin, cwd = tmp } = {}) {
       return child;
     }
   );
+  /** @type {import('../../spawn.js').Spawn} */
+  const runSpawn = (file, args, options) => {
+    if (file === 'pnpm') {
+      pnpm.push(args);
+      return { status: pnpmStatus, stdout: '12.14.0\n' };
+    }
+    const opts = /** @type {{ env?: NodeJS.ProcessEnv }} */ (options);
+    return realRun(file, args, {
+      ...options,
+      env: { ...process.env, ...opts.env, PATH: process.env.PATH },
+    });
+  };
   const code = await main(argv, {
-    env: { PATH: '/bin', XDG_CONFIG_HOME: path.join(tmp, 'cfg'), ...env },
+    env: { PATH: bin, XDG_CONFIG_HOME: path.join(tmp, 'cfg'), ...env },
     cwd,
-    platform: 'linux',
+    platform: process.platform,
     homedir: path.join(tmp, 'user'),
     out: (text) => out.push(text),
     err: (text) => err.push(text),
@@ -84,10 +162,18 @@ async function run(argv, { env = {}, exit = 0, stdin, cwd = tmp } = {}) {
     tty: { write: (/** @type {string} */ text) => tty.push(text) },
     spawn,
     signals: new EventEmitter(),
-    canRun: (file) => file === '/bin/claude' || file === '/bin/codex',
+    canRun: (file) =>
+      path.dirname(file) === bin &&
+      /^(claude|codex)(\.exe)?$/i.test(path.basename(file)),
     registry: () => null,
+    run: runSpawn,
+    ask: async (question) => {
+      questions.push(question);
+      return answer;
+    },
+    root: source,
   });
-  return { code, out, err, tty, spawn };
+  return { code, out, err, tty, spawn, questions, pnpm };
 }
 
 describe('parseArgs', () => {
@@ -123,18 +209,37 @@ describe('parseArgs', () => {
   );
 });
 
+describe('parseCommandArgs', () => {
+  test.each([
+    ['init', [], { setup: true }],
+    ['init', ['d', '--no-setup'], { dir: 'd', setup: false }],
+    ['update', ['--no-setup'], { setup: false }],
+    ['doctor', [], { setup: true }],
+  ])('should parse %s %j', (command, args, expected) => {
+    expect(parseCommandArgs(/** @type {any} */ (command), args)).toEqual(
+      expected
+    );
+  });
+
+  test.each([
+    ['init', ['a', 'b'], 'kyoten init [<dir>] [--no-setup]'],
+    ['init', ['--yes'], 'kyoten init [<dir>] [--no-setup]'],
+    ['update', ['dir'], 'kyoten update [--no-setup]'],
+    ['doctor', ['--no-setup'], 'kyoten doctor'],
+  ])('should refuse %s %j', (command, args, usage) => {
+    expect(() => parseCommandArgs(/** @type {any} */ (command), args)).toThrow(
+      `\nFix: ${usage}`
+    );
+  });
+});
+
 describe('packageVersion and helpText', () => {
   test('should read the version of the workspace package', () => {
     expect(packageVersion()).toBe(VERSION);
   });
 
   test('should read the version of another root', () => {
-    fs.writeFileSync(
-      path.join(tmp, 'package.json'),
-      JSON.stringify({ version: '9.9.9' })
-    );
-
-    expect(packageVersion(tmp)).toBe('9.9.9');
+    expect(packageVersion(source)).toBe('0.2.0');
   });
 
   test('should name the version, the config file, and every command', () => {
@@ -146,12 +251,12 @@ describe('packageVersion and helpText', () => {
   });
 });
 
-describe('main', () => {
+describe('main: help, version, where', () => {
   test('should print the help', async () => {
     const { code, out } = await run(['--help']);
 
     expect(code).toBe(0);
-    expect(out[0]).toContain(`kyoten ${VERSION}`);
+    expect(out[0]).toContain('kyoten 0.2.0');
     expect(out[0]).toContain(path.join(tmp, 'cfg', 'kyoten', 'config.json'));
   });
 
@@ -167,35 +272,18 @@ describe('main', () => {
       const { code, out } = await run(argv);
 
       expect(code).toBe(0);
-      expect(out).toEqual([VERSION]);
+      expect(out).toEqual(['0.2.0']);
     }
   );
 
   test('should print the home on stdout and the rule on stderr', async () => {
     const { code, out, err } = await run(['where'], {
-      env: { KYOTEN_HOME: '/k' },
+      env: { KYOTEN_HOME: path.join(tmp, 'k') },
     });
 
     expect(code).toBe(0);
-    expect(out).toEqual([path.resolve(tmp, '/k')]);
+    expect(out).toEqual([path.join(tmp, 'k')]);
     expect(err).toEqual(['kyoten: chosen by KYOTEN_HOME']);
-  });
-
-  test('should refuse a command that is not built yet', async () => {
-    const { code, err } = await run(['doctor']);
-
-    expect(code).toBe(1);
-    expect(err).toEqual(['kyoten: kyoten doctor is not available yet.']);
-  });
-
-  test('should explain a missing home', async () => {
-    const { code, err } = await run([]);
-
-    expect(code).toBe(1);
-    expect(err).toEqual([
-      `kyoten: no kyoten home at ${path.join(tmp, 'user', '.kyoten')}.`,
-      'kyoten: Fix: kyoten init',
-    ]);
   });
 
   test('should report an invalid config file', async () => {
@@ -207,7 +295,87 @@ describe('main', () => {
     expect(code).toBe(1);
     expect(err[0]).toMatch(/config\.json is not valid JSON/);
   });
+});
 
+describe('main: init and update', () => {
+  test('should create a home in <dir> and make it the default', async () => {
+    const home = path.join(tmp, 'new-home');
+
+    const { code, err, pnpm } = await run(['init', home, '--no-setup']);
+
+    const config = JSON.parse(
+      fs.readFileSync(path.join(tmp, 'cfg', 'kyoten', 'config.json'), 'utf-8')
+    );
+    expect(code).toBe(0);
+    expect(
+      fs.readFileSync(path.join(home, 'utils', 'kyoten', 'cli.js'), 'utf-8')
+    ).toBe('// cli\n');
+    expect(config).toEqual({ home });
+    expect(err.at(-2)).toBe(
+      `kyoten: ${home} is now the default home (${path.join(tmp, 'cfg', 'kyoten', 'config.json')})`
+    );
+    expect(pnpm).toEqual([['--version']].slice(0, 0));
+  });
+
+  test('should create the resolved home without changing the config', async () => {
+    const home = path.join(tmp, 'k');
+
+    const { code, pnpm } = await run(['init'], { env: { KYOTEN_HOME: home } });
+
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(home, HOME_INFO))).toBe(true);
+    expect(fs.existsSync(path.join(tmp, 'cfg', 'kyoten', 'config.json'))).toBe(
+      false
+    );
+    expect(pnpm.slice(1).map((args) => args[0])).toEqual([
+      'install',
+      'workspace:setup',
+    ]);
+  });
+
+  test('should update a home kyoten created', async () => {
+    const home = path.join(tmp, 'k');
+    await run(['init', '--no-setup'], { env: { KYOTEN_HOME: home } });
+
+    const { code, err } = await run(['update', '--no-setup'], {
+      env: { KYOTEN_HOME: home },
+    });
+
+    expect(code).toBe(0);
+    expect(err.at(-1)).toBe(`kyoten: ${home} already has kyoten 0.2.0`);
+  });
+});
+
+describe('main: doctor', () => {
+  test('should report a missing home as a warning and pass', async () => {
+    const { code, out } = await run(['doctor'], {
+      env: { DSCC_PROFILE: path.join(tmp, 'none.env') },
+    });
+
+    expect(code).toBe(0);
+    expect(
+      out.some(
+        (line) =>
+          line.startsWith('! home: ') && line.includes('does not exist yet')
+      )
+    ).toBe(true);
+    expect(out.at(-1)).toBe('kyoten is ready.');
+  });
+
+  test('should fail for a home without dependencies', async () => {
+    const home = makeHome();
+
+    const { code, out } = await run(['--home', home, 'doctor']);
+
+    expect(code).toBe(1);
+    expect(out).toContain(
+      `✗ workspace: dependencies are not installed\n    Fix: kyoten --home "${home}" init`
+    );
+    expect(out.at(-1)).toBe('1 problem(s) need a fix (see the Fix lines).');
+  });
+});
+
+describe('main: launch', () => {
   test('should start the agent in the home and return its exit code', async () => {
     const home = makeHome();
 
@@ -218,8 +386,8 @@ describe('main', () => {
 
     expect(code).toBe(3);
     expect(err).toEqual([`kyoten: claude in ${home} (--home)`]);
-    const [bin, args, options] = spawn.mock.calls[0];
-    expect([bin, args]).toEqual(['/bin/claude', ['-c']]);
+    const [file, args, options] = spawn.mock.calls[0];
+    expect([file, args]).toEqual([agentPath('claude'), ['-c']]);
     expect(options.cwd).toBe(home);
     expect(options.env.KYOTEN_CALLER_DIR).toBe(tmp);
     expect(options.env.CLAUDE_CODE_SESSION_ID).toBeUndefined();
@@ -227,18 +395,103 @@ describe('main', () => {
 
   test('should put the config defaults before the agent arguments', async () => {
     const home = makeHome();
-    fs.mkdirSync(path.join(tmp, 'cfg', 'kyoten'), { recursive: true });
+    const configPath = path.join(tmp, 'cfg', 'kyoten', 'config.json');
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
     fs.writeFileSync(
-      path.join(tmp, 'cfg', 'kyoten', 'config.json'),
+      configPath,
       JSON.stringify({ home, args: { codex: ['--search'] } })
     );
 
     const { spawn, err } = await run(['codex', 'resume']);
 
     expect(spawn.mock.calls[0][1]).toEqual(['--search', 'resume']);
-    expect(err[0]).toContain(
-      `(${path.join(tmp, 'cfg', 'kyoten', 'config.json')})`
+    expect(err[0]).toBe(`kyoten: codex in ${home} (${configPath})`);
+  });
+
+  test('should hint at kyoten update for a home made by an older kyoten', async () => {
+    const home = makeHome();
+    markManaged(home, '0.1.0');
+
+    const { err } = await run(['--home', home]);
+
+    expect(err[0]).toBe(
+      'kyoten: kyoten 0.2.0 is available for this home (it has 0.1.0): kyoten update'
     );
+  });
+
+  test('should hint at a newer kyoten for a home made by one', async () => {
+    const home = makeHome();
+    markManaged(home, '0.3.0');
+
+    const { err } = await run(['--home', home]);
+
+    expect(err[0]).toBe(
+      'kyoten: this home has kyoten 0.3.0, newer than this kyoten 0.2.0: npx kyoten@latest'
+    );
+  });
+
+  test('should give no hint when the versions match', async () => {
+    const home = makeHome();
+    markManaged(home, '0.2.0');
+
+    const { err } = await run(['--home', home]);
+
+    expect(err).toEqual([`kyoten: claude in ${home} (--home)`]);
+  });
+
+  test('should explain a missing home outside a terminal', async () => {
+    const { code, err } = await run([]);
+
+    expect(code).toBe(1);
+    expect(err).toEqual([
+      `kyoten: no kyoten home at ${path.join(tmp, 'user', '.kyoten')} yet.`,
+      'kyoten: Fix: kyoten init',
+    ]);
+  });
+
+  test('should refuse a home that holds something else', async () => {
+    const home = path.join(tmp, 'other');
+    fs.mkdirSync(home);
+    fs.writeFileSync(path.join(home, 'x'), 'x');
+
+    const { code, err } = await run(['--home', home]);
+
+    expect(code).toBe(1);
+    expect(err[0]).toBe(`kyoten: ${home} (--home) is not a kyoten workspace.`);
+  });
+
+  test('should offer to create a missing home in a terminal and stop on no', async () => {
+    const { code, err, questions, spawn } = await run([], {
+      stdin: { isTTY: true },
+      answer: 'n',
+    });
+
+    expect(code).toBe(1);
+    expect(questions).toEqual([
+      `kyoten: no kyoten home at ${path.join(tmp, 'user', '.kyoten')} yet. Create it now? [Y/n] `,
+    ]);
+    expect(err).toEqual([
+      'kyoten: nothing created; run kyoten init when you are ready',
+    ]);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  test('should create the home on Enter, then start the agent', async () => {
+    const home = path.join(tmp, 'user', '.kyoten');
+
+    const { code, spawn, pnpm } = await run([], {
+      stdin: { isTTY: true },
+      answer: '',
+    });
+
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(home, HOME_INFO))).toBe(true);
+    expect(pnpm.map((args) => args[0])).toEqual([
+      '--version',
+      'install',
+      'workspace:setup',
+    ]);
+    expect(spawn.mock.calls[0][2].cwd).toBe(home);
   });
 
   test('should start dscc with the profile instead of inherited keys', async () => {
@@ -261,7 +514,9 @@ describe('main', () => {
       'kyoten: dscc profile line 3 skipped: not a variable name: 9X'
     );
   });
+});
 
+describe('main: dscc profile', () => {
   test('should show the dscc profile without a home', async () => {
     const profile = path.join(tmp, 'dscc.env');
     fs.writeFileSync(profile, `ANTHROPIC_AUTH_TOKEN=${KEY}\n`);
@@ -315,7 +570,9 @@ describe('main', () => {
     expect(tty).toEqual(['DeepSeek API key (hidden): ', '\n']);
     expect(err).toEqual([`kyoten: key saved to ${profile}`]);
   });
+});
 
+describe('main: errors', () => {
   test('should print a thrown value that is not an Error', async () => {
     /** @type {string[]} */
     const errors = [];
@@ -336,6 +593,19 @@ describe('main', () => {
   });
 });
 
+describe('askLine', () => {
+  test('should return one answer and stop reading', async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+
+    const answer = askLine({ input, output, question: 'Q? ' });
+    input.write('yes\nmore\n');
+
+    await expect(answer).resolves.toBe('yes');
+    expect(String(output.read())).toBe('Q? ');
+  });
+});
+
 describe('defaultDeps', () => {
   test('should write to the process streams', () => {
     const stdout = vi
@@ -353,5 +623,21 @@ describe('defaultDeps', () => {
     expect(stderr).toHaveBeenCalledWith('e\n');
     expect(deps.cwd).toBe(process.cwd());
     expect(deps.platform).toBe(process.platform);
+  });
+
+  test('should ask on stderr and read the answer from stdin', async () => {
+    const input = new PassThrough();
+    vi.spyOn(process, 'stdin', 'get').mockReturnValue(
+      /** @type {any} */ (input)
+    );
+    const stderr = vi
+      .spyOn(process.stderr, 'write')
+      .mockImplementation(() => true);
+
+    const answer = defaultDeps().ask('Create? ');
+    input.write('y\n');
+
+    await expect(answer).resolves.toBe('y');
+    expect(stderr.mock.calls.map((call) => call[0])).toContain('Create? ');
   });
 });
