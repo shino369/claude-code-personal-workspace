@@ -152,13 +152,25 @@ these limits:
   does in Claude Code; AGENTS.md §1 forbids it.
 - **Command wrappers are matched only when known.** An agent set up for
   [rtk](https://github.com/rtk-ai/rtk) runs every command as `rtk <cmd>` or `rtk proxy <cmd>`
-  (`apply_patch` too). The guard and the edit detection skip `rtk`, its flags, and a pass-through
-  subcommand (`proxy`, `bypass`, `err`, `test`, `summary`), and open `rtk run '<line>'`. The
-  generated Codex rules cover `rtk <cmd>` and `rtk <pass-through> <cmd>`, but not rtk's flags:
-  `rtk -v rm` does not match them. Another wrapper of this kind needs the same treatment.
-
-The formatter formats files in this workspace and in the session task's `--repo` repository,
-running Prettier in that root so its ignore files apply; edits anywhere else are left alone.
+  (`apply_patch` too). The command guard (DSH) skips `rtk`, its flags, and a pass-through
+  subcommand (`proxy`, `bypass`, `err`, `test`, `summary`), and opens `rtk run …`. The generated
+  Codex rules cover `rtk [flag] [pass-through] <cmd>` with at most one flag, and ask before every
+  `rtk run` (a prefix rule cannot see inside it). Another wrapper of this kind needs the same
+  treatment.
+- **Any shell command that names `apply_patch` and holds a patch counts as an edit**, whatever
+  wraps it (`env`, `true &&`, a subshell, `rtk run`), so the guard checks the patch's paths. This
+  over-detects on purpose: an `echo` of a patch is checked too.
+- **The formatter runs Prettier outside the sandbox, with the repository's own config.** It
+  formats files in this workspace and in the session task's `--repo` repository (edits anywhere
+  else are left alone), running Prettier in the innermost of those roots so its ignore files
+  apply. Prettier loads that repository's config, which can be code (`prettier.config.js`,
+  plugins). This adds no new trust: the Stop hook already runs the task's verify commands, such
+  as `pnpm --dir <repo> check`, outside the sandbox. For the same reason the `repo` in a task's
+  `state.json` is trusted as `pnpm task` wrote it; an agent that edits `state.json` can change the
+  verify commands as well.
+- **A file from a refused patch may still be formatted.** Codex runs its PreToolUse hooks
+  together, so the formatter queues a patch's files while the guard refuses it. Formatting
+  rewrites only whitespace and layout, never reads the file out, and a missing file is skipped.
 
 ## Building blocks
 
