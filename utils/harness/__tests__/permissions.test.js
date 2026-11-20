@@ -120,6 +120,39 @@ describe('commandMatch', () => {
     expect(commandMatch('bash script.sh', prefixes)).toBeNull();
   });
 
+  test('should not read a heredoc body as commands', () => {
+    const format = [['format'], ['rm']];
+    expect(
+      commandMatch(
+        'git commit -m "$(cat <<\'EOF\'\nformat output\nEOF\n)"',
+        format
+      )
+    ).toBeNull();
+    expect(
+      commandMatch("cat > a.md <<'EOF'\nformat the output\nEOF", format)
+    ).toBeNull();
+    expect(commandMatch('cat <<-END\n\tformat x\n\tEND', format)).toBeNull();
+    expect(commandMatch('cat <<"X"\nrm x\nX', format)).toBeNull();
+  });
+
+  test('should see the commands after a heredoc, whatever its body holds', () => {
+    expect(commandMatch("cat <<EOF\ndon't\nEOF\nrm -rf x", prefixes)).toEqual([
+      'rm',
+    ]);
+    expect(commandMatch('cat <<A <<B\na\nA\nb\nB\nrm y', prefixes)).toEqual([
+      'rm',
+    ]);
+  });
+
+  test('should treat an unterminated heredoc as running to the end, as bash does', () => {
+    expect(commandMatch('cat <<EOF\nrm -rf x', prefixes)).toBeNull();
+  });
+
+  test('should not take a here-string or a quoted << for a heredoc', () => {
+    expect(commandMatch("cat <<< 'x'\nrm y", prefixes)).toEqual(['rm']);
+    expect(commandMatch("echo '<<X'\nrm y\nX", prefixes)).toEqual(['rm']);
+  });
+
   test('should not match empty commands', () => {
     expect(commandMatch('', prefixes)).toBeNull();
     expect(commandMatch('   ', prefixes)).toBeNull();

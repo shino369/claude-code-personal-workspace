@@ -145,12 +145,16 @@ const GIT_FLAG_OPTIONS =
 /** `$(…)` and backtick substitutions, which run inside double quotes. */
 const SUBSTITUTION_RE = /\$\(([^)]*)\)|`([^`]*)`/g;
 const SEPARATORS = new Set(['&', '|', ';', '\n', '(', ')', '{', '}', '`']);
+/** A heredoc operator and its delimiter (not `<<<`, a here-string). */
+const HEREDOC_RE = /^<<(?!<)(-?)[ \t]*(['"]?)([A-Za-z0-9_.-]+)\2/;
 
 /**
  * The words of each command in a shell line, quotes removed. Splits at
  * `& | ; ( ) { }`, newlines, and backticks outside quotes, so a quoted
  * `;` or `&&` stays in its word. Command substitutions inside double
- * quotes come back as extra lines in `nested`.
+ * quotes come back as extra lines in `nested`. A heredoc's body (`<<EOF`,
+ * `<<-EOF`, `<<'EOF'`) is data, not commands: it is skipped up to its
+ * delimiter line, or to the end when that line never comes (as in bash).
  *
  * @param {string} line
  * @returns {{ commands: string[][], nested: string[] }}
@@ -173,10 +177,39 @@ function tokenize(line) {
     if (words.length > 0) commands.push(words);
     words = [];
   };
+  /** @type {{ delimiter: string, tabs: boolean }[]} */
+  let heredocs = [];
+  /** Skip the bodies of the heredocs opened on the line that just ended. */
+  const skipHeredocs = () => {
+    for (const { delimiter, tabs } of heredocs) {
+      let end = i;
+      for (;;) {
+        const next = line.indexOf('\n', end);
+        const text = line.slice(end, next === -1 ? line.length : next);
+        end = next === -1 ? line.length : next + 1;
+        if ((tabs ? text.replace(/^\t+/, '') : text) === delimiter) break;
+        if (next === -1) break;
+      }
+      i = end;
+    }
+    heredocs = [];
+  };
   let i = 0;
   while (i < line.length) {
     const char = line[i];
-    if (char === "'") {
+    const heredoc =
+      char === '<' && line[i - 1] !== '<'
+        ? HEREDOC_RE.exec(line.slice(i, i + 256))
+        : null;
+    if (heredoc) {
+      endWord();
+      heredocs.push({ delimiter: heredoc[3], tabs: heredoc[1] === '-' });
+      i += heredoc[0].length;
+    } else if (char === '\n' && heredocs.length > 0) {
+      endCommand();
+      i++;
+      skipHeredocs();
+    } else if (char === "'") {
       const end = line.indexOf("'", i + 1);
       const stop = end === -1 ? line.length : end;
       word = (word ?? '') + line.slice(i + 1, stop);
