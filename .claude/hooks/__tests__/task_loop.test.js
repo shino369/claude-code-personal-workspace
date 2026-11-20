@@ -51,6 +51,72 @@ describe('task_loop processHookInput', () => {
     );
   });
 
+  test('should format queued Codex edits before running the loop', () => {
+    /** @type {string[]} */
+    const order = [];
+    const flush = vi.fn(() => {
+      order.push('flush');
+      return [];
+    });
+    const run = vi.fn(() => {
+      order.push('run');
+      return { action: /** @type {const} */ ('skip') };
+    });
+    processHookInput(
+      { session_id: 'cx-1' },
+      { rootDir: root, harness: 'codex', run, flush }
+    );
+    expect(order).toEqual(['flush', 'run']);
+    expect(flush).toHaveBeenCalledWith('cx-1', {
+      projectDir: root,
+      extraRoots: [],
+    });
+  });
+
+  test('should still run the loop when formatting fails', () => {
+    const run = vi.fn(() => ({ action: /** @type {const} */ ('skip') }));
+    const flush = vi.fn(() => {
+      throw new Error('prettier gone');
+    });
+    processHookInput({}, { rootDir: root, harness: 'codex', run, flush });
+    expect(run).toHaveBeenCalled();
+  });
+
+  test('should not format in Claude Code, where edits are formatted as they happen', () => {
+    const flush = vi.fn(() => []);
+    const run = vi.fn(() => ({ action: /** @type {const} */ ('skip') }));
+    processHookInput({}, { rootDir: root, run, flush });
+    expect(flush).not.toHaveBeenCalled();
+  });
+
+  test('should sign the notes with the harness name unless TASK_AGENT is set', () => {
+    /** @type {string[]} */
+    const agents = [];
+    const run = vi.fn(
+      (/** @type {{ deps: { env: NodeJS.ProcessEnv } }} */ { deps }) => {
+        agents.push(String(deps.env.TASK_AGENT));
+        return { action: /** @type {const} */ ('skip') };
+      }
+    );
+    const flush = () => [];
+    processHookInput(
+      {},
+      { rootDir: root, harness: 'codex', run, flush, deps: { env: {} } }
+    );
+    expect(agents).toEqual(['codex']);
+    processHookInput(
+      {},
+      {
+        rootDir: root,
+        harness: 'dsh',
+        run,
+        flush,
+        deps: { env: { TASK_AGENT: 'me' } },
+      }
+    );
+    expect(agents).toEqual(['codex', 'me']);
+  });
+
   test("should pass the hook's session id to the loop", () => {
     const run = vi.fn(() => ({ action: /** @type {const} */ ('skip') }));
     processHookInput({ session_id: 'sess-1' }, { rootDir: root, run });

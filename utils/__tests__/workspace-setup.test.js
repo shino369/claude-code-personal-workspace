@@ -19,6 +19,9 @@ import {
   stepMemory,
   stepSkills,
   stepTools,
+  stepHarness,
+  stepHarnessAgents,
+  codexTrustsProject,
 } from '../workspace-setup.js';
 
 /** @typedef {import('../workspace-setup.js').Deps} Deps */
@@ -60,6 +63,12 @@ function makeDeps(overrides = {}) {
         { name: 'codex', kind: 'agent', recommended: true, check: ['codex'] },
       ]),
     },
+    harness: vi.fn(() => 0),
+    env: {},
+    homedir: () => '/home/u',
+    readFile: vi.fn(() => {
+      throw new Error('ENOENT');
+    }),
     logs,
     ...overrides,
   });
@@ -275,6 +284,56 @@ describe('stepGitHooks', () => {
       spawn: vi.fn(() => ({ status: 1, stdout: null })),
     });
     expect(stepGitHooks(opts(['--check']), deps).status).toBe('fail');
+  });
+
+  /**
+   * git answering core.hooksPath with `value` and the common dir with `common`.
+   *
+   * @param {string} value
+   * @param {string} [common]
+   */
+  const gitAnswers = (value, common = '/repo/.git') =>
+    makeDeps({
+      spawn: vi.fn(
+        (/** @type {string} */ _cmd, /** @type {string[]} */ args) =>
+          args.includes('--git-common-dir')
+            ? { status: 0, stdout: `${common}\n` }
+            : { status: 0, stdout: `${value}\n` }
+      ),
+    });
+
+  test("should accept an absolute path to this checkout's hooks", () => {
+    // Claude Code's worktree support can rewrite the shared setting this way.
+    expect(
+      stepGitHooks(opts(['--check']), gitAnswers('/repo/.githooks'))
+    ).toEqual({
+      id: 'git-hooks',
+      status: 'ok',
+      detail: 'core.hooksPath=/repo/.githooks',
+    });
+  });
+
+  test("should accept, in a linked worktree, the main checkout's hooks", () => {
+    const deps = gitAnswers('/main/.githooks', '/main/.git');
+    expect(stepGitHooks(opts(['--check']), deps).status).toBe('ok');
+  });
+
+  test('should accept only this checkout when git cannot name the common dir', () => {
+    const deps = makeDeps({
+      spawn: vi.fn(
+        (/** @type {string} */ _cmd, /** @type {string[]} */ args) =>
+          args.includes('--git-common-dir')
+            ? { status: 128, stdout: '' }
+            : { status: 0, stdout: '/main/.githooks\n' }
+      ),
+    });
+    expect(stepGitHooks(opts(['--check']), deps).status).toBe('fail');
+  });
+
+  test('should fail the check for hooks of another repository', () => {
+    expect(
+      stepGitHooks(opts(['--check']), gitAnswers('/other/.githooks')).status
+    ).toBe('fail');
   });
 
   test('should make hooks executable and keep existing config', () => {
@@ -591,6 +650,184 @@ describe('stepMemory', () => {
   });
 });
 
+/** A fake harness main that logs `lines` and returns `code`. */
+const fakeHarness = (
+  /** @type {number} */ code,
+  /** @type {string[]} */ lines
+) =>
+  vi.fn(({ deps }) => {
+    lines.forEach((l) => deps.log(l));
+    return code;
+  });
+
+describe('stepHarness', () => {
+  test('should sync in setup mode and report written files', () => {
+    const deps = makeDeps({
+      harness: fakeHarness(0, ['Wrote .dsh/hooks.json', 'Wrote x']),
+    });
+    expect(stepHarness(opts(), deps)).toEqual({
+      id: 'harness',
+      status: 'done',
+      detail: 'wrote .dsh/hooks.json, x',
+    });
+    expect(deps.harness).toHaveBeenCalledWith({
+      argv: ['sync'],
+      deps: { rootDir: '/repo', log: expect.any(Function) },
+    });
+  });
+
+  test('should hint at /hooks when the Codex hooks changed', () => {
+    const deps = makeDeps({
+      harness: fakeHarness(0, ['Wrote .codex/hooks.json']),
+    });
+    expect(stepHarness(opts(), deps).detail).toContain('/hooks');
+  });
+
+  test('should be ok when nothing needed writing', () => {
+    const deps = makeDeps({
+      harness: fakeHarness(0, ['✓ generated files are up to date']),
+    });
+    expect(stepHarness(opts(), deps).status).toBe('ok');
+  });
+
+  test('should fail setup when the Claude settings differ', () => {
+    const deps = makeDeps({
+      harness: fakeHarness(1, ['✗ .claude/settings.json hooks differ']),
+    });
+    expect(stepHarness(opts(), deps)).toMatchObject({
+      status: 'fail',
+      fix: 'pnpm harness check',
+      detail: expect.stringContaining('settings.json'),
+    });
+  });
+
+  test('should use a default detail when setup fails silently', () => {
+    const deps = makeDeps({ harness: fakeHarness(1, []) });
+    expect(stepHarness(opts(), deps).detail).toContain('settings.json');
+  });
+
+  test('should be ok in check mode on a pass', () => {
+    const deps = makeDeps();
+    expect(stepHarness(opts(['--check']), deps).status).toBe('ok');
+    expect(deps.harness).toHaveBeenCalledWith(
+      expect.objectContaining({ argv: ['check'] })
+    );
+  });
+
+  test('should point to sync when a generated file is stale', () => {
+    const deps = makeDeps({
+      harness: fakeHarness(1, ['✗ .codex/hooks.json is out of date']),
+    });
+    expect(stepHarness(opts(['--check']), deps)).toMatchObject({
+      status: 'fail',
+      fix: 'pnpm harness sync',
+    });
+  });
+
+  test('should point to check when only the Claude settings differ', () => {
+    const deps = makeDeps({
+      harness: fakeHarness(1, ['✗ .claude/settings.json hooks differ']),
+    });
+    expect(stepHarness(opts(['--check']), deps).fix).toBe('pnpm harness check');
+  });
+
+  test('should fail with a default detail when check prints no problem', () => {
+    const deps = makeDeps({ harness: fakeHarness(1, []) });
+    expect(stepHarness(opts(['--check']), deps)).toMatchObject({
+      detail: 'pnpm harness check failed',
+      fix: 'pnpm harness sync',
+    });
+  });
+});
+
+describe('codexTrustsProject', () => {
+  const root = '/repo';
+  test.each([
+    ['[projects."/repo"]\ntrust_level = "trusted"\n', true],
+    ["[projects.'/repo']\ntrust_level = 'trusted'", true],
+    ['[projects."/repo"]\ntrust_level = "untrusted"', false],
+    ['[projects."/other"]\ntrust_level = "trusted"', false],
+    ['[projects."/repo"]\n[other]\ntrust_level = "trusted"', false],
+    ['trust_level = "trusted"', false],
+    ['', false],
+  ])('should parse %j as %s', (text, expected) => {
+    expect(codexTrustsProject(text, root)).toBe(expected);
+  });
+
+  test('should unescape Windows paths', () => {
+    expect(
+      codexTrustsProject(
+        '[projects."C:\\\\r"]\ntrust_level = "trusted"',
+        'C:\\r'
+      )
+    ).toBe(true);
+  });
+});
+
+describe('stepHarnessAgents', () => {
+  const registryOf = (/** @type {string[]} */ names) => ({
+    registry: () => ({
+      version: 1,
+      updatedAt: null,
+      tools: names.map((name) => ({ name, kind: 'agent', ok: true })),
+    }),
+  });
+
+  test('should report nothing when no agent is installed', () => {
+    const deps = makeDeps({ tools: registryOf([]) });
+    expect(stepHarnessAgents(deps)).toEqual([]);
+  });
+
+  test('should report nothing when the registry is unreadable', () => {
+    const deps = makeDeps({
+      tools: {
+        registry: () => {
+          throw new Error('bad');
+        },
+      },
+    });
+    expect(stepHarnessAgents(deps)).toEqual([]);
+  });
+
+  test('should warn when Codex does not trust the checkout', () => {
+    const readFile = vi.fn(() => '[projects."/else"]\ntrust_level = "trusted"');
+    const deps = makeDeps({
+      tools: registryOf(['codex']),
+      env: { CODEX_HOME: '/fake/codex' },
+      readFile,
+    });
+    const [result] = stepHarnessAgents(deps);
+    expect(readFile).toHaveBeenCalledWith(
+      path.join('/fake/codex', 'config.toml')
+    );
+    expect(result).toMatchObject({ id: 'harness-codex', status: 'warn' });
+    expect(result.fix).toContain('/hooks');
+    expect(JSON.stringify(result)).not.toContain('/else');
+  });
+
+  test('should warn when the Codex config is missing', () => {
+    const deps = makeDeps({ tools: registryOf(['codex']) });
+    expect(stepHarnessAgents(deps)[0].status).toBe('warn');
+  });
+
+  test('should be ok when Codex trusts the checkout (default home)', () => {
+    const readFile = vi.fn(() => '[projects."/repo"]\ntrust_level = "trusted"');
+    const deps = makeDeps({ tools: registryOf(['codex']), readFile });
+    expect(stepHarnessAgents(deps)[0].status).toBe('ok');
+    expect(readFile).toHaveBeenCalledWith(
+      path.join('/home/u', '.codex', 'config.toml')
+    );
+  });
+
+  test('should explain how to start DSH', () => {
+    const deps = makeDeps({ tools: registryOf(['dsh']) });
+    const [result] = stepHarnessAgents(deps);
+    expect(result).toMatchObject({ id: 'harness-dsh', status: 'ok' });
+    expect(result.detail).toContain('dsh --patch .dsh/workspace.patch.yml');
+    expect(result.detail).toContain('dsh plugin add');
+  });
+});
+
 describe('runSteps', () => {
   test('should stop after an unsupported Node.js version', async () => {
     const results = await runSteps(
@@ -612,6 +849,8 @@ describe('runSteps', () => {
       'memory',
       'browsers',
       'tools',
+      'harness',
+      'harness-codex',
     ]);
     expect(deps.linkSkills).toHaveBeenCalledTimes(2);
   });
@@ -694,6 +933,22 @@ describe('main', () => {
     const deps = makeDeps({ nodeVersion: 'v18.0.0' });
     expect(await main({ argv: [], deps })).toBe(1);
     expect(deps.logs.at(-1)).toContain('pnpm workspace:check');
+  });
+
+  test('should read the Codex config from disk by default', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-'));
+    fs.writeFileSync(
+      path.join(home, 'config.toml'),
+      '[projects."/repo"]\ntrust_level = "trusted"\n'
+    );
+    const deps = makeDeps({ env: { CODEX_HOME: home } });
+    delete (/** @type {any} */ (deps).readFile);
+    const log = vi.fn();
+    await main({ argv: ['--check'], deps: { ...deps, log } });
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining('✓ harness-codex')
+    );
+    fs.rmSync(home, { recursive: true });
   });
 
   test('should fall back to real dependencies when none are injected', async () => {

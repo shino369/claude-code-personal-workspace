@@ -22,6 +22,8 @@
  * Fails open: any error means no output and exit 0, so a broken hook never
  * traps a session.
  */
+import { flushFormatQueue, taskRepoRoots } from '#utils/harness/format.js';
+import { parseHarness } from '#utils/harness/input.js';
 import { runIfMain } from '#utils/module-runner.js';
 import { defaultDeps } from '#utils/task/deps.js';
 import { resetInnerLoop, runInnerLoop } from '#utils/task/loop.js';
@@ -36,20 +38,47 @@ import { ROOT_DIR } from '#utils/workspace-config.js';
  */
 
 /**
- * Stop: run the inner loop and turn its decision into hook output.
+ * Stop: run the inner loop and turn its decision into hook output. In Codex
+ * it first formats the files edits queued (see utils/harness/format.js):
+ * Codex runs an event's hooks concurrently, so this keeps the formatting
+ * ahead of the verify. Notes the loop writes are signed with the harness
+ * name unless TASK_AGENT says otherwise.
  *
  * @param {HookInput | undefined} input
- * @param {{ rootDir?: string, run?: typeof runInnerLoop, deps?: DepsOverrides }} [options]
+ * @param {{ rootDir?: string, harness?: import('#utils/harness/input.js').Harness, run?: typeof runInnerLoop, flush?: typeof flushFormatQueue, deps?: DepsOverrides }} [options]
  * @returns {HookOutput | null}
  */
 export function processHookInput(
   input,
-  { rootDir = ROOT_DIR, run = runInnerLoop, deps = {} } = {}
+  {
+    rootDir = ROOT_DIR,
+    harness = 'claude',
+    run = runInnerLoop,
+    flush = flushFormatQueue,
+    deps = {},
+  } = {}
 ) {
+  if (harness === 'codex') {
+    try {
+      flush(input?.session_id, {
+        projectDir: rootDir,
+        extraRoots: taskRepoRoots(rootDir, input?.session_id),
+      });
+    } catch {
+      // Formatting is best effort; the verify reports what is left.
+    }
+  }
   let decision;
   try {
+    const env = deps.env ?? process.env;
     decision = run({
-      deps: defaultDeps({ rootDir, ...deps }),
+      deps: defaultDeps({
+        rootDir,
+        ...deps,
+        ...(harness === 'claude'
+          ? {}
+          : { env: { ...env, TASK_AGENT: env.TASK_AGENT ?? harness } }),
+      }),
       session: input?.session_id ?? null,
       pendingAgents: pendingReviewAgents(input?.background_tasks),
     });
@@ -105,7 +134,9 @@ function main() {
         process.exit(0);
         return;
       }
-      const output = processHookInput(input);
+      const output = processHookInput(input, {
+        harness: parseHarness(process.argv.slice(2)),
+      });
       if (output) {
         process.stdout.write(JSON.stringify(output), () => process.exit(0));
         return;

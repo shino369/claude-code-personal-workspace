@@ -28,7 +28,7 @@ import {
   tryLock,
 } from '../queue.js';
 import { RECALL_HEADER } from '../recall.js';
-import { CLAUDE_LOCAL_FILE, CORE_START } from '../render.js';
+import { AGENTS_LOCAL_FILE, CLAUDE_LOCAL_FILE, CORE_START } from '../render.js';
 import {
   CACHE_DIR,
   LOG_FILE,
@@ -89,7 +89,7 @@ beforeEach(() => {
 
 /**
  * @param {Record<string, unknown>} input
- * @param {{ harness?: 'claude' | 'codex', env?: NodeJS.ProcessEnv }} [options]
+ * @param {{ harness?: 'claude' | 'codex' | 'dsh', env?: NodeJS.ProcessEnv }} [options]
  */
 const hook = (input, { harness = 'claude', env = {} } = {}) =>
   handleHook(
@@ -365,7 +365,7 @@ describe('failureText', () => {
 describe('SessionStart', () => {
   const start = (
     /** @type {string} */ source,
-    harness = /** @type {'claude' | 'codex'} */ ('claude')
+    harness = /** @type {'claude' | 'codex' | 'dsh'} */ ('claude')
   ) => hook({ hook_event_name: 'SessionStart', source }, { harness });
 
   test('should stay silent in Claude Code when CLAUDE.local.md loads the core block', () => {
@@ -385,6 +385,18 @@ describe('SessionStart', () => {
     fs.writeFileSync(path.join(root, CLAUDE_LOCAL_FILE), '@AGENTS.local.md\n');
 
     expect(context(start('startup', 'codex'))).toMatch(/## Memory/);
+  });
+
+  test('should stay silent in DSH, which loads AGENTS.local.md itself', () => {
+    fs.writeFileSync(path.join(root, AGENTS_LOCAL_FILE), '# AGENTS.local.md\n');
+
+    expect(start('startup', 'dsh')).toBeNull();
+  });
+
+  test('should inject the core block in DSH when AGENTS.local.md is missing', () => {
+    expect(context(start('startup', 'dsh'))).toMatch(
+      new RegExp(`^${CORE_START}`)
+    );
   });
 
   test('should say when saving is off', () => {
@@ -487,12 +499,23 @@ describe('extraction hooks', () => {
     expect(kick).not.toHaveBeenCalled();
   });
 
-  test('should not register Codex sessions (no transcript adapter yet)', () => {
+  test('should register and queue a Codex session with its rollout', () => {
     lifecycle('SessionStart', {}, { harness: 'codex' });
-    lifecycle('SessionEnd', {}, { harness: 'codex' });
 
-    expect(readOpen(dir)).toEqual([]);
-    expect(readQueue(dir)).toEqual([]);
+    expect(readOpen(dir)).toEqual([
+      expect.objectContaining({ harness: 'codex', transcript }),
+    ]);
+
+    lifecycle('SessionEnd', { reason: 'other' }, { harness: 'codex' });
+
+    expect(readQueue(dir)).toEqual([
+      expect.objectContaining({
+        session: SESSION,
+        harness: 'codex',
+        transcript,
+      }),
+    ]);
+    expect(kick).toHaveBeenCalled();
   });
 
   test('should queue an ended session and start the worker, silently', () => {

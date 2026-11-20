@@ -1,0 +1,489 @@
+/**
+ * The workspace's guardrails outside Claude Code, from the one list Claude
+ * Code enforces natively: `.claude/settings.json` `permissions`.
+ *
+ * - Codex: `Bash(...)` deny entries become execpolicy `forbidden` rules and
+ *   ask entries `prompt` rules (`.codex/rules/workspace.rules`, written by
+ *   `pnpm harness sync`). Codex splits `bash -lc` scripts into commands
+ *   before it applies them. Its patches are checked by the guard hook.
+ * - DSH has no command rules: the guard hook (`.claude/hooks/guard.js`)
+ *   denies or asks for its shell commands, reads, and edits.
+ *
+ * A guardrail, not a sandbox: like Claude's own rules, a determined command
+ * can get around a prefix match. Pure; no I/O.
+ */
+import { RTK_FLAGS, RTK_PASSTHROUGH, toolEvent } from './input.js';
+
+/**
+ * @typedef {{ deny: { commands: string[][], read: string[], edit: string[] }, ask: { commands: string[][] } }} Permissions
+ * @typedef {{ decision: 'deny' | 'ask', reason: string }} GuardDecision
+ */
+
+const RULE_RE = /^(\w+)\((.*)\)$/;
+/** Better ways to do what a denied command does. */
+const ALTERNATIVES = {
+  rm: 'Use pnpm task rm <path> instead: it moves files to tasks/.trash/ (AGENTS.md §1).',
+  npm: 'Use pnpm instead (AGENTS.md §1).',
+};
+const DENIED =
+  'Not allowed in this workspace (.claude/settings.json permissions.deny; AGENTS.md §1).';
+const ASK =
+  'Ask the user first (.claude/settings.json permissions.ask; AGENTS.md §1).';
+const RTK_RUN =
+  'rtk run hides the command it runs from these rules: ask the user first, or run the command without rtk.';
+const SHELLS = new Set(['bash', 'sh', 'zsh']);
+const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+/**
+ * The words a `Bash(...)` rule matches at the start of a command:
+ * `Bash(rm:*)` and `Bash(npm *)` are prefixes; anything else, the command.
+ *
+ * @param {string} body
+ */
+const commandWords = (body) =>
+  body
+    .replace(/(?::\*| \*)$/, '')
+    .trim()
+    .split(/\s+/);
+
+/**
+ * @param {unknown} list
+ * @returns {{ tool: string, body: string }[]}
+ */
+function parseRules(list) {
+  if (!Array.isArray(list)) return [];
+  return list.flatMap((entry) => {
+    const match = typeof entry === 'string' ? RULE_RE.exec(entry) : null;
+    return match ? [{ tool: match[1], body: match[2] }] : [];
+  });
+}
+
+/**
+ * The rules from `.claude/settings.json` that the other harnesses can
+ * enforce: commands (deny and ask), and protected paths for reads and edits.
+ * Other kinds (WebFetch domains, MCP tools) stay Claude-only.
+ *
+ * @param {unknown} settings
+ * @returns {Permissions}
+ */
+export function readPermissions(settings) {
+  const permissions = /** @type {any} */ (settings)?.permissions ?? {};
+  const deny = parseRules(permissions.deny);
+  const ask = parseRules(permissions.ask);
+  /** @param {{ tool: string, body: string }[]} rules @param {string[]} tools */
+  const bodies = (rules, tools) =>
+    rules.filter((rule) => tools.includes(rule.tool)).map((rule) => rule.body);
+  return {
+    deny: {
+      commands: bodies(deny, ['Bash']).map(commandWords),
+      read: bodies(deny, ['Read']),
+      edit: bodies(deny, ['Edit', 'Write']),
+    },
+    ask: { commands: bodies(ask, ['Bash']).map(commandWords) },
+  };
+}
+
+/** @param {string[]} words */
+const justification = (words) =>
+  ALTERNATIVES[/** @type {keyof typeof ALTERNATIVES} */ (words.join(' '))] ??
+  DENIED;
+
+/**
+ * `.codex/rules/workspace.rules`: one execpolicy prefix rule per command
+ * rule. Codex applies the strictest match, so `git push --force` stays
+ * forbidden although `git push` only prompts.
+ *
+ * @param {Permissions} permissions
+ * @returns {string}
+ */
+export function renderCodexRules(permissions) {
+  /**
+   * @param {(string | string[])[]} words a list entry is alternatives
+   * @param {'forbidden' | 'prompt'} decision
+   * @param {string} why
+   */
+  const rule = (words, decision, why) =>
+    [
+      'prefix_rule(',
+      `    pattern = [${words.map((word) => (Array.isArray(word) ? `[${word.map((alt) => JSON.stringify(alt)).join(', ')}]` : JSON.stringify(word))).join(', ')}],`,
+      `    decision = "${decision}",`,
+      `    justification = ${JSON.stringify(why)},`,
+      ')',
+    ].join('\n');
+  /**
+   * Each rule as written and behind rtk (`rtk rm`, `rtk proxy rm`), which
+   * agents set up for rtk-ai/rtk put before every command.
+   *
+   * @param {string[]} words
+   * @param {'forbidden' | 'prompt'} decision
+   * @param {string} why
+   */
+  const wrapped = (words, decision, why) =>
+    [
+      words,
+      ['rtk', ...words],
+      ['rtk', RTK_PASSTHROUGH, ...words],
+      ['rtk', RTK_FLAGS, ...words],
+      ['rtk', RTK_FLAGS, RTK_PASSTHROUGH, ...words],
+    ].map((w) => rule(w, decision, why));
+  // `rtk run '<line>'` hides its command in one argument, which prefix
+  // rules cannot look into: ask before each one.
+  const rtkRun = [
+    ['rtk', 'run'],
+    ['rtk', RTK_FLAGS, 'run'],
+  ].map((w) => rule(w, 'prompt', RTK_RUN));
+  const rules = [
+    ...permissions.deny.commands.flatMap((words) =>
+      wrapped(words, 'forbidden', justification(words))
+    ),
+    ...permissions.ask.commands.flatMap((words) =>
+      wrapped(words, 'prompt', ASK)
+    ),
+    ...rtkRun,
+  ];
+  return [
+    '# Generated by pnpm harness sync from .claude/settings.json permissions; do not edit.',
+    '# Codex loads it in a trusted project. Test: codex execpolicy check --rules .codex/rules/workspace.rules -- <command>',
+    '',
+    rules.join('\n\n'),
+    '',
+  ].join('\n');
+}
+
+/** Words that start a command but are not it. */
+const LEADERS = new Set([
+  'then',
+  'do',
+  'else',
+  'elif',
+  '!',
+  'env',
+  'command',
+  'exec',
+  'nohup',
+  'time',
+  'xargs',
+]);
+/** Wrappers whose own options come before the command (`env -i rm`). */
+const OPTION_WRAPPERS = new Set(['env', 'nohup', 'time', 'xargs', 'sudo']);
+/** Git global options that take the next word as their value. */
+const GIT_VALUE_OPTIONS = new Set(['-C', '-c', '--git-dir', '--work-tree']);
+const GIT_FLAG_OPTIONS =
+  /^(?:--git-dir=|--work-tree=|--namespace=|--no-pager$|--paginate$|-c.+=)/;
+/** `$(…)` and backtick substitutions, which run inside double quotes. */
+const SUBSTITUTION_RE = /\$\(([^)]*)\)|`([^`]*)`/g;
+const SEPARATORS = new Set(['&', '|', ';', '\n', '(', ')', '{', '}', '`']);
+/** A heredoc operator and its delimiter (not `<<<`, a here-string). */
+const HEREDOC_RE = /^<<(?!<)(-?)[ \t]*(['"]?)([A-Za-z0-9_.-]+)\2/;
+
+/**
+ * The words of each command in a shell line, quotes removed. Splits at
+ * `& | ; ( ) { }`, newlines, and backticks outside quotes, so a quoted
+ * `;` or `&&` stays in its word. Command substitutions inside double
+ * quotes come back as extra lines in `nested`. A heredoc's body (`<<EOF`,
+ * `<<-EOF`, `<<'EOF'`) is data, not commands: it is skipped up to its
+ * delimiter line, or to the end when that line never comes (as in bash).
+ *
+ * @param {string} line
+ * @returns {{ commands: string[][], nested: string[] }}
+ */
+function tokenize(line) {
+  /** @type {string[][]} */
+  const commands = [];
+  /** @type {string[]} */
+  const nested = [];
+  /** @type {string[]} */
+  let words = [];
+  /** @type {string | null} */
+  let word = null;
+  const endWord = () => {
+    if (word !== null) words.push(word);
+    word = null;
+  };
+  const endCommand = () => {
+    endWord();
+    if (words.length > 0) commands.push(words);
+    words = [];
+  };
+  /** @type {{ delimiter: string, tabs: boolean }[]} */
+  let heredocs = [];
+  /** Skip the bodies of the heredocs opened on the line that just ended. */
+  const skipHeredocs = () => {
+    for (const { delimiter, tabs } of heredocs) {
+      let end = i;
+      for (;;) {
+        const next = line.indexOf('\n', end);
+        const text = line.slice(end, next === -1 ? line.length : next);
+        end = next === -1 ? line.length : next + 1;
+        if ((tabs ? text.replace(/^\t+/, '') : text) === delimiter) break;
+        if (next === -1) break;
+      }
+      i = end;
+    }
+    heredocs = [];
+  };
+  let i = 0;
+  while (i < line.length) {
+    const char = line[i];
+    const heredoc =
+      char === '<' && line[i - 1] !== '<'
+        ? HEREDOC_RE.exec(line.slice(i, i + 256))
+        : null;
+    if (heredoc) {
+      endWord();
+      heredocs.push({ delimiter: heredoc[3], tabs: heredoc[1] === '-' });
+      i += heredoc[0].length;
+    } else if (char === '\n' && heredocs.length > 0) {
+      endCommand();
+      i++;
+      skipHeredocs();
+    } else if (char === "'") {
+      const end = line.indexOf("'", i + 1);
+      const stop = end === -1 ? line.length : end;
+      word = (word ?? '') + line.slice(i + 1, stop);
+      i = stop + 1;
+    } else if (char === '"') {
+      let text = '';
+      i++;
+      while (i < line.length && line[i] !== '"') {
+        if (line[i] === '\\' && i + 1 < line.length) i++;
+        text += line[i++];
+      }
+      i++;
+      word = (word ?? '') + text;
+      for (const match of text.matchAll(SUBSTITUTION_RE)) {
+        nested.push(match[1] ?? match[2]);
+      }
+    } else if (char === '\\') {
+      if (line[i + 1] !== '\n') word = (word ?? '') + (line[i + 1] ?? '');
+      i += 2;
+    } else if (SEPARATORS.has(char)) {
+      endCommand();
+      i++;
+    } else if (/\s/.test(char)) {
+      endWord();
+      i++;
+    } else {
+      word = (word ?? '') + char;
+      i++;
+    }
+  }
+  endCommand();
+  return { commands, nested };
+}
+
+/**
+ * What a command line really runs, from the words of one command: leading
+ * assignments and wrappers dropped, the command word by its basename, git's
+ * global options skipped, and `sh -c '…'` opened. A `sudo` command is kept
+ * as it is too, so a `sudo` rule still matches.
+ *
+ * @param {string[]} input
+ * @returns {string[][]}
+ */
+function realCommands(input) {
+  /** @type {string[][]} */
+  const found = [];
+  let words = input;
+  for (;;) {
+    while (words.length > 0 && ASSIGNMENT_RE.test(words[0])) {
+      words = words.slice(1);
+    }
+    if (words.length === 0) return found;
+    words = [words[0].split(/[\\/]/).pop() || words[0], ...words.slice(1)];
+    const [first] = words;
+    if (first === 'rtk') {
+      // rtk [-v…] [proxy|bypass|…] <command>, or rtk run '<shell line>'.
+      words = words.slice(1);
+      while (words[0]?.startsWith('-')) words = words.slice(1);
+      if (words[0] === 'run') {
+        // `rtk run` passes its words to `sh -c`, quoted as one or not.
+        let line = words.slice(1);
+        while (line[0]?.startsWith('-')) line = line.slice(1);
+        return [...found, ...simpleCommands(line.join(' '))];
+      }
+      if (RTK_PASSTHROUGH.includes(words[0])) words = words.slice(1);
+      continue;
+    }
+    if (!LEADERS.has(first) && first !== 'sudo') break;
+    if (first === 'sudo') found.push(words);
+    words = words.slice(1);
+    if (OPTION_WRAPPERS.has(first)) {
+      while (words[0]?.startsWith('-')) words = words.slice(1);
+    }
+  }
+  if (words[0] === 'git') {
+    let i = 1;
+    while (i < words.length) {
+      if (GIT_VALUE_OPTIONS.has(words[i])) i += 2;
+      else if (GIT_FLAG_OPTIONS.test(words[i])) i++;
+      else break;
+    }
+    words = ['git', ...words.slice(i)];
+  }
+  if (SHELLS.has(words[0]) && /^-\w*c$/.test(words[1] ?? '')) {
+    return [...found, ...simpleCommands(words[2] ?? '')];
+  }
+  return [...found, words];
+}
+
+/**
+ * The simple commands in a shell line, each as the words it really runs
+ * (see `realCommands`). Not a shell parser: it follows quotes, separators,
+ * and common wrappers, which is what a prefix guardrail needs.
+ *
+ * @param {string} line
+ * @returns {string[][]}
+ */
+function simpleCommands(line) {
+  const { commands, nested } = tokenize(line);
+  return [
+    ...commands.flatMap(realCommands),
+    ...nested.flatMap((text) => simpleCommands(text)),
+  ];
+}
+/**
+ * The first prefix that any simple command in `command` starts with.
+ *
+ * @param {string} command
+ * @param {string[][]} prefixes
+ * @returns {string[] | null}
+ */
+export function commandMatch(command, prefixes) {
+  for (const words of simpleCommands(command)) {
+    const found = prefixes.find((prefix) =>
+      prefix.every((word, i) => words[i] === word)
+    );
+    if (found) return found;
+  }
+  return null;
+}
+
+const CASE_INSENSITIVE = new Set(['darwin', 'win32']);
+
+/** @param {string} value */
+const toSlash = (value) => value.replace(/\\/g, '/');
+
+/**
+ * Whether an absolute path matches a Claude permission path pattern:
+ * `./` is the project, `~/` home, `//` the filesystem root; `*` is one path
+ * segment's characters, `**` any depth.
+ *
+ * @param {string} file absolute
+ * @param {string} pattern
+ * @param {{ projectDir: string, home: string, platform?: string }} where
+ *   macOS and Windows file systems ignore case by default, so on those
+ *   platforms (`platform`, default this one) the comparison does too.
+ */
+export function pathMatches(
+  file,
+  pattern,
+  { projectDir, home, platform = process.platform }
+) {
+  const anchored = pattern.startsWith('./')
+    ? `${toSlash(projectDir)}/${pattern.slice(2)}`
+    : pattern.startsWith('~/')
+      ? `${toSlash(home)}/${pattern.slice(2)}`
+      : pattern.startsWith('//')
+        ? pattern.slice(2)
+        : pattern;
+  const source = anchored
+    .split(/(\*\*\/|\*\*|\*)/)
+    .map((part) =>
+      part === '**/'
+        ? '(?:.*/)?'
+        : part === '**'
+          ? '.*'
+          : part === '*'
+            ? '[^/]*'
+            : part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+    )
+    .join('');
+  const flags = CASE_INSENSITIVE.has(platform) ? 'i' : '';
+  return new RegExp(`^${source}$`, flags).test(toSlash(file));
+}
+
+/**
+ * A path as an absolute, forward-slash path: absolute ones (`/x`, `C:/x`) as
+ * they are, relative ones against `cwd`. Pure string work, so a POSIX path
+ * stays POSIX on Windows and the reverse.
+ *
+ * @param {string} cwd
+ * @param {string} file
+ * @param {string} home a leading `~/` means this
+ */
+function absolute(cwd, file, home) {
+  const f = file.startsWith('~/')
+    ? `${toSlash(home)}/${toSlash(file).slice(2)}`
+    : toSlash(file);
+  if (f.startsWith('/') || /^[A-Za-z]:\//.test(f)) return f;
+  const parts = `${toSlash(cwd)}/${f}`.split('/');
+  /** @type {string[]} */
+  const out = [];
+  for (const part of parts) {
+    if (part === '..') out.pop();
+    else if (part !== '.' && (part !== '' || out.length === 0)) out.push(part);
+  }
+  return out.join('/');
+}
+
+/**
+ * What the guard hook says about a tool call: deny an edit or a read of a
+ * protected path; in DSH also deny or ask for a shell command (Codex has its
+ * own command rules). Null to let it through.
+ *
+ * @param {Record<string, any>} input PreToolUse payload
+ * @param {Permissions} permissions
+ * @param {{ harness: import('./input.js').Harness, projectDir: string, home: string, platform?: string, realpath?: (file: string) => string }} options
+ *   `realpath` must fail soft (return its argument for a missing file); a
+ *   file is checked as given and as resolved, so a symlink cannot hide it.
+ * @returns {GuardDecision | null}
+ */
+export function guardDecision(
+  input,
+  permissions,
+  {
+    harness,
+    projectDir,
+    home,
+    platform = process.platform,
+    realpath = (file) => file,
+  }
+) {
+  const event = toolEvent(input);
+  const wheres = [
+    { projectDir, home, platform },
+    { projectDir: realpath(projectDir), home: realpath(home), platform },
+  ];
+  const base = typeof input.cwd === 'string' ? input.cwd : projectDir;
+  const cwd = event.dir ? absolute(base, event.dir, home) : base;
+  /** @param {string[]} patterns @param {string} tool */
+  const protectedFile = (patterns, tool) => {
+    for (const file of event.files) {
+      const full = absolute(cwd, file, home);
+      const targets = [full, realpath(full)];
+      const pattern = patterns.find((p) =>
+        wheres.some((where) =>
+          targets.some((target) => pathMatches(target, p, where))
+        )
+      );
+      if (pattern) {
+        return /** @type {GuardDecision} */ ({
+          decision: 'deny',
+          reason: `${file} is protected in this workspace (.claude/settings.json permissions.deny ${tool}(${pattern}); AGENTS.md §1).`,
+        });
+      }
+    }
+    return null;
+  };
+  if (event.kind === 'edit')
+    return protectedFile(permissions.deny.edit, 'Edit');
+  if (event.kind === 'read')
+    return protectedFile(permissions.deny.read, 'Read');
+  if (event.kind !== 'shell' || harness !== 'dsh') return null;
+  const denied = commandMatch(event.command, permissions.deny.commands);
+  if (denied) return { decision: 'deny', reason: justification(denied) };
+  return commandMatch(event.command, permissions.ask.commands)
+    ? { decision: 'ask', reason: ASK }
+    : null;
+}

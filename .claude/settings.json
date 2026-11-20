@@ -31,8 +31,7 @@
       "Bash(killall:*)",
       "Bash(git push:*)",
       "Bash(git rebase:*)",
-      "Bash(git merge:*)",
-      "Bash(git cherry-pick:*)"
+      "Bash(git merge:*)"
     ],
     "deny": [
       "Read(./.env)",
@@ -112,7 +111,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session_start.js",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session_start.js --harness claude",
             "timeout": 10
           },
           {
@@ -139,7 +138,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre_compact.js",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre_compact.js --harness claude",
             "timeout": 10
           }
         ]
@@ -150,7 +149,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/task_loop.js",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/task_loop.js --harness claude",
             "timeout": 300
           }
         ]
@@ -161,12 +160,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/context_monitor.js",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/context_monitor.js --harness claude",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/task_loop.js --reset",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/task_loop.js --reset --harness claude",
             "timeout": 5
           },
           {
@@ -183,7 +182,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/audit_logger.js",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/audit_logger.js --harness claude",
             "timeout": 10
           }
         ]
@@ -193,7 +192,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/auto_format.js",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/auto_format.js --harness claude",
             "timeout": 30
           }
         ]

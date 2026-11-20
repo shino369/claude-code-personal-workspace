@@ -1052,6 +1052,42 @@ describe('extractEntry', () => {
     ]);
   });
 
+  test('should extract a Codex rollout with Claude, without its model name', () => {
+    const msg = (
+      /** @type {string} */ role,
+      /** @type {string} */ text,
+      /** @type {string} */ block
+    ) => ({
+      type: 'response_item',
+      payload: { type: 'message', role, content: [{ type: block, text }] },
+    });
+    writeTranscript([
+      { type: 'turn_context', payload: { model: 'gpt-5.5', cwd: repoDir } },
+      msg(
+        'user',
+        'From now on use pnpm in every repo; npm breaks the lockfile here.',
+        'input_text'
+      ),
+      msg(
+        'assistant',
+        `Understood. ${'I switched to pnpm. '.repeat(10)}`,
+        'output_text'
+      ),
+    ]);
+    const runAgent = agentReturning({ ops: [ADD_PNPM] });
+
+    const run = extractEntry(queued({ harness: 'codex' }), deps({ runAgent }));
+
+    expect(run).toMatchObject({
+      status: 'applied',
+      harness: 'codex',
+      model: null,
+    });
+    const call = /** @type {any} */ (runAgent.mock.calls[0])[0];
+    expect(call.prompt).toContain('[user] From now on use pnpm');
+    expect(call.command.args).not.toContain('--model');
+  });
+
   test('should use the queued folder when the transcript names none', () => {
     writeTranscript([
       {

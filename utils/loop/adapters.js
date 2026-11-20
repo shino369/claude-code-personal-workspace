@@ -14,8 +14,11 @@
  * mode, codex `read-only` sandbox, dsh `read-only` preset.
  */
 import { crossSpawn } from '../spawn.js';
+import { HARNESS_SESSION_VARS } from '../task/store.js';
 
 export const AGENTS = /** @type {const} */ (['claude', 'codex', 'dsh']);
+/** The DSH overlay that enables the workspace's hooks (utils/harness/cli.js). */
+export const DSH_PATCH = '.dsh/workspace.patch.yml';
 
 /** @typedef {typeof AGENTS[number]} AgentName */
 
@@ -65,6 +68,10 @@ const ADAPTERS = {
         'workspace-write',
         '--approval-policy',
         'never',
+        // The workspace's hooks through the Claude hooks bridge (pnpm harness
+        // sync writes it; relative to the cwd, as DSH resolves it).
+        '--patch',
+        DSH_PATCH,
         '-',
       ],
       read: [
@@ -74,6 +81,10 @@ const ADAPTERS = {
         'read-only',
         '--approval-policy',
         'never',
+        // The workspace's hooks through the Claude hooks bridge (pnpm harness
+        // sync writes it; relative to the cwd, as DSH resolves it).
+        '--patch',
+        DSH_PATCH,
         '-',
       ],
     },
@@ -150,7 +161,10 @@ export function installHint(agent) {
  */
 
 /**
- * Run one headless agent turn with the prompt on stdin.
+ * Run one headless agent turn with the prompt on stdin. The child gets the
+ * caller's env without the harness session ids: a child that inherited them
+ * would act as the caller's session in `pnpm task` (`TASK_SESSION`, set on
+ * purpose, is kept).
  *
  * @param {{ command: AgentCommand, cwd: string, prompt: string, timeoutMs: number, env: NodeJS.ProcessEnv, spawn?: AgentSpawn, now?: () => number }} options
  * @returns {AgentResult}
@@ -173,7 +187,9 @@ export function runAgent({
     timeout: timeoutMs,
     killSignal: 'SIGTERM',
     maxBuffer: 64 * 1024 * 1024,
-    env,
+    env: Object.fromEntries(
+      Object.entries(env).filter(([key]) => !HARNESS_SESSION_VARS.includes(key))
+    ),
   });
   if (result.error?.code === 'ENOENT') {
     throw new Error(

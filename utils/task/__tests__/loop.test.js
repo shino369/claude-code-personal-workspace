@@ -801,12 +801,30 @@ describe('resetInnerLoop', () => {
 
   test.each([
     ['a task notification', '<task-notification>done</task-notification>'],
+    [
+      'a DSH subagent notice',
+      'Background subagent reviewer finished and will do no further work unless you send it more.\nIts closing message:\nDone.',
+    ],
+    [
+      'a DSH subagent failure',
+      'Background subagent r-2 failed before it finished.',
+    ],
     ['an empty prompt', '   '],
     ['a missing prompt', undefined],
   ])('should not reset on %s', (_label, prompt) => {
     halt();
     expect(resetInnerLoop({ deps: deps(), prompt })).toBe(false);
     expect(loadTask(root, NAME).state?.loop.halted).toBe(true);
+  });
+
+  test('should still reset on a typed prompt that mentions a subagent', () => {
+    halt();
+    expect(
+      resetInnerLoop({
+        deps: deps(),
+        prompt: 'Background subagent ideas, please',
+      })
+    ).toBe(true);
   });
 
   test('should do nothing when no loop applies or the count is already fresh', () => {

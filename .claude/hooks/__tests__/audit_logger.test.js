@@ -56,6 +56,19 @@ describe('audit_logger', () => {
     test('should fall back to process.cwd() with no input', () => {
       expect(getLogRoot(undefined, {})).toBe(process.cwd());
     });
+
+    test('should use the workspace root in Codex, ignoring an inherited CLAUDE_PROJECT_DIR', () => {
+      expect(
+        getLogRoot(
+          { cwd: '/cwd' },
+          { CLAUDE_PROJECT_DIR: '/p' },
+          {
+            harness: 'codex',
+            rootDir: '/root',
+          }
+        )
+      ).toBe('/root');
+    });
   });
 
   describe('ensureLogDirectory', () => {
@@ -237,6 +250,11 @@ describe('audit_logger', () => {
       ]);
     });
 
+    test('should add the harness only when it is not Claude Code', () => {
+      expect(buildLogEntry({}, new Date(), 'dsh').harness).toBe('dsh');
+      expect(buildLogEntry({}, new Date())).not.toHaveProperty('harness');
+    });
+
     test('should keep array tool responses', () => {
       const entry = buildLogEntry({ tool_response: [] });
 
@@ -256,9 +274,64 @@ describe('audit_logger', () => {
         { CLAUDE_PROJECT_DIR: tmpDir }
       );
 
+      if (logFile === null) throw new Error('expected a log file');
       expect(logFile.startsWith(path.join(tmpDir, 'logs'))).toBe(true);
       const [entry] = readLines(logFile);
       expect(entry.tool_input.command).toBe(`GH_TOKEN=${REDACTED} gh pr list`);
+    });
+
+    test('should log Codex calls under the workspace root, marked with the harness', () => {
+      const logFile = /** @type {string} */ (
+        processHookInput(
+          {
+            session_id: 'cx',
+            hook_event_name: 'PostToolUse',
+            tool_name: 'Bash',
+            cwd: '/elsewhere',
+          },
+          { CLAUDE_PROJECT_DIR: '/parent-claude' },
+          { harness: 'codex', rootDir: tmpDir }
+        )
+      );
+      expect(logFile.startsWith(path.join(tmpDir, 'logs'))).toBe(true);
+      expect(readLines(logFile)[0].harness).toBe('codex');
+    });
+
+    test("should log Codex's patch edits at PreToolUse, and skip its other PreToolUse calls", () => {
+      const options = {
+        harness: /** @type {const} */ ('codex'),
+        rootDir: tmpDir,
+      };
+      expect(
+        processHookInput(
+          {
+            hook_event_name: 'PreToolUse',
+            tool_name: 'Bash',
+            tool_input: { command: 'ls' },
+          },
+          {},
+          options
+        )
+      ).toBeNull();
+      const logFile = /** @type {string} */ (
+        processHookInput(
+          {
+            hook_event_name: 'PreToolUse',
+            tool_name: 'Bash',
+            tool_input: {
+              command:
+                "apply_patch <<'EOF'\n*** Begin Patch\n*** Add File: a.md\n*** End Patch\nEOF",
+            },
+          },
+          {},
+          options
+        )
+      );
+      const [entry] = readLines(logFile);
+      expect(entry).toMatchObject({
+        hook_event: 'PreToolUse',
+        harness: 'codex',
+      });
     });
 
     test('should fall back to input cwd and append across calls', () => {
@@ -267,6 +340,7 @@ describe('audit_logger', () => {
       processHookInput(input, {});
       const logFile = processHookInput(input, {});
 
+      if (logFile === null) throw new Error('expected a log file');
       expect(logFile.startsWith(path.join(tmpDir, 'logs'))).toBe(true);
       expect(readLines(logFile)).toHaveLength(2);
     });

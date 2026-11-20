@@ -92,7 +92,7 @@ describe('normalizeEntry', () => {
   test.each([
     ['not an object', null],
     ['a bad session id', entry({ session: '../evil' })],
-    ['a harness without a transcript adapter', entry({ harness: 'codex' })],
+    ['a harness without a transcript adapter', entry({ harness: 'dsh' })],
     ['a relative transcript path', entry({ transcript: 'x.jsonl' })],
     ['a transcript that is not JSONL', entry({ transcript: '/tmp/x.txt' })],
     ['no time', entry({ at: 5 })],

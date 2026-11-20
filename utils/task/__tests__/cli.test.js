@@ -1095,6 +1095,13 @@ describe('review', () => {
     expect(out).toContain(`Opened review round 1/2 for ${NAME} (1 file(s)).`);
     expect(out).toContain(`Brief: tasks/${NAME}/reviews/BRIEF_${NAME}-r1.md`);
     expect(out).toContain('subagent_type "reviewer"');
+    expect(out).toContain(
+      'Codex: spawn_agent with agent_type "reviewer", message "Follow'
+    );
+    expect(out).toContain('then wait_agent before you end the turn');
+    expect(out).toContain(
+      'DSH: subagent with prompt "Follow .claude/agents/reviewer.md'
+    );
     expect(out).toContain('Then: pnpm task review record');
     expect(state().quality).toMatchObject({
       phase: 'review',

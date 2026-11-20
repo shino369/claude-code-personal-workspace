@@ -3,6 +3,7 @@
  */
 import { vi } from 'vitest';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 // Mock child_process module
@@ -15,8 +16,9 @@ const childProcess = await import('child_process');
 const spawnSync = /** @type {import('vitest').Mock} */ (
   /** @type {unknown} */ (childProcess.spawnSync)
 );
-const { prettierBin, processHookInput, runPrettier } =
+const { prettierBin, processHookInput, processOtherHarness, runPrettier } =
   await import('../auto_format.js');
+const { queueFiles, takeQueue } = await import('#utils/harness/format.js');
 const BIN = /** @type {string} */ (prettierBin());
 
 describe('auto_format', () => {
@@ -244,5 +246,175 @@ describe('auto_format', () => {
       }
       consoleErrorSpy.mockRestore();
     });
+  });
+});
+
+describe('auto_format in Codex and DSH', () => {
+  /** @type {string} */
+  let project;
+  /** @type {string} */
+  let tmpDir;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    spawnSync.mockImplementation(() => ({ status: 0, stderr: '' }));
+    project = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'fmt-hook-'))
+    );
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fmt-q-'));
+    fs.writeFileSync(path.join(project, 'a.js'), 'x');
+    fs.writeFileSync(path.join(project, 'b.md'), 'x');
+  });
+
+  afterEach(() => {
+    fs.rmSync(project, { recursive: true, force: true });
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const patch =
+    "apply_patch <<'EOF'\n*** Begin Patch\n*** Update File: a.js\n*** End Patch\nEOF";
+  /** @param {Record<string, unknown>} input */
+  const options = (input) => ({ rootDir: project, env: {}, tmpDir, ...input });
+
+  test("should queue Codex's shell-run patch at PreToolUse without formatting yet", () => {
+    const input = {
+      hook_event_name: 'PreToolUse',
+      session_id: 's-1',
+      cwd: project,
+      tool_name: 'Bash',
+      tool_input: { command: patch },
+    };
+    expect(processOtherHarness(input, 'codex', options({}))).toEqual([]);
+    expect(spawnSync).not.toHaveBeenCalled();
+    expect(takeQueue('s-1', { tmpDir })).toEqual([path.join(project, 'a.js')]);
+  });
+
+  test('should format the queue at the next Codex PostToolUse, whatever the tool', () => {
+    queueFiles('s-1', [path.join(project, 'a.js')], { tmpDir });
+    const input = {
+      hook_event_name: 'PostToolUse',
+      session_id: 's-1',
+      cwd: project,
+      tool_name: 'Bash',
+      tool_input: { command: 'ls' },
+    };
+    expect(processOtherHarness(input, 'codex', options({}))).toEqual([
+      path.join(project, 'a.js'),
+    ]);
+    expect(spawnSync).toHaveBeenCalledTimes(1);
+  });
+
+  test("should format a DSH edit's files at PostToolUse", () => {
+    const input = {
+      hook_event_name: 'PostToolUse',
+      session_id: 's-1',
+      cwd: project,
+      tool_name: 'edit',
+      tool_input: { file_path: path.join(project, 'b.md') },
+    };
+    expect(processOtherHarness(input, 'dsh', options({}))).toEqual([
+      path.join(project, 'b.md'),
+    ]);
+  });
+
+  test('should use CLAUDE_PROJECT_DIR in DSH and skip files outside it', () => {
+    const input = {
+      hook_event_name: 'PostToolUse',
+      session_id: 's-1',
+      cwd: project,
+      tool_name: 'write',
+      tool_input: { file_path: path.join(project, 'a.js') },
+    };
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'fmt-x-'));
+    expect(
+      processOtherHarness(
+        input,
+        'dsh',
+        options({ env: { CLAUDE_PROJECT_DIR: elsewhere } })
+      )
+    ).toEqual([]);
+    fs.rmSync(elsewhere, { recursive: true, force: true });
+  });
+
+  test("should format a Codex edit in the session task's --repo", async () => {
+    const { saveState, writeSession } = await import('#utils/task/store.js');
+    const { createState } = await import('#utils/task/state.js');
+    const repo = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'fmt-repo-'))
+    );
+    fs.writeFileSync(path.join(repo, 'r.js'), 'x');
+    const dir = path.join(project, 'tasks', 'demo-261121');
+    fs.mkdirSync(dir, { recursive: true });
+    saveState(dir, createState({ name: 'demo-261121', goal: 'G', repo }));
+    writeSession(project, 'cx-1', { task: 'demo-261121', engaged: true });
+    const input = {
+      hook_event_name: 'PostToolUse',
+      session_id: 'cx-1',
+      cwd: repo,
+      tool_name: 'apply_patch',
+      tool_input: {
+        command: '*** Begin Patch\n*** Update File: r.js\n*** End Patch',
+      },
+    };
+    expect(processOtherHarness(input, 'codex', options({}))).toEqual([
+      path.join(repo, 'r.js'),
+    ]);
+    expect(spawnSync).toHaveBeenCalledWith(
+      process.execPath,
+      [BIN, '--write', path.join(repo, 'r.js')],
+      expect.objectContaining({ cwd: repo })
+    );
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  test('should not format outside the project for a session with no task repo', () => {
+    const outside = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'fmt-out-'))
+    );
+    fs.writeFileSync(path.join(outside, 'r.js'), 'x');
+    const input = {
+      hook_event_name: 'PostToolUse',
+      session_id: 'cx-2',
+      cwd: outside,
+      tool_name: 'apply_patch',
+      tool_input: {
+        command: '*** Begin Patch\n*** Update File: r.js\n*** End Patch',
+      },
+    };
+    expect(processOtherHarness(input, 'codex', options({}))).toEqual([]);
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+
+  test("should resolve a patch's paths against its leading cd", () => {
+    fs.mkdirSync(path.join(project, 'sub'));
+    fs.writeFileSync(path.join(project, 'sub', 'a.js'), 'x');
+    const input = {
+      hook_event_name: 'PostToolUse',
+      session_id: 's-1',
+      cwd: project,
+      tool_name: 'Bash',
+      tool_input: { command: `cd sub && ${patch}` },
+    };
+    expect(processOtherHarness(input, 'dsh', options({}))).toEqual([
+      path.join(project, 'sub', 'a.js'),
+    ]);
+    const { cwd: _cwd, ...noCwd } = input;
+    expect(
+      processOtherHarness(
+        noCwd,
+        'dsh',
+        options({ env: { CLAUDE_PROJECT_DIR: project } })
+      )
+    ).toEqual([path.join(project, 'sub', 'a.js')]);
+  });
+
+  test('should ignore tools that edit nothing', () => {
+    const input = {
+      hook_event_name: 'PostToolUse',
+      tool_name: 'read',
+      tool_input: {},
+    };
+    expect(processOtherHarness(input, 'dsh', options({}))).toEqual([]);
+    expect(spawnSync).not.toHaveBeenCalled();
   });
 });

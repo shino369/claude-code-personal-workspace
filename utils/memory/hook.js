@@ -14,7 +14,8 @@
  * - PreToolUse: notes whose triggers are in the command (no scoring).
  * - PostToolUseFailure (Claude) or PostToolUse with a non-zero exit (Codex):
  *   notes recalled for the command and its error output.
- * - Extraction (path B, harnesses with a transcript adapter: Claude Code):
+ * - Extraction (path B, harnesses with a transcript adapter: Claude Code
+ *   and Codex; DSH has no SessionEnd and gives hooks no transcript):
  *   SessionStart records the session as open, queues sessions that ended
  *   without a SessionEnd, and starts the worker (also when consolidation is
  *   due); SessionEnd queues the
@@ -52,7 +53,11 @@ import {
   matchTriggers,
   recall,
 } from './recall.js';
-import { CLAUDE_LOCAL_FILE, renderStored } from './render.js';
+import {
+  AGENTS_LOCAL_FILE,
+  CLAUDE_LOCAL_FILE,
+  renderStored,
+} from './render.js';
 import { mainCheckout } from './repo.js';
 import {
   CACHE_DIR,
@@ -61,7 +66,6 @@ import {
   readUsage,
   recordHits,
 } from './store.js';
-import { TRANSCRIPT_ADAPTERS } from './transcript.js';
 
 /** Roles that must review in a clean context. */
 export const SKIP_AGENTS = ['reviewer', 'verifier'];
@@ -70,12 +74,12 @@ export const SESSIONS_DIR = 'sessions';
 export const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Characters of a failed command's output used in the query. */
 export const ERROR_CHARS = 600;
-const HARNESSES = ['claude', 'codex'];
+const HARNESSES = ['claude', 'codex', 'dsh'];
 const EXIT_CODE_RE = /\bexit code:?\s*(-?\d+)/i;
 const NOTE_ID_RE = /^- ([mt][1-9]\d*) \(/;
 
 /**
- * @typedef {'claude' | 'codex'} Harness
+ * @typedef {'claude' | 'codex' | 'dsh'} Harness
  * @typedef {Record<string, any>} HookInput
  * @typedef {{ hookSpecificOutput: { hookEventName: string, additionalContext: string }, systemMessage?: string }} HookOutput
  * @typedef {{ harness?: Harness, rootDir?: string, now?: Date, env?: NodeJS.ProcessEnv, kick?: typeof kickWorker }} HookOptions
@@ -252,8 +256,6 @@ export function handleHook(
       cwd: typeof input.cwd === 'string' ? input.cwd : rootDir,
     });
 
-  // Extraction needs a transcript adapter for this harness.
-  const extracts = Object.hasOwn(TRANSCRIPT_ADAPTERS, harness);
   const entry = {
     session,
     harness,
@@ -272,22 +274,27 @@ export function handleHook(
     // Headless runs (--no-session-persistence) leave no transcript to read.
     const saved =
       typeof entry.transcript === 'string' && fs.existsSync(entry.transcript);
-    if (extracts && saved && enqueue(dir, entry)) startWorker(false);
+    if (saved && enqueue(dir, entry)) startWorker(false);
     return null;
   }
   if (event === 'SessionStart') {
     if (input.source !== 'resume') writeInjected(dir, session, new Set());
     pruneSessions(dir, now);
-    if (extracts) {
-      registerOpen(dir, entry);
-      catchUp(dir, { current: session, now });
-      startWorker(true);
-    }
+    registerOpen(dir, entry);
+    catchUp(dir, { current: session, now });
+    startWorker(true);
     const news = announcement(dir);
     const off = savingOff(readConfig(dir), session);
     const parts = [
+      // The core block, unless the harness loads it from a local file:
+      // Claude Code through CLAUDE.local.md, DSH AGENTS.local.md itself.
       ...(harness === 'codex' ||
-      !fs.existsSync(path.join(home, CLAUDE_LOCAL_FILE))
+      !fs.existsSync(
+        path.join(
+          home,
+          harness === 'dsh' ? AGENTS_LOCAL_FILE : CLAUDE_LOCAL_FILE
+        )
+      )
         ? [renderStored(home).block]
         : []),
       ...(off

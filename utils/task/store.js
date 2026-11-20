@@ -249,15 +249,33 @@ export const SESSION_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
  */
 
 /**
- * The calling session: `$TASK_SESSION` (any harness can set it), else Claude
- * Code's `$CLAUDE_CODE_SESSION_ID`. The first one set decides; null when it
- * is not a safe id or neither is set.
+ * Session ids each harness sets for the model's shell commands, equal to its
+ * hooks' `session_id`: Codex (`CODEX_SESSION_ID` is the same value), DSH, and
+ * Claude Code. Child agents must not inherit them (utils/loop/adapters.js).
+ */
+export const HARNESS_SESSION_VARS = [
+  'CODEX_THREAD_ID',
+  'CODEX_SESSION_ID',
+  'DSH_SESSION_ID',
+  'CLAUDE_CODE_SESSION_ID',
+];
+
+/**
+ * The calling session: `$TASK_SESSION` (any harness can set it), else the
+ * harness's own id: Codex's `$CODEX_THREAD_ID`, DSH's `$DSH_SESSION_ID`, then
+ * Claude Code's `$CLAUDE_CODE_SESSION_ID`. Claude comes last because a codex
+ * or dsh started from Claude Code's shell inherits Claude's id. The first one
+ * set decides; null when it is not a safe id or none is set.
  *
  * @param {NodeJS.ProcessEnv} env
  * @returns {string | null}
  */
 export function sessionFromEnv(env) {
-  const id = env.TASK_SESSION || env.CLAUDE_CODE_SESSION_ID;
+  const id =
+    env.TASK_SESSION ||
+    env.CODEX_THREAD_ID ||
+    env.DSH_SESSION_ID ||
+    env.CLAUDE_CODE_SESSION_ID;
   return id && SESSION_ID_RE.test(id) ? id : null;
 }
 
@@ -382,16 +400,16 @@ export function pruneSessions(
 
 /**
  * The task a caller's commands resolve to: its session's bound task when
- * that task exists, else the workspace default (`tasks/.active`).
+ * that task exists, none when the session is bound to no task or a task
+ * that is gone (another session may have moved `tasks/.active` since), and
+ * the workspace default only for a caller without a binding.
  *
  * @param {string} rootDir
  * @param {string | null} [session] default: from the environment
  * @returns {string | null}
  */
 export function currentTask(rootDir, session = sessionFromEnv(process.env)) {
-  const bound = readSession(rootDir, session)?.task;
-  if (bound && listTaskNames(rootDir).includes(bound)) return bound;
-  return readActive(rootDir);
+  return sessionTask(rootDir, session)?.name ?? null;
 }
 
 /**
