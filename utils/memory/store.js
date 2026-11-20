@@ -564,19 +564,20 @@ function joinLists(a, b, max) {
 
 /**
  * Save a note. A near-duplicate of an active note in the same scope and repo
- * updates that note instead (new text and type, tags and triggers joined).
+ * updates that note instead (new text and type, tags and triggers joined),
+ * unless `merge` is false (task digests: two similar tasks are two notes).
  *
  * @param {string} dir the memory directory
  * @param {NoteInput} input
- * @param {{ now?: Date }} [options]
+ * @param {{ now?: Date, merge?: boolean }} [options]
  * @returns {{ action: 'added' | 'merged' | 'unchanged', note: Note }}
  */
-export function addNote(dir, input, { now = new Date() } = {}) {
+export function addNote(dir, input, { now = new Date(), merge = true } = {}) {
   const fields = normalizeInput(input);
   assertNoSecrets(fields);
   const at = now.toISOString();
   return mutate(dir, (notes) => {
-    const existing = findNearDuplicate(notes.values(), fields);
+    const existing = merge ? findNearDuplicate(notes.values(), fields) : null;
     if (existing) return mergeInto(dir, notes, existing, fields, at);
     const { unchecked, ...rest } = fields;
     const id = nextId(notes, fields.source.via);

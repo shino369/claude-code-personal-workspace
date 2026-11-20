@@ -13,6 +13,14 @@ import { currentTask, loadTask, sessionFromEnv } from '../task/store.js';
 import { ROOT_DIR } from '../workspace-config.js';
 import { readConfig, savingOff, setSaving, writeConfig } from './config.js';
 import {
+  ANNOUNCE_CHARS,
+  announceSave,
+  kindLabel,
+  refreshAfterWrite,
+  shorten,
+  writerSource,
+} from './context.js';
+import {
   listPresets,
   readPersonalization,
   readPreset,
@@ -25,7 +33,6 @@ import {
   CLAUDE_LOCAL_FILE,
   CORE_BUDGET,
   initLocal,
-  renderLocal,
   renderStored,
 } from './render.js';
 import { mainCheckout, repoName } from './repo.js';
@@ -139,7 +146,6 @@ const FIELD_FLAGS = /** @type {const} */ ([
   'extra',
 ]);
 
-const ANNOUNCE_CHARS = 120;
 const LIST_CHARS = 100;
 const HISTORY_CHARS = 80;
 const MAX_RECALL = 20;
@@ -242,13 +248,6 @@ export function defaultDeps(overrides = {}) {
 const dirOf = (deps) => memoryDir(deps.rootDir);
 
 /**
- * @param {string} text
- * @param {number} max
- */
-const shorten = (text, max) =>
-  text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
-
-/**
  * @param {number} n
  * @param {string} word
  */
@@ -287,14 +286,6 @@ function output(deps, options, json, text) {
 }
 
 /**
- * `machine, howto` · `repo web, fact`.
- *
- * @param {Pick<Note, 'scope' | 'repo' | 'type'>} note
- */
-const kindLabel = (note) =>
-  `${note.scope === 'repo' ? `repo ${note.repo}` : note.scope}, ${note.type}`;
-
-/**
  * @param {Note} note
  * @param {Date} now
  */
@@ -331,26 +322,6 @@ function historyLine(op) {
     return `${head}: ${Object.keys(op.set).join(', ')}`;
   if (op.op === 'delete' && op.why) return `${head}: ${op.why}`;
   return head;
-}
-
-/**
- * Who is writing: an agent (from $TASK_AGENT, or Claude Code), else the
- * user, with the session and the current task when known.
- *
- * @param {Deps} deps
- * @returns {Source}
- */
-function sourceOf(deps) {
-  const harness =
-    deps.env.TASK_AGENT || (deps.env.CLAUDECODE === '1' ? 'claude' : '');
-  const session = sessionFromEnv(deps.env);
-  const task = currentTask(deps.rootDir, session);
-  return {
-    via: harness ? 'agent' : 'user',
-    ...(harness ? { harness } : {}),
-    ...(session ? { session } : {}),
-    ...(task ? { task } : {}),
-  };
 }
 
 /**
@@ -475,26 +446,6 @@ function needSession(deps) {
 }
 
 /**
- * After a write: re-render the core block and warm the index cache. A
- * broken AGENTS.local.md is a warning (the note is saved either way).
- *
- * @param {Deps} deps
- * @returns {string[]} warnings
- */
-function refresh(deps) {
-  /** @type {string[]} */
-  let warnings;
-  try {
-    warnings = renderLocal(deps.rootDir).warnings;
-  } catch (error) {
-    if (!(error instanceof MemoryError)) throw error;
-    warnings = [error.message];
-  }
-  loadIndex(dirOf(deps));
-  return warnings;
-}
-
-/**
  * Print a changed note with the refresh warnings.
  *
  * @param {Deps} deps
@@ -503,7 +454,7 @@ function refresh(deps) {
  * @param {string} text
  */
 function reportChange(deps, options, note, text) {
-  const warnings = refresh(deps);
+  const warnings = refreshAfterWrite(deps.rootDir);
   output(deps, options, { note, warnings }, withWarnings(text, warnings));
   return 0;
 }
@@ -637,24 +588,17 @@ export const COMMANDS = {
         type: options.type,
         tags: splitList(options.tags ?? ''),
         triggers: options.triggers,
-        source: sourceOf(deps),
+        source: writerSource({ env: deps.env, rootDir: deps.rootDir }),
         pinned: options.pin,
       },
       { now: deps.now() }
     );
-    const warnings = refresh(deps);
-    const shown = shorten(note.text, ANNOUNCE_CHARS);
-    const line =
-      action === 'added'
-        ? `Saved to memory: ${note.id} (${kindLabel(note)}) ${shown}`
-        : action === 'merged'
-          ? `Updated memory: ${note.id} (merged into a similar note) ${shown}`
-          : `Already in memory: ${note.id} ${shown}`;
+    const warnings = refreshAfterWrite(deps.rootDir);
     output(
       deps,
       options,
       { action, note, warnings },
-      withWarnings(line, warnings)
+      withWarnings(announceSave({ action, note }), warnings)
     );
     return 0;
   },
@@ -830,7 +774,7 @@ export const COMMANDS = {
     }
     const note = updateNote(dirOf(deps), id, changes, {
       now: deps.now(),
-      source: sourceOf(deps),
+      source: writerSource({ env: deps.env, rootDir: deps.rootDir }),
     });
     return reportChange(
       deps,
@@ -844,7 +788,7 @@ export const COMMANDS = {
     const id = needId(options, 'rm');
     const note = deleteNote(dirOf(deps), id, options.message ?? '', {
       now: deps.now(),
-      source: sourceOf(deps),
+      source: writerSource({ env: deps.env, rootDir: deps.rootDir }),
     });
     return reportChange(
       deps,
@@ -926,7 +870,7 @@ export const COMMANDS = {
       } else settings[key] = value;
     }
     const written = writePersonalization(dir, settings);
-    const warnings = refresh(deps);
+    const warnings = refreshAfterWrite(deps.rootDir);
     output(
       deps,
       options,
@@ -963,7 +907,7 @@ export const COMMANDS = {
     let warnings = [];
     if (options.extractModel !== undefined || options.budget !== undefined) {
       config = writeConfig(dir, config);
-      warnings = refresh(deps);
+      warnings = refreshAfterWrite(deps.rootDir);
     }
     output(
       deps,

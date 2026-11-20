@@ -306,6 +306,17 @@ describe('memory store', () => {
       expect(logOps()).toHaveLength(1);
     });
 
+    test('should add a near-duplicate as a new note with merge: false', () => {
+      addNote(dir, input(), { now: NOW });
+
+      const second = addNote(dir, input({ text: PROXY_EDIT }), {
+        now: LATER,
+        merge: false,
+      });
+
+      expect(second).toMatchObject({ action: 'added', note: { id: 'm2' } });
+    });
+
     test('should merge a near-duplicate: new text, tags joined, same id', () => {
       addNote(dir, input({ tags: ['proxy', 'github'] }), { now: NOW });
 
