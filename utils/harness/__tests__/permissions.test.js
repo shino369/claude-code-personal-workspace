@@ -79,6 +79,18 @@ describe('renderCodexRules', () => {
     expect(text.endsWith(')\n')).toBe(true);
   });
 
+  test('should forbid the rtk-wrapped forms of each command rule too', () => {
+    const text = renderCodexRules(PERMS);
+    expect(text).toContain(`    pattern = ["rtk", "rm"],
+    decision = "forbidden",`);
+    expect(text)
+      .toContain(`    pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "git", "push", "--force"],
+    decision = "forbidden",`);
+    expect(text)
+      .toContain(`    pattern = ["rtk", ["proxy", "bypass", "err", "test", "summary"], "kill", "-9"],
+    decision = "prompt",`);
+  });
+
   test('should write only the header when there are no command rules', () => {
     expect(
       renderCodexRules(readPermissions({})).trim().split('\n')
@@ -113,6 +125,30 @@ describe('commandMatch', () => {
     expect(commandMatch('FOO=1 BAR=2 rm x', prefixes)).toEqual(['rm']);
     expect(commandMatch(`bash -lc 'rm -rf x'`, prefixes)).toEqual(['rm']);
     expect(commandMatch(`sh -c "git push"`, prefixes)).toEqual(['git', 'push']);
+  });
+
+  test('should see through an rtk prefix (rtk-ai/rtk rewrites commands this way)', () => {
+    expect(commandMatch('rtk rm -rf x', prefixes)).toEqual(['rm']);
+    expect(commandMatch('rtk proxy rm -rf x', prefixes)).toEqual(['rm']);
+    expect(
+      commandMatch('rtk -vv --ultra-compact bypass npm i', prefixes)
+    ).toEqual(['npm']);
+    expect(
+      commandMatch('/usr/local/bin/rtk proxy git -C x push', prefixes)
+    ).toEqual(['git', 'push']);
+    expect(commandMatch('ls && rtk err git push', prefixes)).toEqual([
+      'git',
+      'push',
+    ]);
+    expect(commandMatch(`rtk run 'rm -rf x'`, prefixes)).toEqual(['rm']);
+    expect(commandMatch('rtk proxy env FOO=1 rm x', prefixes)).toEqual(['rm']);
+  });
+
+  test('should not match a bare rtk or an rtk subcommand of its own', () => {
+    expect(commandMatch('rtk read rm.txt', prefixes)).toBeNull();
+    expect(commandMatch('rtk', prefixes)).toBeNull();
+    expect(commandMatch('rtk proxy', prefixes)).toBeNull();
+    expect(commandMatch('rtk run', prefixes)).toBeNull();
   });
 
   test('should treat a bare shell name as an ordinary command', () => {

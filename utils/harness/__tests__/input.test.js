@@ -187,6 +187,13 @@ describe('toolEvent', () => {
       [`pwsh -NoProfile -Command "apply_patch`],
       [`powershell -Command apply_patch`],
       [`cmd /c apply_patch`],
+      ['rtk apply_patch'],
+      ['rtk proxy apply_patch'],
+      ['rtk bypass applypatch'],
+      ['rtk -vv --ultra-compact proxy apply_patch'],
+      ['/opt/homebrew/bin/rtk proxy apply_patch'],
+      [`rtk proxy bash -lc "apply_patch`],
+      [`bash -lc "rtk proxy apply_patch`],
     ])('should treat %s as an edit', (prefix) => {
       expect(event(`${prefix} ${body}`)).toMatchObject({
         kind: 'edit',
@@ -207,6 +214,7 @@ describe('toolEvent', () => {
       expect(event(`bash -lc 'cd "../up"&&apply_patch ${body}`).dir).toBe(
         '../up'
       );
+      expect(event(`cd sub && rtk proxy apply_patch ${body}`).dir).toBe('sub');
     });
 
     test('should read an argv-style command as one line', () => {
@@ -220,6 +228,8 @@ describe('toolEvent', () => {
       expect(event(`echo apply_patch ${body}`).kind).toBe('shell');
       expect(event(`bash -lc "ls && apply_patch ${body}`).kind).toBe('shell');
       expect(event(`bash -x apply_patch`).kind).toBe('shell');
+      expect(event(`rtk read apply_patch ${body}`).kind).toBe('shell');
+      expect(event(`rtkx apply_patch ${body}`).kind).toBe('shell');
     });
   });
 

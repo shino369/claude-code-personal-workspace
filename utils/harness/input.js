@@ -39,15 +39,27 @@ const READ_TOOLS = new Set(['Read', 'read']);
 const PATCH_HEADER_RE =
   /^[ \t]*\*\*\* (?:Add File|Update File|Delete File|Move to): ([^\n]*)/gm;
 /**
+ * rtk (rtk-ai/rtk) subcommands that run the command after them as it is
+ * (`rtk proxy rm x` runs `rm x`). Agents set up for rtk prefix every
+ * command with `rtk` or `rtk proxy`, so guardrails must look past it.
+ */
+export const RTK_PASSTHROUGH = ['proxy', 'bypass', 'err', 'test', 'summary'];
+/** An optional `rtk [-flags] [passthrough]` prefix (`rtk git status` too). */
+const RTK_PREFIX = String.raw`(?:(?:\S*[\\/])?rtk(?:\s+-[\w-]+)*\s+(?:(?:${RTK_PASSTHROUGH.join('|')})\s+)?)?`;
+/**
  * The shell invocations Codex treats as `apply_patch`
  * (codex-rs/apply-patch/src/invocation.rs, `maybe_parse_apply_patch`):
  * `apply_patch`/`applypatch` directly; inside `bash|zsh|sh -c|-lc`,
  * `pwsh|powershell [-NoProfile] -Command`, or `cmd /c`; with an optional
  * `cd <dir> &&` first (group 1 is that dir). Looser than Codex on quoting:
- * a guard should over-detect.
+ * a guard should over-detect. An rtk prefix may come before the shell or
+ * before `apply_patch` (Codex does not intercept those, but rtk runs the
+ * apply_patch Codex puts on PATH, so the patch still applies).
  */
-const APPLY_PATCH_RE =
-  /^\s*(?:(?:\S*[\\/])?(?:bash|zsh|sh|pwsh|powershell|cmd)(?:\.exe)?\s+(?:-NoProfile\s+)?(?:-lc|-c|-Command|\/c)\s+)?(?:['"]\s*)?(?:cd\s+("[^"]*"|'[^']*'|[^\s&;|'"]+)\s*&&\s*)?(?:apply_patch|applypatch)\b/i;
+const APPLY_PATCH_RE = new RegExp(
+  String.raw`^\s*${RTK_PREFIX}(?:(?:\S*[\\/])?(?:bash|zsh|sh|pwsh|powershell|cmd)(?:\.exe)?\s+(?:-NoProfile\s+)?(?:-lc|-c|-Command|\/c)\s+)?(?:['"]\s*)?(?:cd\s+("[^"]*"|'[^']*'|[^\s&;|'"]+)\s*&&\s*)?${RTK_PREFIX}(?:apply_patch|applypatch)\b`,
+  'i'
+);
 
 /**
  * The harness named by `--harness`, else `claude`.
