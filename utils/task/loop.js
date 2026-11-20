@@ -322,10 +322,12 @@ export function scopeFingerprint(deps, taskDir, state) {
  * return the decision. Returns `{ action: 'skip' }` when the loop is off or
  * halted.
  *
- * @param {{ deps: import('./deps.js').Deps, session?: string | null }} input
+ * @param {{ deps: import('./deps.js').Deps, session?: string | null, pendingAgents?: string[] }} input
+ *   pendingAgents: the session's review agents still running (see
+ *   pendingReviewAgents); an open round's reminder waits for them
  * @returns {InnerDecision}
  */
-export function runInnerLoop({ deps, session = null }) {
+export function runInnerLoop({ deps, session = null, pendingAgents = [] }) {
   const active = activeLoop(deps, session);
   if (!active || active.state.loop.halted) return { action: 'skip' };
   const { name, task, state } = active;
@@ -387,6 +389,7 @@ export function runInnerLoop({ deps, session = null }) {
           ? decideQuality({
               state: { ...current, lastVerify: verify },
               fingerprint: scopePrint,
+              pendingAgents,
             })
           : null;
       decision = !quality

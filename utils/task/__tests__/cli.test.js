@@ -22,6 +22,8 @@ import {
   updateState,
   writeSession,
 } from '../store.js';
+import { DEFAULT_CONFIG, writeConfig } from '../../memory/config.js';
+import { loadNotes, memoryDir } from '../../memory/store.js';
 
 /** @type {string} */
 let root;
@@ -1653,7 +1655,7 @@ describe('done', () => {
       /^demo-261117 is not finished:\n- 2 step\(s\) not done: s1 \(in_progress\), s2 \(todo\)\. Fix: finish them/
     );
     expect(state().status).toBe('active');
-    expect(run(['done', '--force']).out).toBe(`Closed ${NAME}.`);
+    expect(run(['done', '--force']).out.split('\n')[0]).toBe(`Closed ${NAME}.`);
     expect(read('NOTES.md')).toContain(
       'Forced past: 2 step(s) not done: s1 (in_progress), s2 (todo).'
     );
@@ -1662,7 +1664,9 @@ describe('done', () => {
   test('should close a task without verify commands and clear the pointer', () => {
     newTask();
     finishSteps();
-    expect(run(['done', '-m', 'All good.']).out).toBe(`Closed ${NAME}.`);
+    expect(run(['done', '-m', 'All good.']).out.split('\n')[0]).toBe(
+      `Closed ${NAME}.`
+    );
     expect(state()).toMatchObject({ status: 'done', next: null });
     expect(readActive(root)).toBeNull();
     expect(read('NOTES.md')).toContain(
@@ -1771,7 +1775,7 @@ describe('done', () => {
       run(['verify'], {
         runCommands: fakeRunner([{ ok: true }, { ok: true }]),
       });
-      expect(run(['done']).out).toBe(`Closed ${NAME}.`);
+      expect(run(['done']).out.split('\n')[0]).toBe(`Closed ${NAME}.`);
     });
 
     test('should close once a round is recorded and the fixes are done', () => {
@@ -1783,7 +1787,7 @@ describe('done', () => {
         s.quality.findings = [finding({ step: 's3' })];
         s.steps[2].status = 'done';
       });
-      expect(run(['done']).out).toBe(`Closed ${NAME}.`);
+      expect(run(['done']).out.split('\n')[0]).toBe(`Closed ${NAME}.`);
       expect(read('NOTES.md')).not.toContain('Forced past');
     });
 
@@ -1792,11 +1796,217 @@ describe('done', () => {
       patch((s) => {
         delete s.quality;
       });
-      expect(run(['done', '--force']).out).toBe(`Closed ${NAME}.`);
+      expect(run(['done', '--force']).out.split('\n')[0]).toBe(
+        `Closed ${NAME}.`
+      );
       expect(read('NOTES.md')).toContain(
         'Task closed. Forced past: No review round ran.'
       );
     });
+  });
+});
+
+describe('task memory', () => {
+  const SECRET = `ghp_${'a1B2'.repeat(8)}`;
+  const memory = () => loadNotes(memoryDir(root)).notes;
+  const finishSteps = () => {
+    run(['step', 's1', 'done']);
+    run(['step', 's2', 'done']);
+  };
+  /** A git checkout named `web` for a task that works in another repo. */
+  const webRepo = () => {
+    const dir = path.join(root, 'web-checkout');
+    fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, '.git', 'config'),
+      '[remote "origin"]\n\turl = git@github.com:me/web.git\n'
+    );
+    updateState(root, NAME, (s) => ({ ...s, repo: dir }), {
+      now: NOW,
+      agent: 'tester',
+    });
+  };
+
+  test('done should save a task digest and announce it', () => {
+    newTask();
+    finishSteps();
+    run([
+      'note',
+      '--done',
+      'Shipped.',
+      '--next',
+      'Close.',
+      '--open',
+      'Docs later',
+    ]);
+
+    const { out } = run(['done', '-m', 'Released v1.']);
+
+    expect(out.split('\n')).toEqual([
+      `Closed ${NAME}.`,
+      'Saved to memory: t1 (task digest) Ship it. Outcome: Released v1. Open: Docs later.',
+    ]);
+    expect(memory()[0]).toMatchObject({
+      scope: 'machine',
+      type: 'episode',
+      tags: ['demo'],
+      source: { via: 'digest', task: NAME },
+    });
+  });
+
+  test('done --learn should save the lessons and list them in the digest', () => {
+    newTask();
+    finishSteps();
+
+    run(['done', '--learn', 'The proxy blocks GraphQL.']);
+
+    expect(memory().map((note) => [note.id, note.type])).toEqual([
+      ['m1', 'fact'],
+      ['t2', 'episode'],
+    ]);
+    expect(memory()[1].text).toBe(
+      'Ship it. Learned: The proxy blocks GraphQL.'
+    );
+  });
+
+  test('done should refuse a bad --learn line before closing', () => {
+    newTask();
+    finishSteps();
+
+    expect(() => run(['done', '--learn', `token ${SECRET}`])).toThrow(
+      /^--learn line 1: Refused: the note looks like it holds a secret/
+    );
+    expect(state().status).toBe('active');
+  });
+
+  test('closing a reopened task should replace its digest', () => {
+    newTask();
+    finishSteps();
+    run(['done', '-m', 'v1']);
+    run(['reopen', 'demo', '-m', 'one more fix']);
+
+    const { out } = run(['done', '-m', 'v2']);
+
+    expect(out.split('\n')[1]).toBe(
+      'Updated memory: t1 (task digest, replaces the earlier one) Ship it. Outcome: v2.'
+    );
+    expect(memory()).toHaveLength(1);
+  });
+
+  test('done should name the repository of a task in another repo', () => {
+    newTask();
+    finishSteps();
+    webRepo();
+
+    run(['done']);
+
+    expect(memory()[0]).toMatchObject({
+      text: 'Ship it. Repo: web.',
+      tags: ['demo', 'web'],
+    });
+  });
+
+  test('done should say when saving to memory is off', () => {
+    newTask();
+    finishSteps();
+    writeConfig(memoryDir(root), { ...DEFAULT_CONFIG, off: true });
+
+    expect(run(['done']).out.split('\n')).toEqual([
+      `Closed ${NAME}.`,
+      'Memory saving is off everywhere: nothing was saved to memory (pnpm memory on).',
+    ]);
+    expect(memory()).toEqual([]);
+  });
+
+  test('done should report memory as JSON', () => {
+    newTask();
+    finishSteps();
+
+    expect(JSON.parse(run(['done', '--json']).out)).toMatchObject({
+      ok: true,
+      task: NAME,
+      memory: { digest: { action: 'added', note: { id: 't1' } }, learned: [] },
+    });
+  });
+
+  test('note --learn should save each line with the task as the source', () => {
+    newTask();
+
+    const { out } = run([
+      'note',
+      '--done',
+      'x',
+      '--next',
+      'y',
+      '--learn',
+      'Uploads take a minute.',
+      '--learn',
+      'The API needs a refresh token.',
+    ]);
+
+    expect(out.split('\n')).toEqual([
+      `Appended a note to tasks/${NAME}/NOTES.md`,
+      'Saved to memory: m1 (machine, fact) Uploads take a minute.',
+      'Saved to memory: m2 (machine, fact) The API needs a refresh token.',
+    ]);
+    expect(memory()[0].source).toEqual({
+      via: 'agent',
+      harness: 'tester',
+      task: NAME,
+    });
+  });
+
+  test('note --learn should save repo facts for a task in another repo', () => {
+    newTask();
+    webRepo();
+
+    run(['note', '-m', 'x', '--learn', 'Deploys run on tags.']);
+
+    expect(memory()[0]).toMatchObject({ scope: 'repo', repo: 'web' });
+  });
+
+  test('note --learn should work for a hand-written task', () => {
+    legacyTask();
+    run(['switch', 'old']);
+
+    run(['note', '-m', 'x', '--learn', 'Uses pnpm everywhere.']);
+
+    expect(memory()[0]).toMatchObject({
+      scope: 'machine',
+      source: { task: 'old-251101' },
+    });
+  });
+
+  test('note --learn should refuse a bad line before writing the note', () => {
+    newTask();
+    const before = read('NOTES.md');
+
+    expect(() => run(['note', '-m', 'x', '--learn', '  '])).toThrow(
+      '--learn line 1: The note text is empty.'
+    );
+    expect(read('NOTES.md')).toBe(before);
+  });
+
+  test('note --learn should report memory as JSON', () => {
+    newTask();
+
+    expect(
+      JSON.parse(
+        run(['note', '-m', 'x', '--learn', 'Uses pnpm.', '--json']).out
+      )
+    ).toMatchObject({
+      ok: true,
+      task: NAME,
+      memory: { learned: [{ action: 'added' }] },
+    });
+  });
+
+  test('note without --learn should leave memory alone', () => {
+    newTask();
+
+    run(['note', '-m', 'x']);
+
+    expect(fs.existsSync(memoryDir(root))).toBe(false);
   });
 });
 
@@ -1936,7 +2146,7 @@ describe('reopen', () => {
       s.quality.reviewRounds = 3;
       s.quality.phase = 'complete';
     });
-    expect(run(['done']).out).toBe(`Closed ${NAME}.`);
+    expect(run(['done']).out.split('\n')[0]).toBe(`Closed ${NAME}.`);
   });
 });
 

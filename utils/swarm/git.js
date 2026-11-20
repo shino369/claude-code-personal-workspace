@@ -10,6 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import { tasksRoot, writeActive } from '../task/store.js';
 import { gitText, worktreePath } from '../loop/worktree.js';
+import { copyLocalFiles } from '../memory/render.js';
 
 /**
  * @typedef {import('../loop/worktree.js').Spawn} Spawn
@@ -105,7 +106,9 @@ export function freeStepSlot({ rootDir, task, id, spawn }) {
 
 /**
  * Copy the git-ignored task folder into a worktree (unless it is already
- * there) and make it the worktree's active task.
+ * there) and make it the worktree's active task. The memory files
+ * (AGENTS.local.md, CLAUDE.local.md) are copied every time, so headless
+ * agents load the current core block.
  *
  * @param {{ rootDir: string, dir: string, task: string }} options
  */
@@ -121,6 +124,7 @@ export function copyTask({ rootDir, dir, task }) {
     });
   }
   writeActive(dir, task);
+  copyLocalFiles(rootDir, dir);
 }
 
 /**

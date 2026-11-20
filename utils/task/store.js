@@ -121,12 +121,13 @@ function sleepSync(ms) {
  * Run `fn` while holding `<dir>/.lock`. A lock older than `staleMs` is
  * assumed to belong to a crashed process and is taken over. On Windows,
  * creating the lock while another process is deleting it fails with EPERM
- * instead of EEXIST; that is waited out the same way.
+ * instead of EEXIST; that is waited out the same way. `label` names what is
+ * locked in the timeout message.
  *
  * @template T
  * @param {string} dir
  * @param {() => T} fn
- * @param {{ timeoutMs?: number, staleMs?: number, now?: () => number, platform?: NodeJS.Platform }} [options]
+ * @param {{ timeoutMs?: number, staleMs?: number, now?: () => number, platform?: NodeJS.Platform, label?: string }} [options]
  * @returns {T}
  */
 export function withLock(
@@ -137,6 +138,7 @@ export function withLock(
     staleMs = 30_000,
     now = Date.now,
     platform = process.platform,
+    label = 'Task',
   } = {}
 ) {
   const lock = path.join(dir, '.lock');
@@ -160,7 +162,7 @@ export function withLock(
       }
       if (now() >= deadline) {
         throw new Error(
-          `Task is locked by another process (${lock}). Retry in a moment; if no other agent is running, delete the .lock file.`
+          `${label} is locked by another process (${lock}). Retry in a moment; if no other agent is running, delete the .lock file.`
         );
       }
       sleepSync(50);

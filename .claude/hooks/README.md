@@ -18,10 +18,13 @@ This directory contains hook scripts for Claude Code that automatically execute 
 - Records timestamps, tool names, inputs, outputs, and session information
 - Redacts secrets in every string before logging: AWS keys, GitHub tokens, `sk-…` API keys,
   Slack tokens, JWTs, `Bearer` tokens, PEM private keys, `*_TOKEN=` / `*_PASSWORD=` / `*API_KEY=`
-  style assignments, and string values under secret-named keys
+  style assignments, and string values under secret-named keys. An assignment whose value is
+  only a reference (`$GITHUB_TOKEN`, `${X}`, `$(gh auth token)`, `<placeholder>`) is kept
 - Truncates large `content` / `new_source` fields (>500 chars) after redaction
 
-Redaction is pattern-based and best-effort; treat `logs/` as sensitive and keep it git-ignored.
+The rules live in `utils/redact.js`, shared with the memory store (which refuses a note that
+matches) and memory export (which stops on a match). Redaction is pattern-based and
+best-effort; treat `logs/` as sensitive and keep it git-ignored.
 
 **Log Structure:**
 
@@ -164,6 +167,42 @@ walk through the quality loop (review round → triage → fixes; AGENTS.md §4.
 
 The task logic lives in `utils/task/` (the `pnpm task` CLI), so other harnesses get the same brief
 by running `pnpm task status`.
+
+### 7. Memory (`utils/memory/hook.js`)
+
+**Events:** SessionStart, UserPromptSubmit, PreToolUse (`Bash`), PostToolUseFailure (`Bash`),
+SessionEnd
+**Purpose:** Personal memory (`pnpm memory`): recall notes from earlier sessions when they are
+relevant, and learn new ones after a session. The same script serves Codex through
+`.codex/hooks.json` (`--harness codex`; trust it once with `/hooks`); Codex has no extraction
+yet (no transcript adapter).
+
+**What it does:**
+
+- UserPromptSubmit: recalls notes for the prompt plus the task's goal (BM25F with a gate: often
+  nothing) and injects at most 4, within 1,200 characters, framed as facts, not instructions.
+  Skips slash commands and background-task notifications
+- PreToolUse: injects notes whose `triggers` match the command, before it runs
+- PostToolUseFailure: recalls notes for the failed command and its error output (Codex: a
+  PostToolUse with a non-zero exit)
+- SessionStart: says when saving is off; injects the core block when `CLAUDE.local.md` does not
+  load it (always for Codex); `/clear` and compaction reset what the session was shown
+- Extraction (Claude Code): SessionStart records the session as open; SessionEnd queues it
+  (`memory/extract/queue/`) and starts a detached worker (`utils/memory/extract.js`), so the
+  session never waits. The worker reads what the transcript gained since its last offset,
+  condenses it (your messages, final replies, failed commands; secrets left out), and makes one
+  read-only, tool-less `claude -p` call on the session's model that returns ADD/UPDATE/DELETE ops
+  against the related notes. Notes with secrets are refused; ops that read like instructions go to
+  `memory/inbox.jsonl` (`pnpm memory inbox`). A session that ended without SessionEnd is queued
+  by a later SessionStart once its transcript is idle for an hour. The next SessionStart announces
+  what was saved (to the agent, and to you as a system message). `pnpm memory extract` runs it
+  by hand (`--dry-run` shows the prompt). The same worker runs the weekly consolidation when
+  SessionStart finds it due (merge duplicates, retire superseded notes, rewrite
+  `memory/profile.md`); every job takes a snapshot first, and `pnpm memory undo` reverts the last one
+- Injects a note once per session (`memory/cache/sessions/`), counts recalls (`usage.json`),
+  skips the `reviewer` and `verifier` roles and the extraction agent (`MEMORY_EXTRACT=1`), stays
+  silent before `pnpm memory init`, and fails open on any error. About 40 ms per call, most of it
+  Node startup
 
 ## Hook Configuration
 

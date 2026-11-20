@@ -336,6 +336,33 @@ describe('runInnerLoop', () => {
       expect(notes).toContain('verify pass');
     });
 
+    test('should wait for running review agents before reminding about an open round', () => {
+      cli(['new', 'demo', '--goal', 'G', '--verify', 'pnpm test']);
+      fs.writeFileSync(path.join(root, 'lib.js'), 'v1');
+      const state = /** @type {import('../state.js').TaskState} */ (
+        loadTask(root, NAME).state
+      );
+      fs.writeFileSync(
+        path.join(root, 'tasks', NAME, 'state.json'),
+        JSON.stringify({
+          ...state,
+          quality: { ...state.quality, phase: 'review', reviewRounds: 1 },
+        })
+      );
+
+      const waiting = runInnerLoop({
+        deps: deps({ runCommands: passing(), runGit }),
+        pendingAgents: ['a1'],
+      });
+      expect(waiting.action).toBe('allow');
+      expect(waiting.reason).toBeUndefined();
+      expect(quality()?.nudged).toBeUndefined();
+
+      const after = stop();
+      expect(after.action).toBe('block');
+      expect(after.reason).toContain('is open but not recorded');
+    });
+
     test('should let the stop through when git cannot give a merge base', () => {
       cli(['new', 'demo', '--goal', 'G', '--verify', 'pnpm test']);
       const result = runInnerLoop({

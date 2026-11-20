@@ -20,6 +20,10 @@ export const VERDICTS = ['CONFIRMED', 'REFUTED'];
 /** Severities that get fixed; medium and low are recorded only (decision 12). */
 export const FIX_SEVERITIES = ['must-fix', 'high'];
 export const DEFAULT_MAX_ROUNDS = 2;
+/** Subagent types that run a review round: the reviewer and the triage. */
+export const REVIEW_AGENT_TYPES = ['reviewer', 'verifier'];
+/** `background_tasks` statuses of work still in flight. */
+const LIVE_STATUSES = ['running', 'pending'];
 
 /**
  * @typedef {'build' | 'review' | 'fix' | 'complete'} QualityPhase
@@ -218,6 +222,29 @@ export function formatQuality(quality, steps) {
 }
 
 /**
+ * The review agents still running in this session, from the Stop hook's
+ * `background_tasks` (Claude Code's live registry of the session's
+ * background work): `reviewer` and `verifier` subagents that are running or
+ * pending. Anything else, or a missing or malformed field (an older Claude
+ * Code, another harness), counts as none, so the reminder fires as before.
+ *
+ * @param {unknown} backgroundTasks
+ * @returns {string[]} their ids (`?` when an entry has none)
+ */
+export function pendingReviewAgents(backgroundTasks) {
+  if (!Array.isArray(backgroundTasks)) return [];
+  return backgroundTasks
+    .filter(
+      (task) =>
+        isObject(task) &&
+        task.type === 'subagent' &&
+        REVIEW_AGENT_TYPES.includes(task.agent_type) &&
+        LIVE_STATUSES.includes(task.status)
+    )
+    .map((task) => (isString(task.id) ? task.id : '?'));
+}
+
+/**
  * @typedef {{
  *   action: 'block' | 'allow',
  *   reason?: string,
@@ -232,13 +259,17 @@ export function formatQuality(quality, steps) {
  *
  * Each reminder is given once per situation (phase, round, reviewed code,
  * open fixes): stopping again without changing anything is allowed, so an
- * agent that cannot run reviewers is never blocked forever.
+ * agent that cannot run reviewers is never blocked forever. While a round is
+ * open and its reviewer or triage still runs in the background
+ * (`pendingAgents`), the stop is allowed silently and the reminder is kept:
+ * the agent's completion notice starts another turn, and so another stop.
  *
- * @param {{ state: import('./state.js').TaskState, fingerprint: string | null }} input
- *   fingerprint of the review scope now (null when it cannot be computed)
+ * @param {{ state: import('./state.js').TaskState, fingerprint: string | null, pendingAgents?: string[] }} input
+ *   fingerprint of the review scope now (null when it cannot be computed);
+ *   pendingAgents from `pendingReviewAgents`
  * @returns {QualityDecision}
  */
-export function decideQuality({ state, fingerprint }) {
+export function decideQuality({ state, fingerprint, pendingAgents = [] }) {
   const quality = state.quality ?? freshQuality();
   const { phase, reviewRounds: rounds, maxRounds: max } = quality;
   const done = new Set(
@@ -272,6 +303,7 @@ export function decideQuality({ state, fingerprint }) {
 
   if (state.steps.some((s) => s.status === 'blocked')) return allow();
   if (phase === 'review') {
+    if (pendingAgents.length > 0) return allow();
     return nudge('the open review round', [
       `Review round ${rounds}/${max} for ${state.name} is open but not recorded.`,
       'Finish it before stopping: the reviewer and then the triage, in clean contexts, as `pnpm task review` printed (run it again to see the brief), then: pnpm task review record',

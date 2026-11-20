@@ -114,6 +114,22 @@
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session_start.js",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/utils/memory/hook.js --harness claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/utils/memory/hook.js --harness claude",
+            "timeout": 5
           }
         ]
       }
@@ -152,6 +168,11 @@
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/task_loop.js --reset",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/utils/memory/hook.js --harness claude",
+            "timeout": 5
           }
         ]
       }
@@ -174,6 +195,30 @@
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/auto_format.js",
             "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/utils/memory/hook.js --harness claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/utils/memory/hook.js --harness claude",
+            "timeout": 5
           }
         ]
       }

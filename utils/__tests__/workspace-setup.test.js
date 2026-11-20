@@ -1,9 +1,12 @@
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { vi } from 'vitest';
 import {
   HELP,
   HOOK_FILES,
   checkNode,
+  MEMORY_PATHS,
   formatResult,
   main,
   parseArgs,
@@ -13,6 +16,7 @@ import {
   stepDependencies,
   stepGitHooks,
   stepLinks,
+  stepMemory,
   stepSkills,
   stepTools,
 } from '../workspace-setup.js';
@@ -39,6 +43,7 @@ function makeDeps(overrides = {}) {
     log: (/** @type {string} */ m) => logs.push(m),
     existsSync: vi.fn(() => true),
     chmodSync: vi.fn(),
+    initMemory: vi.fn(() => ({ created: [], updated: [], warnings: [] })),
     installSkills: vi.fn(async () => 0),
     checkSkills: vi.fn(async () => [{ name: 'tdd', ok: true }]),
     linkSkills: vi.fn(() => [
@@ -411,6 +416,181 @@ describe('stepTools', () => {
   });
 });
 
+describe('stepMemory', () => {
+  /**
+   * git answers: `ls-files` prints `tracked`; `check-ignore` exits 1 for the
+   * paths in `unignored`.
+   *
+   * @param {{ tracked?: string, unignored?: string[] }} [answers]
+   */
+  const gitSpawn = ({ tracked = '', unignored = [] } = {}) =>
+    vi.fn((/** @type {string} */ _cmd, /** @type {string[]} */ args) =>
+      args[0] === 'ls-files'
+        ? { status: 0, stdout: tracked }
+        : { status: unignored.includes(String(args.at(-1))) ? 1 : 0 }
+    );
+
+  test('should list the paths it guards', () => {
+    expect(MEMORY_PATHS).toEqual([
+      'AGENTS.local.md',
+      'CLAUDE.local.md',
+      'memory/',
+    ]);
+  });
+
+  test('should fail when a memory file is tracked by git', () => {
+    const deps = makeDeps({
+      spawn: gitSpawn({
+        tracked: 'AGENTS.local.md\nmemory/log.jsonl\nmemory/cache/notes.json\n',
+      }),
+    });
+
+    expect(stepMemory(opts(['--check']), deps)).toEqual({
+      id: 'memory',
+      status: 'fail',
+      detail:
+        'personal memory is tracked by git: AGENTS.local.md, memory/log.jsonl, memory/cache/notes.json',
+      fix: 'git rm -r --cached -- AGENTS.local.md memory (keeps the files), then commit',
+    });
+    expect(deps.initMemory).not.toHaveBeenCalled();
+  });
+
+  test('should ignore ls-files lines that are not memory paths', () => {
+    const deps = makeDeps({ spawn: gitSpawn({ tracked: '.githooks\n' }) });
+
+    expect(stepMemory(opts(['--check']), deps).status).toBe('ok');
+  });
+
+  test('should treat ls-files without output as nothing tracked', () => {
+    const deps = makeDeps({
+      spawn: vi.fn(() => ({ status: 0, stdout: null })),
+    });
+
+    expect(stepMemory(opts(['--check']), deps).status).toBe('ok');
+  });
+
+  test('should fail when a memory path is not gitignored', () => {
+    const deps = makeDeps({ spawn: gitSpawn({ unignored: ['memory/'] }) });
+
+    expect(stepMemory(opts(), deps)).toEqual({
+      id: 'memory',
+      status: 'fail',
+      detail: 'not gitignored: memory/',
+      fix: 'add /memory/ to .gitignore',
+    });
+    expect(deps.initMemory).not.toHaveBeenCalled();
+  });
+
+  test('should pass a check when the local files exist', () => {
+    const deps = makeDeps({ spawn: gitSpawn() });
+
+    expect(stepMemory(opts(['--check']), deps)).toEqual({
+      id: 'memory',
+      status: 'ok',
+      detail: 'local and gitignored (pnpm memory status)',
+    });
+  });
+
+  test('should warn in a check when memory is not set up', () => {
+    const deps = makeDeps({
+      spawn: gitSpawn(),
+      existsSync: vi.fn(
+        (/** @type {string} */ file) => !file.endsWith('CLAUDE.local.md')
+      ),
+    });
+
+    expect(stepMemory(opts(['--check']), deps)).toEqual({
+      id: 'memory',
+      status: 'warn',
+      detail: 'not set up: CLAUDE.local.md',
+      fix: 'pnpm memory init',
+    });
+  });
+
+  test('should create the local files during setup', () => {
+    const deps = makeDeps({
+      spawn: gitSpawn(),
+      initMemory: vi.fn(() => ({
+        created: ['memory/', 'AGENTS.local.md'],
+        updated: ['CLAUDE.local.md'],
+        warnings: [],
+      })),
+    });
+
+    expect(stepMemory(opts(), deps)).toEqual({
+      id: 'memory',
+      status: 'done',
+      detail: 'created memory/, AGENTS.local.md; updated CLAUDE.local.md',
+    });
+    expect(deps.initMemory).toHaveBeenCalledWith('/repo');
+  });
+
+  test('should report memory that is already set up', () => {
+    const deps = makeDeps({ spawn: gitSpawn() });
+
+    expect(stepMemory(opts(), deps)).toMatchObject({ status: 'ok' });
+  });
+
+  test('should warn about render warnings', () => {
+    const deps = makeDeps({
+      spawn: gitSpawn(),
+      initMemory: vi.fn(() => ({
+        created: [],
+        updated: ['AGENTS.local.md'],
+        warnings: ['The core block is over 3000 characters.'],
+      })),
+    });
+
+    expect(stepMemory(opts(), deps)).toEqual({
+      id: 'memory',
+      status: 'warn',
+      detail:
+        'updated AGENTS.local.md; The core block is over 3000 characters.',
+      fix: 'pnpm memory status',
+    });
+  });
+
+  test('should set up the main checkout from a linked worktree', () => {
+    const tmp = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'setup-wt-'))
+    );
+    const main = path.join(tmp, 'main');
+    const wtGit = path.join(main, '.git', 'worktrees', 'x');
+    fs.mkdirSync(wtGit, { recursive: true });
+    fs.writeFileSync(path.join(wtGit, 'commondir'), '../..\n');
+    const wt = path.join(tmp, 'wt');
+    fs.mkdirSync(wt);
+    fs.writeFileSync(path.join(wt, '.git'), `gitdir: ${wtGit}\n`);
+    const deps = makeDeps({ rootDir: wt, spawn: gitSpawn() });
+
+    try {
+      stepMemory(opts(), deps);
+      stepMemory(opts(['--check']), deps);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+
+    expect(deps.initMemory).toHaveBeenCalledWith(main);
+    expect(deps.existsSync).toHaveBeenCalledWith(path.join(main, 'memory/'));
+  });
+
+  test('should warn when init fails', () => {
+    const deps = makeDeps({
+      spawn: gitSpawn(),
+      initMemory: vi.fn(() => {
+        throw new Error('The memory block in AGENTS.local.md is broken.\nmore');
+      }),
+    });
+
+    expect(stepMemory(opts(), deps)).toEqual({
+      id: 'memory',
+      status: 'warn',
+      detail: 'The memory block in AGENTS.local.md is broken.',
+      fix: 'pnpm memory init',
+    });
+  });
+});
+
 describe('runSteps', () => {
   test('should stop after an unsupported Node.js version', async () => {
     const results = await runSteps(
@@ -429,6 +609,7 @@ describe('runSteps', () => {
       'skills',
       'skill-links',
       'git-hooks',
+      'memory',
       'browsers',
       'tools',
     ]);

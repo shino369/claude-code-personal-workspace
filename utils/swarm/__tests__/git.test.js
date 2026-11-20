@@ -160,6 +160,17 @@ describe('copyTask', () => {
     expect(readActive(dir)).toBe(TASK);
   });
 
+  test('should copy the local memory files into the worktree', () => {
+    fs.writeFileSync(path.join(repo, 'AGENTS.local.md'), 'core\n');
+    const dir = path.join(base, 'wt');
+
+    copyTask({ rootDir: repo, dir, task: TASK });
+
+    expect(fs.readFileSync(path.join(dir, 'AGENTS.local.md'), 'utf-8')).toBe(
+      'core\n'
+    );
+  });
+
   test('should keep an existing copy', () => {
     const dir = path.join(base, 'wt');
     const target = path.join(dir, 'tasks', TASK);

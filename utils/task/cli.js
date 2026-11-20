@@ -82,6 +82,11 @@ import {
 import { trashPaths } from './trash.js';
 import { summarize, tail } from './verify.js';
 import { relPosix } from '../paths.js';
+import {
+  formatTaskMemory,
+  learnedNotes,
+  saveTaskMemory,
+} from '../memory/digest.js';
 
 export const HELP = `Usage: pnpm task <command> [options]
 
@@ -109,8 +114,10 @@ Work
                                 someone else, needs -m "who does what"; todo releases a
                                 claim; --force takes over a step another agent claimed)
   step <id> remove -m "why"     Remove a step written by mistake
-  note --done "…" --next "…" [--open "…"] [-m "…"]
-                                Append a NOTES.md entry (State line is filled in for you)
+  note --done "…" --next "…" [--open "…"] [-m "…"] [--learn "…"]…
+                                Append a NOTES.md entry (State line is filled in for you);
+                                each --learn line is saved to memory as a fact, with the
+                                task as its source (a repo fact for a --repo task)
   check [--fix]                 Lint (ESLint), format-check (Prettier), and typecheck (tsc)
                                 the task's code; --fix rewrites what ESLint/Prettier can fix
   verify [--fast] [--no-check]  Run the task's verify commands; exit 1 on failure. Tasks
@@ -138,8 +145,11 @@ Work
                                 folders that hold a .git or secrets)
   template review|study [--name <kebab>]
                                 Copy a REVIEW_/STUDIES_ template into the task
-  done [-m "…"] [--force]       Close the task (needs every step done and a passing verify;
-                                code tasks also a finished review loop; --force overrides)
+  done [-m "…"] [--learn "…"]… [--force]
+                                Close the task (needs every step done and a passing verify;
+                                code tasks also a finished review loop; --force overrides).
+                                Saves a task digest to memory (goal, outcome -m, open items,
+                                --learn lines); closing a reopened task replaces it
   reopen [name] -m "why"        Reopen a closed task: active again and bound to this session;
                                 verify and the inner loop start over, and its reviews cover
                                 the work from now on (2 more rounds)
@@ -171,8 +181,9 @@ const VALUE_FLAGS = {
   '--e2e': 'e2e',
   '--base': 'base',
   '--repo': 'repo',
+  '--learn': 'learn',
 };
-const REPEATABLE = new Set(['step', 'verify', 'verifyFast']);
+const REPEATABLE = new Set(['step', 'verify', 'verifyFast', 'learn']);
 const BOOLEAN_FLAGS = {
   '--json': 'json',
   '--fast': 'fast',
@@ -191,7 +202,7 @@ const BOOLEAN_FLAGS = {
  *   done?: string, next?: string, open?: string, agent?: string, task?: string, name?: string,
  *   loop?: string, loopMax?: string, kind?: string, e2e?: string, base?: string,
  *   repo?: string,
- *   step: string[], verify: string[], verifyFast: string[],
+ *   step: string[], verify: string[], verifyFast: string[], learn: string[],
  *   json: boolean, fast: boolean, all: boolean, force: boolean, help: boolean,
  *   fix: boolean, noCheck: boolean,
  * }} Options
@@ -209,6 +220,7 @@ export function parseArgs(argv) {
     step: [],
     verify: [],
     verifyFast: [],
+    learn: [],
     json: false,
     fast: false,
     all: false,
@@ -916,6 +928,13 @@ export const COMMANDS = {
     const agent = detectAgent(options, deps.env);
     const now = deps.now();
     const task = loadTask(deps.rootDir, name);
+    // Refuse a bad --learn line before anything is written.
+    const learned = learnedNotes(options.learn, {
+      env: deps.env,
+      rootDir: deps.rootDir,
+      task: name,
+      repoDir: task.state?.repo ?? null,
+    });
     writeNote(deps, task, {
       at: now,
       agent,
@@ -932,11 +951,21 @@ export const COMMANDS = {
         agent,
       });
     }
+    const memory = saveTaskMemory({
+      rootDir: deps.rootDir,
+      env: deps.env,
+      now,
+      task: name,
+      learned,
+    });
     output(
       deps,
       options,
-      { ok: true, task: name },
-      `Appended a note to tasks/${name}/NOTES.md`
+      { ok: true, task: name, ...(learned.length > 0 ? { memory } : {}) },
+      [
+        `Appended a note to tasks/${name}/NOTES.md`,
+        ...formatTaskMemory(memory),
+      ].join('\n')
     );
     return 0;
   },
@@ -1319,6 +1348,13 @@ export const COMMANDS = {
       blockers.length > 0
         ? ` Forced past: ${blockers.map((b) => b.split('. Fix:')[0]).join('; ')}.`
         : '';
+    // Refuse a bad --learn line before the task is closed.
+    const learned = learnedNotes(options.learn, {
+      env: deps.env,
+      rootDir: deps.rootDir,
+      task: name,
+      repoDir: task.state.repo ?? null,
+    });
     const now = deps.now();
     const agent = detectAgent(options, deps.env);
     updateState(
@@ -1343,7 +1379,25 @@ export const COMMANDS = {
         now,
       });
     }
-    output(deps, options, { ok: true, task: name }, `Closed ${name}.`);
+    const memory = saveTaskMemory({
+      rootDir: deps.rootDir,
+      env: deps.env,
+      now,
+      task: name,
+      learned,
+      digest: {
+        goal: task.state.goal,
+        repoDir: task.state.repo ?? null,
+        notes: task.notes,
+        outcome: options.message,
+      },
+    });
+    output(
+      deps,
+      options,
+      { ok: true, task: name, memory },
+      [`Closed ${name}.`, ...formatTaskMemory(memory)].join('\n')
+    );
     return 0;
   },
 

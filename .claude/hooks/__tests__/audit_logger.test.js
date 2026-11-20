@@ -6,28 +6,20 @@ import os from 'os';
 import path from 'path';
 import {
   LOG_FILE_NAME,
-  REDACTED,
   appendLogEntry,
   buildLogEntry,
   ensureLogDirectory,
   getLogRoot,
   processHookInput,
-  redactSecrets,
   sanitizeForLogging,
 } from '../audit_logger.js';
+import { REDACTED } from '#utils/redact.js';
 
 // Fake secrets are assembled at runtime so secret scanners don't flag this file.
+// The rules themselves are tested in utils/__tests__/redact.test.js.
 const FAKE = {
   aws: 'AKIA' + 'ABCDEFGHIJKLMNOP',
   ghp: 'gh' + 'p_' + 'a'.repeat(36),
-  ghPat: 'github' + '_pat_' + 'b'.repeat(30),
-  sk: 'sk' + '-ant-' + 'c'.repeat(30),
-  slack: 'xo' + 'xb-' + '1234567890-abc',
-  jwt: 'ey' + 'JhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig_nature-1',
-  pem:
-    '-----BEGIN RSA PRIVATE' +
-    ' KEY-----\nMIIEow\nIBAAK\n-----END RSA PRIVATE' +
-    ' KEY-----',
 };
 
 /** @param {string} file */
@@ -118,58 +110,6 @@ describe('audit_logger', () => {
       const raw = fs.readFileSync(logFile, 'utf-8').split('\n');
       expect(raw[0]).toBe('legacy line');
       expect(JSON.parse(raw[1])).toEqual({ tool_name: 'Read' });
-    });
-  });
-
-  describe('redactSecrets', () => {
-    test.each([
-      ['AWS access key', `key ${FAKE.aws} end`],
-      ['GitHub token', `token ${FAKE.ghp}`],
-      ['GitHub fine-grained PAT', `pat ${FAKE.ghPat}`],
-      ['sk- API key', `curl -H x ${FAKE.sk}`],
-      ['Slack token', `slack ${FAKE.slack}`],
-      ['JWT', `jwt ${FAKE.jwt}`],
-    ])('should redact %s', (_label, text) => {
-      const result = redactSecrets(text);
-
-      expect(result).toContain(REDACTED);
-      for (const secret of Object.values(FAKE)) {
-        expect(result).not.toContain(secret);
-      }
-    });
-
-    test('should redact a Bearer token but keep the scheme', () => {
-      expect(redactSecrets('Authorization: Bearer abc.def-123')).toBe(
-        `Authorization: Bearer ${REDACTED}`
-      );
-    });
-
-    test('should redact a whole PEM private key block', () => {
-      expect(redactSecrets(`before\n${FAKE.pem}\nafter`)).toBe(
-        'before\n[REDACTED PRIVATE KEY]\nafter'
-      );
-    });
-
-    test('should redact an unterminated PEM block to the end', () => {
-      const truncated = FAKE.pem.slice(0, 40);
-
-      expect(redactSecrets(`x ${truncated}`)).toBe('x [REDACTED PRIVATE KEY]');
-    });
-
-    test.each([
-      ['GITHUB_TOKEN=abc123 pnpm x', `GITHUB_TOKEN=${REDACTED} pnpm x`],
-      ['export DB_PASSWORD="hunter 2"', `export DB_PASSWORD=${REDACTED}`],
-      ["api_key: 'secret value'", `api_key: ${REDACTED}`],
-      ['AWS_SECRET_ACCESS_KEY = xyz', `AWS_SECRET_ACCESS_KEY = ${REDACTED}`],
-      ['deepseek_apikey=foo', `deepseek_apikey=${REDACTED}`],
-    ])('should keep the name and redact the value in %s', (input, expected) => {
-      expect(redactSecrets(input)).toBe(expected);
-    });
-
-    test('should leave ordinary text unchanged', () => {
-      const text = 'git status && pnpm test -- --coverage';
-
-      expect(redactSecrets(text)).toBe(text);
     });
   });
 

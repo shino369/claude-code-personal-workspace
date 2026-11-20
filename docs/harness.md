@@ -140,6 +140,40 @@ use the same adapters (`utils/loop/adapters.js`): fixed argument arrays, prompt 
 | codex  | `exec --sandbox workspace-write`    | `exec --sandbox read-only`         |
 | dsh    | `--permission-mode workspace-write` | `--permission-mode read-only`      |
 
+### 7. Memory
+
+Personal memory (`pnpm memory`, `utils/memory/`) is machine-local and gitignored: `memory/` holds
+an append-only op log of notes (`log.jsonl`) and rebuildable caches; `AGENTS.local.md` holds your
+own instructions and a generated core block (personalization, profile, pinned notes, recent task
+digests, at most 3,000 characters) that every session loads. Rules for agents: AGENTS.md §13.
+
+```text
+ write paths                                   read paths
+ A  agent: pnpm memory add (in the moment)     every session: AGENTS.local.md core block
+ B  extraction after a session (Claude Code)   per prompt / before a command / after a failure:
+ C  pnpm task done: task digest, --learn         hook → BM25F recall over tags and text (often nothing)
+ D  consolidation (weekly; profile)            fallback without hooks: pnpm memory recall "…"
+```
+
+- **Recall** is lexical (BM25F over tags and text, `Intl.Segmenter` for Japanese and Chinese) with
+  a gate, so unrelated prompts inject nothing; at most 4 notes, 1,200 characters, once per session.
+  Tags written at save time carry the synonyms and other languages.
+- **Hooks:** one script, `utils/memory/hook.js`, for Claude Code (`.claude/settings.json`) and
+  Codex (`.codex/hooks.json`, trusted once with `/hooks`). It fails open and stays silent for the
+  reviewer and verifier roles.
+- **Extraction (B):** SessionEnd queues the session; a detached worker reads what the transcript
+  gained, condenses it (prompts, final replies, failed commands; secrets left out), and makes one
+  read-only `claude -p` call without tools for ADD/UPDATE/DELETE ops on the related notes. Secrets
+  are refused, instruction-like ops wait in `memory/inbox.jsonl`, and the next session announces
+  the saves.
+- **Safety:** every write path refuses text matching `utils/redact.js`; notes are framed as facts;
+  `pnpm workspace:check` fails if a memory file is tracked.
+- **Worktrees:** `pnpm loop` and `pnpm swarm` copy `AGENTS.local.md` and `CLAUDE.local.md` into
+  their worktrees; the store stays in the main checkout.
+- **Export and import** (`pnpm memory export` / `import`): one `.tar.gz` with a checksummed
+  manifest, validated (paths, entry types, checksums) before anything is written; imports merge
+  and take a snapshot first.
+
 ## The quality loop (code tasks)
 
 A **code task** (`pnpm task new … --verify "<tests>"`, or `--kind code`) starts with the inner loop
@@ -287,7 +321,9 @@ commands, the last verify to have passed.
   NOTES "Open". That is deliberate: reviews always find something, and unbounded rounds burn time
   on style.
 - **Reminders fire once.** If an agent cannot run subagents, it says so and stops. The loop never
-  traps it.
+  traps it. While a round is open and a `reviewer` or `verifier` subagent still runs in the
+  background (the Stop input's `background_tasks`), the stop goes through silently and the reminder
+  is kept: the agent's completion notice starts a new turn, and the stop after it reminds as usual.
 - **The review starts only when every step is done.** `pnpm task review` refuses otherwise (unless
   `--force`), and `pnpm loop --review` stops with `steps-open`.
 - **Severity only goes down in triage.** `pnpm loop --review` rejects a triage that raises one; when
@@ -300,6 +336,9 @@ commands, the last verify to have passed.
   a `.git` or secrets.
 - **Tasks in another repository** (`--repo`) work interactively; `pnpm loop` and `pnpm swarm`
   refuse them, because their worktrees are of this workspace.
+- **Memory recall is by words, not meaning.** A note without the words a later prompt uses is
+  not recalled; specific tags (with synonyms and other languages) are the fix. In a small store, one
+  generic tag word can recall a note; that fades as the store grows.
 - **Claude hooks run only in Claude Code.** Other harnesses get the same state through
   `pnpm task status`, and the same enforcement through git hooks and the `done` gate. DSH can run
   Claude hooks through its opt-in bridge.
@@ -312,6 +351,7 @@ commands, the last verify to have passed.
 | `utils/loop/`                  | `pnpm loop`: adapters, worktree, driver (verify loop), review-loop                                           |
 | `utils/swarm/`                 | `pnpm swarm`: dispatcher, worker processes, git helpers                                                      |
 | `utils/agent/`, `utils/tools/` | `pnpm agent ask`, `pnpm tools`                                                                               |
+| `utils/memory/`                | `pnpm memory`: store, tokenizer, recall, render, hook, extraction, export/import, personalization            |
 | `.claude/hooks/`               | session_start, pre_compact, task_loop, context_monitor, audit_logger, auto_format                            |
 | `.claude/agents/`              | role prompts (planner, reviewer, verifier, …)                                                                |
 | `.claude/workflows/`           | Claude workflows: review-changes, implement-plan, research                                                   |
