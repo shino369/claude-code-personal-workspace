@@ -63,6 +63,11 @@ subagents — ask Claude directly.
 
 ## Getting Started
 
+Without a clone: `npx kyoten` creates a workspace in `~/.kyoten` and starts Claude Code there
+(`npx kyoten codex`, `dsh`, or `dscc` for the others). See [docs/kyoten.md](docs/kyoten.md).
+
+In a clone:
+
 ```bash
 corepack enable
 pnpm workspace:setup   # install deps + third-party skills, link skills, enable git hooks, memory init

@@ -97,6 +97,16 @@ Notes:
   the root's id, so a subagent's `pnpm task` command acts on the default task unless it passes
   `--task`.
 
+### Starting an agent: kyoten
+
+`kyoten [claude|codex|dsh|dscc]` (`pnpm kyoten …` in a clone, `npx kyoten …` without one) starts
+the agent with the workspace root as its working directory and adds what each harness needs: dsh
+gets its profile and `--patch .dsh/workspace.patch.yml`, and `dscc` runs Claude Code on the
+DeepSeek API from a profile kept outside the workspace. It never adds permission flags. Without a
+clone it creates a workspace from the snapshot of one commit shipped in the npm package
+(`~/.kyoten`, a git repository that `kyoten update` merges new snapshots into). Details:
+`docs/kyoten.md`.
+
 ### Setup per harness
 
 | Harness     | Once                                                                                                                                                                           | After a change                                                                                |

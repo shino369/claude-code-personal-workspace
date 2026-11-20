@@ -47,27 +47,28 @@ outputs.
 
 ## 3. Commands
 
-| Goal                          | Command                                                                    |
-| ----------------------------- | -------------------------------------------------------------------------- |
-| Full quality gate (required)  | `pnpm check`                                                               |
-| Tests / with 100% coverage    | `pnpm test` / `pnpm test:coverage`                                         |
-| Lint / auto-fix               | `pnpm lint` / `pnpm lint:fix`                                              |
-| Format / check format         | `pnpm format` / `pnpm format:check`                                        |
-| Typecheck                     | `pnpm typecheck`                                                           |
-| Task brief / log / help       | `pnpm task status` · `pnpm task note …` · `pnpm task help`                 |
-| Delete stale files (undoable) | `pnpm task rm <path>…` (to `tasks/.trash/`, kept 7 days)                   |
-| Tools on this machine         | `pnpm tools list` · `pnpm tools show <name>` · `pnpm tools scan`           |
-| Ask another agent (read-only) | `pnpm agent ask --agent claude\|codex\|dsh "…"`                            |
-| Fix until verify passes       | `pnpm loop <task> --agent claude\|codex\|dsh` (`--help`)                   |
-| Review round (code task)      | `pnpm task review` · `pnpm task review record` (§4.5)                      |
-| Run a plan with N workers     | `pnpm swarm <task> --agent claude\|codex\|dsh --workers 2`                 |
-| Set up / verify the workspace | `pnpm workspace:setup` / `pnpm workspace:check`                            |
-| Sync / check harness configs  | `pnpm harness sync` / `pnpm harness check` (Codex, DSH; `docs/harness.md`) |
-| Third-party skills            | `pnpm skills:install` · `pnpm skills:check` · `pnpm skills:link`           |
-| Add a dev dependency          | `pnpm add -D <pkg> --save-catalog-name=dev`                                |
-| E2E tests (Playwright)        | `pnpm test:e2e`                                                            |
-| Memory: status, save, search  | `pnpm memory` · `pnpm memory add "…" …` · `pnpm memory recall "…"` (§13)   |
-| Memory: move or back up       | `pnpm memory export` · `pnpm memory import <file> --dry-run`               |
+| Goal                          | Command                                                                                   |
+| ----------------------------- | ----------------------------------------------------------------------------------------- |
+| Full quality gate (required)  | `pnpm check`                                                                              |
+| Tests / with 100% coverage    | `pnpm test` / `pnpm test:coverage`                                                        |
+| Lint / auto-fix               | `pnpm lint` / `pnpm lint:fix`                                                             |
+| Format / check format         | `pnpm format` / `pnpm format:check`                                                       |
+| Typecheck                     | `pnpm typecheck`                                                                          |
+| Task brief / log / help       | `pnpm task status` · `pnpm task note …` · `pnpm task help`                                |
+| Delete stale files (undoable) | `pnpm task rm <path>…` (to `tasks/.trash/`, kept 7 days)                                  |
+| Tools on this machine         | `pnpm tools list` · `pnpm tools show <name>` · `pnpm tools scan`                          |
+| Ask another agent (read-only) | `pnpm agent ask --agent claude\|codex\|dsh "…"`                                           |
+| Fix until verify passes       | `pnpm loop <task> --agent claude\|codex\|dsh` (`--help`)                                  |
+| Review round (code task)      | `pnpm task review` · `pnpm task review record` (§4.5)                                     |
+| Run a plan with N workers     | `pnpm swarm <task> --agent claude\|codex\|dsh --workers 2`                                |
+| Set up / verify the workspace | `pnpm workspace:setup` / `pnpm workspace:check`                                           |
+| Sync / check harness configs  | `pnpm harness sync` / `pnpm harness check` (Codex, DSH; `docs/harness.md`)                |
+| Third-party skills            | `pnpm skills:install` · `pnpm skills:check` · `pnpm skills:link`                          |
+| Add a dev dependency          | `pnpm add -D <pkg> --save-catalog-name=dev`                                               |
+| E2E tests (Playwright)        | `pnpm test:e2e`                                                                           |
+| Start an agent (kyoten)       | `pnpm kyoten [claude\|codex\|dsh\|dscc]`; without a clone `npx kyoten` (`docs/kyoten.md`) |
+| Memory: status, save, search  | `pnpm memory` · `pnpm memory add "…" …` · `pnpm memory recall "…"` (§13)                  |
+| Memory: move or back up       | `pnpm memory export` · `pnpm memory import <file> --dry-run`                              |
 
 Every workspace script prints a `Fix:` line when it fails — run that command.
 
