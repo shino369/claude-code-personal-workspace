@@ -16,6 +16,8 @@ import {
 } from '../config.js';
 import { PERSONALIZATION_FILE, readPersonalization } from '../personalize.js';
 import { INDEX_CACHE_FILE } from '../recall.js';
+import { mainCheckout } from '../repo.js';
+import { ROOT_DIR } from '../../workspace-config.js';
 import { AGENTS_LOCAL_FILE, CLAUDE_LOCAL_FILE } from '../render.js';
 import {
   CACHE_DIR,
@@ -200,6 +202,10 @@ describe('defaultDeps', () => {
 
   test('should fall back to the process folder', () => {
     expect(defaultDeps({ env: {} }).cwd).toBe(process.cwd());
+  });
+
+  test('should use the main checkout, so worktrees share one store', () => {
+    expect(defaultDeps({ env: {} }).rootDir).toBe(mainCheckout(ROOT_DIR));
   });
 
   test('should take the time from the clock', () => {

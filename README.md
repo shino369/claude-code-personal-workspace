@@ -64,7 +64,7 @@ subagents — ask Claude directly.
 
 ```bash
 corepack enable
-pnpm workspace:setup   # install deps + third-party skills, link skills, enable git hooks
+pnpm workspace:setup   # install deps + third-party skills, link skills, enable git hooks, memory init
 pnpm workspace:check   # verify; every failure prints its Fix command
 ```
 

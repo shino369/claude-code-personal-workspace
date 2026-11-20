@@ -27,6 +27,11 @@ export const TEMPLATE_FILE = path.join(
   'memory',
   AGENTS_LOCAL_FILE
 );
+/** The gitignored files a checkout loads memory from. */
+export const LOCAL_FILES = /** @type {const} */ ([
+  AGENTS_LOCAL_FILE,
+  CLAUDE_LOCAL_FILE,
+]);
 export const CORE_START = '<!-- memory:start -->';
 export const CORE_END = '<!-- memory:end -->';
 export const CORE_BUDGET = 3000;
@@ -346,4 +351,22 @@ export function initLocal(rootDir) {
     updated.push(CLAUDE_LOCAL_FILE);
   }
   return { created, updated, warnings };
+}
+
+/**
+ * Copy AGENTS.local.md and CLAUDE.local.md from a checkout into a worktree
+ * (`pnpm loop`, `pnpm swarm`), so headless agents there load the core block
+ * too. Copies are derived files, so a stale copy is replaced.
+ *
+ * @param {string} fromDir
+ * @param {string} toDir
+ * @returns {string[]} the files copied
+ */
+export function copyLocalFiles(fromDir, toDir) {
+  return LOCAL_FILES.filter((file) => {
+    const source = path.join(fromDir, file);
+    if (!fs.existsSync(source)) return false;
+    fs.copyFileSync(source, path.join(toDir, file));
+    return true;
+  });
 }

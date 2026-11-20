@@ -213,6 +213,12 @@ pip-log.txt
 # Local resources
 /resources
 
+# Personal memory (pnpm memory): machine-local notes, personalization, and
+# the generated core block. Never commit; pnpm workspace:check fails if tracked.
+/AGENTS.local.md
+/CLAUDE.local.md
+/memory/
+
 # Skills live in .agents/skills/ (the skills.sh layout, read directly by Codex
 # and other agents). Project-owned skills are tracked; third-party skills from
 # skills.sh stay local. Keep this list in sync with OWNED_SKILLS in

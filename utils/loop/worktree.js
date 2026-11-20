@@ -2,12 +2,14 @@
  * Worktree isolation for `pnpm loop`: unattended runs never touch the main
  * checkout. From a linked worktree the loop runs in place; from the main
  * checkout it creates (or reuses) `../<repo>-wt/<task>` on branch
- * `loop/<task>`, copies the git-ignored task directory into it, and installs
- * dependencies there. Nothing is ever deleted.
+ * `loop/<task>`, copies the git-ignored task directory and the memory files
+ * (AGENTS.local.md, CLAUDE.local.md) into it, and installs dependencies
+ * there. Nothing is ever deleted.
  */
 import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { copyLocalFiles } from '../memory/render.js';
 import { pnpmInstall } from '../spawn.js';
 import { tasksRoot, writeActive } from '../task/store.js';
 
@@ -167,6 +169,7 @@ export function prepareWorktree({
     fs.cpSync(source, target, { recursive: true });
   }
   writeActive(dir, task);
+  copyLocalFiles(rootDir, dir);
 
   let installed = false;
   if (!fs.existsSync(path.join(dir, 'node_modules'))) {

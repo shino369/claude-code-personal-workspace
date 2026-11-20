@@ -28,7 +28,7 @@ import {
   renderLocal,
   renderStored,
 } from './render.js';
-import { repoName } from './repo.js';
+import { mainCheckout, repoName } from './repo.js';
 import {
   MemoryError,
   SCOPES,
@@ -227,7 +227,8 @@ export function parseArgs(argv) {
 export function defaultDeps(overrides = {}) {
   const env = overrides.env ?? process.env;
   return {
-    rootDir: ROOT_DIR,
+    // Worktrees (pnpm loop, swarm) share the main checkout's store.
+    rootDir: mainCheckout(ROOT_DIR),
     // pnpm runs scripts from the workspace root; INIT_CWD is where it ran.
     cwd: env.INIT_CWD ?? process.cwd(),
     env,

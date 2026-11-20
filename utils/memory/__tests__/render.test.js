@@ -15,6 +15,7 @@ import {
   CORE_WARN_LINES,
   PROFILE_FILE,
   applyCoreBlock,
+  copyLocalFiles,
   initLocal,
   renderCore,
   renderLocal,
@@ -464,5 +465,40 @@ describe('local files', () => {
         expect.stringMatching(/budget must be a whole number/),
       ]);
     });
+  });
+});
+
+describe('copyLocalFiles', () => {
+  /** @type {string} */
+  let from;
+  /** @type {string} */
+  let to;
+
+  beforeEach(() => {
+    from = fs.mkdtempSync(path.join(os.tmpdir(), 'memory-copy-from-'));
+    to = fs.mkdtempSync(path.join(os.tmpdir(), 'memory-copy-to-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(from, { recursive: true, force: true });
+    fs.rmSync(to, { recursive: true, force: true });
+  });
+
+  test('should copy both local files, replacing stale copies', () => {
+    fs.writeFileSync(path.join(from, AGENTS_LOCAL_FILE), 'current\n');
+    fs.writeFileSync(path.join(from, CLAUDE_LOCAL_FILE), '@AGENTS.local.md\n');
+    fs.writeFileSync(path.join(to, AGENTS_LOCAL_FILE), 'stale\n');
+
+    const copied = copyLocalFiles(from, to);
+
+    expect(copied).toEqual([AGENTS_LOCAL_FILE, CLAUDE_LOCAL_FILE]);
+    expect(fs.readFileSync(path.join(to, AGENTS_LOCAL_FILE), 'utf-8')).toBe(
+      'current\n'
+    );
+  });
+
+  test('should skip files the source does not have', () => {
+    expect(copyLocalFiles(from, to)).toEqual([]);
+    expect(fs.readdirSync(to)).toEqual([]);
   });
 });

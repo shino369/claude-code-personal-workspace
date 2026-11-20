@@ -100,3 +100,23 @@ export function repoName(start) {
     ? path.basename(path.dirname(dirs.commonDir))
     : path.basename(dirs.top);
 }
+
+/**
+ * The main checkout of a linked worktree (its common dir is `<main>/.git`),
+ * else `dir` itself. Memory lives in the main checkout, so notes saved in a
+ * `pnpm loop` or `pnpm swarm` worktree are not lost with it.
+ *
+ * @param {string} dir
+ * @returns {string}
+ */
+export function mainCheckout(dir) {
+  const dirs = findGitDirs(dir);
+  if (
+    !dirs ||
+    dirs.gitDir === dirs.commonDir ||
+    path.basename(dirs.commonDir) !== '.git'
+  ) {
+    return dir;
+  }
+  return path.dirname(dirs.commonDir);
+}

@@ -4,7 +4,13 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { findGitDirs, nameFromUrl, originUrl, repoName } from '../repo.js';
+import {
+  findGitDirs,
+  mainCheckout,
+  nameFromUrl,
+  originUrl,
+  repoName,
+} from '../repo.js';
 
 /** @type {string} */
 let tmp;
@@ -183,5 +189,40 @@ describe('repoName', () => {
 
   test('should return null outside any repository', () => {
     expect(repoName(tmp)).toBeNull();
+  });
+});
+
+describe('mainCheckout', () => {
+  test('should resolve a linked worktree to its main checkout', () => {
+    const main = checkout('web');
+    const wtGit = path.join(main, '.git', 'worktrees', 'feature');
+    fs.mkdirSync(wtGit, { recursive: true });
+    fs.writeFileSync(path.join(wtGit, 'commondir'), '../..\n');
+    const wt = path.join(tmp, 'web-wt', 'feature');
+    fs.mkdirSync(wt, { recursive: true });
+    fs.writeFileSync(path.join(wt, '.git'), `gitdir: ${wtGit}\n`);
+
+    expect(mainCheckout(wt)).toBe(main);
+  });
+
+  test('should keep the main checkout itself', () => {
+    const main = checkout('web');
+
+    expect(mainCheckout(main)).toBe(main);
+  });
+
+  test('should keep a folder outside any repository', () => {
+    expect(mainCheckout(tmp)).toBe(tmp);
+  });
+
+  test('should keep a checkout whose git dir is not a .git folder', () => {
+    const top = path.join(tmp, 'sub');
+    fs.mkdirSync(path.join(tmp, 'store', 'modules', 'sub'), {
+      recursive: true,
+    });
+    fs.mkdirSync(top);
+    fs.writeFileSync(path.join(top, '.git'), 'gitdir: ../store/modules/sub');
+
+    expect(mainCheckout(top)).toBe(top);
   });
 });

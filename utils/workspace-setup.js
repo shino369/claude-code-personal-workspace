@@ -2,7 +2,7 @@
 /**
  * Initialise (or verify) this workspace for any agent harness.
  *
- *   pnpm workspace:setup            # install + link + git hooks
+ *   pnpm workspace:setup            # install + link + git hooks + memory init
  *   pnpm workspace:check            # verify only, no changes
  *
  * Steps run in order; every failure prints the exact command that fixes it.
@@ -11,6 +11,8 @@
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
+import { initLocal } from './memory/render.js';
+import { mainCheckout } from './memory/repo.js';
 import { runIfMain } from './module-runner.js';
 import { installSkills } from './skills-install.js';
 import { PROBLEM_STATUSES, linkSkills } from './skills-link.js';
@@ -37,6 +39,9 @@ Options:
 /** Git hook shims that must be executable. */
 export const HOOK_FILES = ['pre-commit', 'commit-msg'];
 
+/** Personal memory (pnpm memory): local to this checkout, never committed. */
+export const MEMORY_PATHS = ['AGENTS.local.md', 'CLAUDE.local.md', 'memory/'];
+
 /**
  * @typedef {'ok' | 'done' | 'warn' | 'fail' | 'skip'} StepStatus
  * @typedef {{ id: string, status: StepStatus, detail: string, fix?: string }} StepResult
@@ -50,6 +55,7 @@ export const HOOK_FILES = ['pre-commit', 'commit-msg'];
  *   log: (message: string) => void,
  *   existsSync: (p: string) => boolean,
  *   chmodSync: (p: string, mode: number) => void,
+ *   initMemory: typeof initLocal,
  *   installSkills: typeof installSkills,
  *   checkSkills: typeof checkSkills,
  *   linkSkills: typeof linkSkills,
@@ -298,6 +304,104 @@ export function stepGitHooks(options, deps) {
 }
 
 /**
+ * Personal memory stays out of git: fail when a memory path is tracked or
+ * not gitignored (before creating anything). Setup then creates the local
+ * files (pnpm memory init) in the main checkout, which worktrees share;
+ * check only warns when they are missing.
+ *
+ * @param {Options} options
+ * @param {Deps} deps
+ * @returns {StepResult}
+ */
+export function stepMemory(options, deps) {
+  const listed = deps.spawn(
+    'git',
+    ['ls-files', '--', ...MEMORY_PATHS.map((p) => p.replace(/\/$/, ''))],
+    { cwd: deps.rootDir, encoding: 'utf8' }
+  );
+  const tracked = String(listed.stdout ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) =>
+      MEMORY_PATHS.some((p) =>
+        p.endsWith('/') ? line.startsWith(p) : line === p
+      )
+    );
+  if (tracked.length > 0) {
+    const tops = [...new Set(tracked.map((line) => line.split('/')[0]))];
+    return {
+      id: 'memory',
+      status: 'fail',
+      detail: `personal memory is tracked by git: ${tracked.join(', ')}`,
+      fix: `git rm -r --cached -- ${tops.join(' ')} (keeps the files), then commit`,
+    };
+  }
+  const unignored = MEMORY_PATHS.filter(
+    (p) =>
+      deps.spawn('git', ['check-ignore', '-q', '--no-index', '--', p], {
+        cwd: deps.rootDir,
+      }).status !== 0
+  );
+  if (unignored.length > 0) {
+    return {
+      id: 'memory',
+      status: 'fail',
+      detail: `not gitignored: ${unignored.join(', ')}`,
+      fix: `add ${unignored.map((p) => `/${p}`).join(' ')} to .gitignore`,
+    };
+  }
+  // A linked worktree (pnpm loop, swarm) uses the main checkout's memory.
+  const home = mainCheckout(deps.rootDir);
+  if (options.check) {
+    const missing = MEMORY_PATHS.filter(
+      (p) => !deps.existsSync(path.join(home, p))
+    );
+    return missing.length === 0
+      ? {
+          id: 'memory',
+          status: 'ok',
+          detail: 'local and gitignored (pnpm memory status)',
+        }
+      : {
+          id: 'memory',
+          status: 'warn',
+          detail: `not set up: ${missing.join(', ')}`,
+          fix: 'pnpm memory init',
+        };
+  }
+  let result;
+  try {
+    result = deps.initMemory(home);
+  } catch (error) {
+    return {
+      id: 'memory',
+      status: 'warn',
+      detail: /** @type {Error} */ (error).message.split('\n')[0],
+      fix: 'pnpm memory init',
+    };
+  }
+  const changes = [
+    ...(result.created.length > 0
+      ? [`created ${result.created.join(', ')}`]
+      : []),
+    ...(result.updated.length > 0
+      ? [`updated ${result.updated.join(', ')}`]
+      : []),
+  ];
+  if (result.warnings.length > 0) {
+    return {
+      id: 'memory',
+      status: 'warn',
+      detail: [...changes, ...result.warnings].join('; '),
+      fix: 'pnpm memory status',
+    };
+  }
+  return changes.length > 0
+    ? { id: 'memory', status: 'done', detail: changes.join('; ') }
+    : { id: 'memory', status: 'ok', detail: 'set up (pnpm memory status)' };
+}
+
+/**
  * @param {Options} options
  * @param {Deps} deps
  * @returns {StepResult}
@@ -405,6 +509,7 @@ export async function runSteps(options, deps) {
   results.push(await stepSkills(options, deps));
   results.push(stepLinks(options, deps));
   results.push(stepGitHooks(options, deps));
+  results.push(stepMemory(options, deps));
   results.push(stepBrowsers(options, deps));
   results.push(stepTools(options, deps));
   return results;
@@ -438,6 +543,7 @@ export async function main({ argv = process.argv.slice(2), deps = {} } = {}) {
     log: console.log,
     existsSync: fs.existsSync,
     chmodSync: fs.chmodSync,
+    initMemory: initLocal,
     installSkills,
     checkSkills,
     linkSkills,
