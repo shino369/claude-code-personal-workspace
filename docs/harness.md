@@ -338,7 +338,10 @@ plan ─▶ build test-first ─▶ e2e (if required) ─▶ review round N ─�
 
    The brief marks scope files `pnpm task check` does not lint or format (other languages, pages
    in `docs/`) and lists the folder's code the scope leaves out (helper scripts, or the folder
-   beside a git scope), so no task-folder code is dropped silently.
+   beside a git scope). Never in a scope or that list: dot-folders, dependency and build folders
+   (`node_modules`, `venv`, `dist`, `build`, `coverage`, …), file kinds outside the allowlist, and
+   config named like credentials (`credentials.json`, `secrets.yaml`, a service-account key), which
+   a reviewer agent must not read.
 
    Git changes count from the commit the task started from (recorded by `pnpm task new`, `init`,
    or `set --repo`) when that commit is in HEAD's history after the branch point, so work that was

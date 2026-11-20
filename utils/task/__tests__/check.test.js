@@ -163,6 +163,26 @@ describe('listReviewFiles', () => {
   });
 });
 
+describe('listReviewFiles secrets', () => {
+  test('should keep config files named like credentials out, but not code or look-alikes', () => {
+    write({
+      'app/credentials.json': '{}',
+      'app/client_secret_123.json': '{}',
+      'config/secrets.yaml': '',
+      'gcp-service-account.json': '{}',
+      'app/token.json': '{}',
+      'app/api-keys.toml': '',
+      'app/tokenizer.json': '{}',
+      'app/secrets.py': '',
+    });
+
+    expect(listReviewFiles(taskDir)).toEqual([
+      'app/secrets.py',
+      'app/tokenizer.json',
+    ]);
+  });
+});
+
 describe('browserRoots', () => {
   test('should mark extension folders and page folders', () => {
     write({

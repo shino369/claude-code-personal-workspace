@@ -10,11 +10,11 @@
  * git: the folder is git-ignored) when it has any, else the git changes in
  * the workspace, else the task's scripts. The brief marks scope files `pnpm
  * task check` does not check and lists the folder's code the scope leaves
- * out, so nothing is dropped silently. Git changes are counted from the
- * task's start commit when the task started on HEAD's line after the branch
- * point (or on the default branch itself), else from the branch point with
- * the default branch (`origin/HEAD` as fetched, else `main`); an explicit
- * `--base` is used as given.
+ * out (helpers, or the folder beside a git scope). Git changes are counted
+ * from the task's start commit when the task started on HEAD's line after
+ * the branch point (or on the default branch itself), else from the branch
+ * point with the default branch (`origin/HEAD` as fetched, else `main`); an
+ * explicit `--base` is used as given.
  */
 import crypto from 'crypto';
 import { spawnSync } from 'child_process';
@@ -297,7 +297,9 @@ export function taskReviewScope({
  * `unchecked`, the scope's folder files `pnpm task check` does not look at
  * (other languages, `docs/`), so the reviewer checks their style by hand;
  * and `aside`, the folder's code the scope leaves out (helper scripts, or the
- * whole folder beside a git scope), so it is never dropped silently.
+ * whole folder beside a git scope), so the reviewer knows it is there. Only
+ * what `listReviewFiles` finds is listed: dot-folders, dependency and build
+ * folders, other kinds of file, and config named like credentials are not.
  *
  * @param {{ rootDir: string, taskDir: string, scope: Scope }} options
  * @returns {FolderNotes}

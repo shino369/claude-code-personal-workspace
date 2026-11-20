@@ -297,8 +297,15 @@ describe('assertNoTaskCode', () => {
     fs.writeFileSync(path.join(dir, rel), '');
   };
 
-  test('should allow notes, docs, and scratch in the task folder', () => {
-    for (const rel of ['plan.md', 'docs/design.md', 'tmp/x.py']) put(rel);
+  test('should allow notes, docs, specs, and scratch in the task folder', () => {
+    for (const rel of [
+      'plan.md',
+      'docs/design.md',
+      'docs/openapi.yaml',
+      'tmp/x.py',
+    ]) {
+      put(rel);
+    }
     expect(() => assertNoTaskCode(dir, 'demo')).not.toThrow();
   });
 

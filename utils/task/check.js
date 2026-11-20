@@ -100,6 +100,14 @@ const CONFIG_EXT = new Set([
 const REVIEW_TOP_SKIP = new Set(
   [...TOP_LEVEL_SKIP].filter((name) => name !== 'docs')
 );
+/**
+ * Config files named like a credential store (`credentials.json`,
+ * `client_secret_….json`, `secrets.yaml`, a service-account key): never in a
+ * review, whose agents read every file in scope (AGENTS.md: never read
+ * secrets).
+ */
+const SECRET_NAME_RE =
+  /(^|[._-])(credentials?|secrets?|service[-_]?account|api[-_]?keys?|private[-_]?key|tokens?|passwords?)([._-]|$)/i;
 
 const NODE_SEGMENTS = new Set(['test', 'tests', '__tests__', 'e2e', 'scripts']);
 const NODE_FILE_RE = /\.(test|spec|e2e|config)\.[cm]?[jt]sx?$/;
@@ -184,8 +192,9 @@ export function listCodeFiles(taskDir) {
 
 /**
  * Every file under the task a review reads: code in any language and its
- * config, `docs/` included (unlike `listCodeFiles`), as sorted POSIX paths
- * relative to the task directory.
+ * config (minus files named like credentials, SECRET_NAME_RE), `docs/`
+ * included (unlike `listCodeFiles`), as sorted POSIX paths relative to the
+ * task directory.
  *
  * @param {string} taskDir
  * @returns {string[]}
@@ -193,7 +202,9 @@ export function listCodeFiles(taskDir) {
 export function listReviewFiles(taskDir) {
   return listTaskFiles(taskDir, REVIEW_TOP_SKIP).filter(
     (file) =>
-      isSourceFile(file) || CONFIG_EXT.has(path.extname(file).toLowerCase())
+      isSourceFile(file) ||
+      (CONFIG_EXT.has(path.extname(file).toLowerCase()) &&
+        !SECRET_NAME_RE.test(path.posix.basename(file)))
   );
 }
 
