@@ -11,6 +11,7 @@ import {
   PERSONA_SCOPE_RULES,
   listPresets,
   normalizePersonalization,
+  personaFromMarkdown,
   readPersonalization,
   readPreset,
   renderPersonalization,
@@ -243,4 +244,51 @@ describe('presets', () => {
       expect(caught(() => readPreset(name)).code).toBe('invalid');
     }
   );
+});
+
+describe('personaFromMarkdown', () => {
+  test('should keep the text, without headings marks, comments, or blank lines', () => {
+    const text = [
+      '# My persona',
+      '',
+      '<!-- notes to self: keep it short -->',
+      'A calm senior engineer who explains trade-offs.',
+      '',
+      '- Prefers examples over theory',
+      '- Says when unsure',
+      '<!-- memory:end -->',
+      '',
+    ].join('\n');
+
+    expect(personaFromMarkdown(text)).toBe(
+      'My persona\nA calm senior engineer who explains trade-offs.\n- Prefers examples over theory\n- Says when unsure'
+    );
+  });
+
+  test('should drop a comment that spans lines', () => {
+    expect(personaFromMarkdown('A\n<!-- one\ntwo -->\nB')).toBe('A\nB');
+  });
+});
+
+describe('multi-line values', () => {
+  test('should render continuation lines inside the list item', () => {
+    const rendered = renderPersonalization(
+      normalizePersonalization({
+        persona: 'A calm engineer.\n- Says when unsure',
+      })
+    );
+
+    expect(rendered).toContain(
+      '- Persona: A calm engineer.\n  - Says when unsure'
+    );
+  });
+
+  test('should refuse the memory block markers in any field', () => {
+    expect(() =>
+      normalizePersonalization({ extra: 'x <!-- memory:start --> y' })
+    ).toThrow(/memory block markers/);
+    expect(() =>
+      normalizePersonalization({ persona: '<!--memory:end-->' })
+    ).toThrow(MemoryError);
+  });
 });

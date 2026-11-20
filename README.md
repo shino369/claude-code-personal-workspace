@@ -147,6 +147,7 @@ pnpm memory                         # status: notes, core block, saving on/off, 
 pnpm memory add "The user prefers design first, then review." --scope user --type preference --tags design,review
 pnpm memory recall "how do I merge this PR"   # what the hooks would inject
 pnpm memory personalize --presets   # how agents talk to you (conversation only)
+pnpm memory personalize --persona-file persona.md   # a longer persona, written in markdown
 pnpm memory off --session           # an incognito session
 pnpm memory export                  # back up or move: a checksummed .tar.gz; import <file> --dry-run
 ```

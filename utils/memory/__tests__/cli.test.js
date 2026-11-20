@@ -799,6 +799,67 @@ describe('consolidate and undo', () => {
   });
 });
 
+describe('personalize --persona-file', () => {
+  /** @param {string} text */
+  const personaFile = (text) => {
+    const file = path.join(tmp, 'persona.md');
+    fs.writeFileSync(file, text);
+    return file;
+  };
+
+  test('should read the persona from a markdown file', () => {
+    personaFile(
+      '# Persona\n\nA calm senior engineer.\n- Explains trade-offs\n'
+    );
+
+    const { code } = run(
+      ['personalize', '--persona-file', 'persona.md', '--tone', 'calm'],
+      {
+        cwd: tmp,
+      }
+    );
+
+    expect(code).toBe(0);
+    expect(readPersonalization(dir)).toEqual({
+      persona: 'Persona\nA calm senior engineer.\n- Explains trade-offs',
+      tone: 'calm',
+    });
+    expect(read(AGENTS_LOCAL_FILE)).toContain(
+      '- Persona: Persona\n  A calm senior engineer.\n  - Explains trade-offs'
+    );
+  });
+
+  test('should refuse --persona with --persona-file', () => {
+    const file = personaFile('x');
+
+    expect(() =>
+      run(['personalize', '--persona', 'y', '--persona-file', file])
+    ).toThrow(/--persona or --persona-file, not both/);
+  });
+
+  test('should refuse a missing or empty file', () => {
+    expect(() =>
+      run(['personalize', '--persona-file', path.join(tmp, 'none.md')])
+    ).toThrow(/Cannot read .*none\.md/);
+    expect(() =>
+      run([
+        'personalize',
+        '--persona-file',
+        personaFile('<!-- only a comment -->\n\n'),
+      ])
+    ).toThrow(/has no persona text/);
+  });
+
+  test('should apply the same limits and checks as --persona', () => {
+    expect(() =>
+      run(['personalize', '--persona-file', personaFile('x'.repeat(2000))])
+    ).toThrow(/limit is 1500/);
+    expect(() =>
+      run(['personalize', '--persona-file', personaFile(`token ${SECRET}`)])
+    ).toThrow(/secret/);
+  });
+});
+
 describe('status', () => {
   test('should be the default command', () => {
     expect(run([]).out).toBe(run(['status']).out);

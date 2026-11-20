@@ -45,6 +45,7 @@ import {
 } from './extract.js';
 import {
   listPresets,
+  personaFromMarkdown,
   readPersonalization,
   readPreset,
   renderPersonalization,
@@ -143,10 +144,13 @@ Move or back up (an explicit step; nothing is synced)
 
 Settings
   personalize [--preset <name>] [--call-me …] [--about-me …] [--language …]
-      [--persona …] [--tone <text|preset>] [--traits a,b] [--extra …] [--reset]
+      [--persona … | --persona-file <file.md>] [--tone <text|preset>] [--traits a,b]
+      [--extra …] [--reset]
                                 How agents talk to you (conversation only); without
                                 flags, shows the settings. --presets lists the presets;
-                                an empty value clears a field
+                                an empty value clears a field. --persona-file reads the
+                                persona from markdown (comments and headings marks
+                                dropped; the same 1,500-character limit)
   set [--extract-model <model>|default] [--budget <characters>|default]
                                 Extraction model and core block budget
   off [--session] · on [--session]
@@ -172,6 +176,7 @@ const VALUE_FLAGS = {
   '--about-me': 'aboutMe',
   '--language': 'language',
   '--persona': 'persona',
+  '--persona-file': 'personaFile',
   '--tone': 'tone',
   '--traits': 'traits',
   '--extra': 'extra',
@@ -226,7 +231,7 @@ const FIRST_NOTE =
  *   grep?: string, message?: string, preset?: string, callMe?: string,
  *   aboutMe?: string, language?: string, persona?: string, tone?: string,
  *   traits?: string, extra?: string, extractModel?: string, budget?: string,
- *   include?: string, tasks?: string, out?: string,
+ *   include?: string, tasks?: string, out?: string, personaFile?: string,
  *   triggers: string[],
  *   pin: boolean, force: boolean, failure: boolean, pinned: boolean,
  *   stale: boolean, all: boolean, reset: boolean, show: boolean,
@@ -1132,6 +1137,28 @@ export const COMMANDS = {
           .join('\n')
       );
       return 0;
+    }
+    if (options.personaFile !== undefined) {
+      if (options.persona !== undefined) {
+        throw new Error('Use --persona or --persona-file, not both.');
+      }
+      let markdown;
+      try {
+        markdown = fs.readFileSync(
+          path.resolve(deps.cwd, options.personaFile),
+          'utf-8'
+        );
+      } catch (error) {
+        throw new Error(
+          `Cannot read ${options.personaFile}: ${/** @type {Error} */ (error).message}`
+        );
+      }
+      options.persona = personaFromMarkdown(markdown);
+      if (!options.persona) {
+        throw new Error(
+          `${options.personaFile} has no persona text (only comments or blank lines).`
+        );
+      }
     }
     const fields = FIELD_FLAGS.filter((key) => options[key] !== undefined);
     if (!options.reset && options.preset === undefined && fields.length === 0) {

@@ -25,6 +25,8 @@ export const PRESETS_DIR = path.join(
 export const PERSONALIZATION_BUDGET = 1500;
 const MAX_TRAITS = 10;
 const PRESET_NAME = /^[a-z][a-z0-9-]*$/;
+/** The core block markers (render.js); a value holding one would break it. */
+const MARKER_RE = /<!--\s*memory:(start|end)\s*-->/;
 
 /** Fields in display order, with their labels. */
 const FIELDS = /** @type {const} */ ([
@@ -70,9 +72,9 @@ function fieldLines(settings) {
   for (const [name, label] of FIELDS) {
     const value = settings[name];
     if (value === undefined) continue;
-    lines.push(
-      `- ${label}: ${Array.isArray(value) ? value.join(', ') : value}`
-    );
+    const text = Array.isArray(value) ? value.join(', ') : value;
+    // Continuation lines are indented, so they stay in the list item.
+    lines.push(`- ${label}: ${text.split('\n').join('\n  ')}`);
   }
   return lines;
 }
@@ -122,6 +124,9 @@ export function normalizePersonalization(input) {
       continue;
     }
     if (typeof value !== 'string') invalid(`The ${key} must be text.`);
+    if (MARKER_RE.test(value)) {
+      invalid(`The ${key} holds memory block markers (<!-- memory:… -->).`);
+    }
     if (value.trim()) result[key] = value.trim();
   }
   const rules = new Set(Object.values(result).flat().flatMap(findSecrets));
@@ -232,4 +237,21 @@ export function readPreset(name) {
   }
   const { description: _description, ...settings } = JSON.parse(content);
   return normalizePersonalization(settings);
+}
+
+/**
+ * The persona text of a markdown file (`--persona-file`): HTML comments
+ * (notes to self) and blank lines dropped, heading marks removed, so it
+ * renders as one list item in the core block.
+ *
+ * @param {string} markdown
+ * @returns {string}
+ */
+export function personaFromMarkdown(markdown) {
+  return markdown
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .split('\n')
+    .map((line) => line.trim().replace(/^#{1,6}\s+/, ''))
+    .filter(Boolean)
+    .join('\n');
 }
