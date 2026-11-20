@@ -163,6 +163,20 @@ describe('flushFormatQueue', () => {
     expect(fs.readFileSync(file, 'utf-8')).toBe('const a = 1;\n');
   });
 
+  test("should run Prettier in the project, so the caller's ignore files do not skip the file", () => {
+    // This workspace's .gitignore has `tmp/`: run from here, Prettier would
+    // match a project under /tmp/ (Linux CI) and leave the file unformatted.
+    const nested = path.join(project, 'tmp', 'proj');
+    fs.mkdirSync(nested, { recursive: true });
+    const file = path.join(nested, 'ugly.js');
+    fs.writeFileSync(file, 'const  a=1');
+    queueFiles('s-1', [file], { tmpDir });
+    expect(flushFormatQueue('s-1', { tmpDir, projectDir: nested })).toEqual([
+      file,
+    ]);
+    expect(fs.readFileSync(file, 'utf-8')).toBe('const a = 1;\n');
+  });
+
   test('should do nothing when nothing is queued', () => {
     const run = vi.fn(() => true);
     expect(

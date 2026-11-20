@@ -74,9 +74,11 @@ export function prettierBin(resolve = createRequire(import.meta.url).resolve) {
 /**
  * @param {string} filePath
  * @param {string | null} [bin] Prettier's CLI script
+ * @param {string} [cwd] where Prettier looks for .prettierignore and
+ *   .gitignore (default: this process's cwd)
  * @returns {boolean}
  */
-export function runPrettier(filePath, bin = prettierBin()) {
+export function runPrettier(filePath, bin = prettierBin(), cwd) {
   if (!bin) {
     console.error(
       `Prettier formatting failed for ${filePath}: Prettier not available (pnpm install)`
@@ -87,6 +89,7 @@ export function runPrettier(filePath, bin = prettierBin()) {
   const result = spawnSync(process.execPath, [bin, '--write', filePath], {
     stdio: 'pipe',
     encoding: 'utf-8',
+    ...(cwd && { cwd }),
   });
   if (result.status !== 0) {
     console.error(
@@ -258,17 +261,16 @@ export function takeQueue(session, options = {}) {
  */
 export function flushFormatQueue(
   session,
-  {
-    projectDir,
-    extra = [],
-    tmpDir,
-    run = (file) => runPrettier(file),
-    realpath = fs.realpathSync,
-  }
+  { projectDir, extra = [], tmpDir, run, realpath = fs.realpathSync }
 ) {
   const root = realpath(projectDir);
+  // Prettier reads the ignore files from its cwd: run it in the project, not
+  // wherever the hook process started (a cwd's `tmp/` rule would otherwise
+  // match a path like /tmp/… and skip the file silently).
+  const format = run ?? ((file) => runPrettier(file, undefined, root));
   const files = [...new Set([...takeQueue(session, { tmpDir }), ...extra])];
   return files.filter(
-    (file) => fs.existsSync(file) && isInside(root, realpath(file)) && run(file)
+    (file) =>
+      fs.existsSync(file) && isInside(root, realpath(file)) && format(file)
   );
 }
