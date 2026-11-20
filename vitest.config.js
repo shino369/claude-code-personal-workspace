@@ -24,7 +24,13 @@ export default defineConfig({
 
     // Tests never see the session of the agent running them: task commands
     // would otherwise resolve to that session's task (utils/task/store.js).
-    env: { TASK_SESSION: '', CLAUDE_CODE_SESSION_ID: '' },
+    env: {
+      TASK_SESSION: '',
+      CLAUDE_CODE_SESSION_ID: '',
+      // A session kyoten started passes these on; tests must not see them.
+      KYOTEN_HOME: '',
+      KYOTEN_CALLER_DIR: '',
+    },
 
     // Include patterns
     include: [
@@ -69,6 +75,8 @@ export default defineConfig({
         '**/*.test.js',
         '**/*.spec.js',
         '**/*.integration.test.js',
+        // Playwright e2e tests (pnpm test:e2e) run outside the Vitest suite.
+        'e2e/**',
         // Run only in the Workflow tool's runtime; smoke-tested by evaluating
         // them against stubs in .claude/workflows/__tests__/.
         '.claude/workflows/*.js',

@@ -6,7 +6,11 @@ import os from 'os';
 import path from 'path';
 import { vi } from 'vitest';
 import { readSession, writeSession } from '#utils/task/store.js';
-import { processHookInput, registryLine } from '../session_start.js';
+import {
+  callerLine,
+  processHookInput,
+  registryLine,
+} from '../session_start.js';
 
 /** @type {string} */
 let root;
@@ -220,5 +224,72 @@ describe('session_start processHookInput', () => {
     expect(output?.hookSpecificOutput.additionalContext).toContain(
       'Could not read the active task — Error: state.json is not valid JSON'
     );
+  });
+});
+
+describe('session_start callerLine', () => {
+  /** @param {string} dir */
+  const gitRepo = (dir) => {
+    fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
+    return dir;
+  };
+
+  test('should point at the git repository kyoten was started from', () => {
+    const repo = gitRepo(path.join(root, 'project'));
+    const nested = path.join(repo, 'src');
+    fs.mkdirSync(nested);
+
+    const line = callerLine(path.join(root, 'home'), {
+      KYOTEN_CALLER_DIR: nested,
+    });
+
+    expect(line).toContain(`[kyoten] Started from ${path.resolve(repo)}`);
+    expect(line).toContain(`--repo "${path.resolve(repo)}"`);
+  });
+
+  test('should stay quiet without KYOTEN_CALLER_DIR', () => {
+    expect(callerLine(root, {})).toBeNull();
+  });
+
+  test('should stay quiet outside a git repository', () => {
+    const plain = path.join(root, 'plain');
+    fs.mkdirSync(plain);
+
+    expect(
+      callerLine(path.join(root, 'home'), { KYOTEN_CALLER_DIR: plain })
+    ).toBeNull();
+  });
+
+  test('should stay quiet when started from the workspace itself', () => {
+    const home = gitRepo(path.join(root, 'home'));
+
+    expect(callerLine(home, { KYOTEN_CALLER_DIR: home })).toBeNull();
+  });
+
+  test('should stay quiet when the lookup fails', () => {
+    vi.spyOn(fs, 'statSync').mockImplementation(() => {
+      throw new Error('EACCES');
+    });
+
+    expect(callerLine(root, { KYOTEN_CALLER_DIR: root })).toBeNull();
+    vi.restoreAllMocks();
+  });
+
+  test('should default to the process environment', () => {
+    expect(callerLine(root)).toBeNull();
+  });
+
+  test('should add the hint to the session context', () => {
+    const output = processHookInput(
+      {},
+      {
+        rootDir: root,
+        brief: () => '',
+        tools: () => null,
+        caller: () => '[kyoten] hint',
+      }
+    );
+
+    expect(output?.hookSpecificOutput.additionalContext).toBe('[kyoten] hint');
   });
 });

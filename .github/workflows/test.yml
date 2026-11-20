@@ -74,6 +74,9 @@ jobs:
       - name: Run tests with coverage
         run: pnpm test:coverage
 
+      - name: Run e2e tests
+        run: pnpm test:e2e
+
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '24.x'
         uses: codecov/codecov-action@v4
