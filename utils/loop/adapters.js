@@ -19,6 +19,13 @@ import { HARNESS_SESSION_VARS } from '../task/store.js';
 export const AGENTS = /** @type {const} */ (['claude', 'codex', 'dsh']);
 /** The DSH overlay that enables the workspace's hooks (utils/harness/cli.js). */
 export const DSH_PATCH = '.dsh/workspace.patch.yml';
+/**
+ * How to install DSH's Claude hooks bridge into a profile: with the two
+ * peers it imports and the profile lacks, at the version `dsh --version`
+ * prints (`latest` lags behind the runtime).
+ */
+export const DSH_BRIDGE_INSTALL =
+  'dsh plugin --profile <profile> add @deepseek-ai/dsh-hooks-claude-code@<version> @deepseek-ai/dsh-hook-protocol@<version> @deepseek-ai/dsh-llm@<version>';
 
 /** @typedef {typeof AGENTS[number]} AgentName */
 

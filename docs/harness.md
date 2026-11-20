@@ -29,7 +29,7 @@ The rules agents follow are in `AGENTS.md`. This document explains how the piece
    Claude Code session                 Codex / DSH session                Unattended runs
    hooks: SessionStart brief,          the same hooks, from               pnpm loop  (one worktree)
    Stop = inner loop + review          utils/harness/hooks.js             pnpm swarm (worktree per step)
-   reminders, PreCompact note          (DSH: untested)                    pnpm agent ask (one turn)
+   reminders, PreCompact note          (DSH: partly tested)               pnpm agent ask (one turn)
          │                                    │                                    │
          └────────────────────────────────────┼────────────────────────────────────┘
                                               ▼
@@ -48,8 +48,11 @@ is made slower or worse for the others. Codex and DSH run the same hook scripts,
 files are `.codex/hooks.json`, `.codex/rules/workspace.rules`, `.codex/agents/*.toml`,
 `.dsh/hooks.json`, and `.dsh/workspace.patch.yml`.
 
-**DSH is untested.** DSH is not installed on the machine that built this, so every DSH cell below
-comes from reading its source and docs. Codex was tested live (Codex 0.155): a smoke test of the
+**DSH is partly tested.** `dsh web` 0.2.2-rc.3 on Windows read `AGENTS.md` and
+`AGENTS.local.md`, saw the skills, and ran `pnpm task`; with the hook commands below, the
+SessionStart brief, UserPromptSubmit, and Stop hooks ran (exit 0). The hooks on tool calls (guard,
+audit, format, memory triggers) have not run in DSH yet, so those cells come from reading its
+source and docs. Codex was tested live (Codex 0.155): a smoke test of the
 task brief, the Stop verify, formatting of a patch, audit entries, `rm` refused by the rules, and a
 `.env` patch refused by the guard passed 7 of 7.
 
@@ -57,7 +60,7 @@ task brief, the Stop verify, formatting of a patch, audit entries, `rm` refused 
 
 ✅ same behavior · 🟡 close equivalent · ❌ gap
 
-| Behavior                       | Claude Code                     | Codex                                                                           | DSH (untested)                                                                  |
+| Behavior                       | Claude Code                     | Codex                                                                           | DSH (partly tested)                                                             |
 | ------------------------------ | ------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | `AGENTS.md` rules              | ✅ through `@AGENTS.md`         | ✅ native (the file must stay under 32 KiB)                                     | ✅ native                                                                       |
 | Memory core block              | ✅ `CLAUDE.local.md`            | ✅ SessionStart hook                                                            | ✅ loads `AGENTS.local.md` natively                                             |
@@ -95,15 +98,36 @@ Notes:
 
 ### Setup per harness
 
-| Harness     | Once                                                                                                                                                       | After a change                                                                                |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Claude Code | `pnpm workspace:setup`                                                                                                                                     | nothing                                                                                       |
-| Codex       | open `codex` in this folder and trust the project (without it Codex ignores `.codex/`), then run `/hooks` to trust the hooks                               | run `/hooks` again when `pnpm harness sync` changed a hook; rules apply from the next session |
-| DSH         | `dsh plugin add @deepseek-ai/dsh-hooks-claude-code` (the bridge), then always start with `dsh --patch .dsh/workspace.patch.yml`: DSH has no project config | nothing; `pnpm loop`, `pnpm swarm`, and `pnpm agent ask` pass `--patch` themselves            |
+| Harness     | Once                                                                                                                                                                           | After a change                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| Claude Code | `pnpm workspace:setup`                                                                                                                                                         | nothing                                                                                       |
+| Codex       | open `codex` in this folder and trust the project (without it Codex ignores `.codex/`), then run `/hooks` to trust the hooks                                                   | run `/hooks` again when `pnpm harness sync` changed a hook; rules apply from the next session |
+| DSH         | install the bridge in each profile you start (below), then always start at the workspace root with `dsh <profile> --patch .dsh/workspace.patch.yml`: DSH has no project config | nothing; `pnpm loop`, `pnpm swarm`, and `pnpm agent ask` pass `--patch` themselves            |
 
 `pnpm workspace:setup` runs `pnpm harness sync`. When Codex is installed it prints a
 `harness-codex` line (a warning if the checkout is not trusted). When DSH is installed it prints a
-`harness-dsh` line with the launch command (it cannot check the bridge plugin yet).
+`harness-dsh` line with the launch and install commands (it cannot check the bridge plugin yet).
+
+**DSH bridge install.** `dsh plugin` installs into one profile (`$DSH_HOME/profiles/<name>`):
+`headless` for `pnpm agent ask`, `pnpm loop`, and `pnpm swarm`, `web` for `dsh web`, `tui` for
+the terminal UI. Install the bridge and the two peers it imports, at the version `dsh --version`
+prints (tested: 0.2.2-rc.3), into each profile you start:
+
+```bash
+dsh plugin --profile web add @deepseek-ai/dsh-hooks-claude-code@0.2.2-rc.3 \
+  @deepseek-ai/dsh-hook-protocol@0.2.2-rc.3 @deepseek-ai/dsh-llm@0.2.2-rc.3
+```
+
+Do not install it unpinned: its `latest` tag (0.0.1-rc.5) lags behind the runtime, and DSH refuses
+it. After a DSH upgrade, install the matching set again.
+
+**DSH hook commands.** `.dsh/hooks.json` runs `node "${CLAUDE_PROJECT_DIR}/<script>"`, not Claude
+Code's `node "$CLAUDE_PROJECT_DIR"/<script>`. On Windows DSH runs hooks with `pwsh -Command`, where
+`$CLAUDE_PROJECT_DIR` and `${CLAUDE_PROJECT_DIR}` are PowerShell variables, not the env var the
+bridge sets, so they expand to empty and Node looks for `C:\utils\…`. The patch sets the bridge's
+`projectDir` to `!!js process.cwd()` (the launch dir, which `configPath` is relative to as well),
+and the bridge replaces the braced token with it when it reads the config, so every shell gets one
+quoted path. The commands ran with an absolute `projectDir`; the `!!js` form has not run yet.
 
 ### Changing a hook, a permission, or a role
 
@@ -296,7 +320,7 @@ digests, at most 3,000 characters) that every session loads. Rules for agents: A
   a gate, so unrelated prompts inject nothing; at most 4 notes, 1,200 characters, once per session.
   Tags written at save time carry the synonyms and other languages.
 - **Hooks:** one script, `utils/memory/hook.js`, for Claude Code (`.claude/settings.json`), Codex
-  (`.codex/hooks.json`, trusted once with `/hooks`), and DSH (`.dsh/hooks.json`, untested; recall
+  (`.codex/hooks.json`, trusted once with `/hooks`), and DSH (`.dsh/hooks.json`; recall
   only). It fails open and stays silent for the reviewer and verifier roles.
 - **Extraction (B)** (Claude Code and Codex; DSH has no SessionEnd): SessionEnd queues the session; a detached worker reads what the transcript
   gained, condenses it (prompts, final replies, failed commands; secrets left out), and makes one
@@ -492,7 +516,7 @@ commands, the last verify to have passed.
 - **Hooks differ per harness.** See the matrix in "Three harnesses". Where a harness lacks a hook
   event, it gets the same state through `pnpm task status`, and the same enforcement through git
   hooks and the `done` gate. Codex needs a one-time trust (`/hooks`); DSH needs the bridge plugin
-  and `--patch` (untested).
+  in each profile and `--patch` (partly tested).
 
 ## Where the code lives
 

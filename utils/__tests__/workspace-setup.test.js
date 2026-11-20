@@ -823,8 +823,14 @@ describe('stepHarnessAgents', () => {
     const deps = makeDeps({ tools: registryOf(['dsh']) });
     const [result] = stepHarnessAgents(deps);
     expect(result).toMatchObject({ id: 'harness-dsh', status: 'ok' });
-    expect(result.detail).toContain('dsh --patch .dsh/workspace.patch.yml');
-    expect(result.detail).toContain('dsh plugin add');
+    expect(result.detail).toContain(
+      'dsh <profile> --patch .dsh/workspace.patch.yml'
+    );
+    expect(result.detail).toContain(
+      'dsh plugin --profile <profile> add @deepseek-ai/dsh-hooks-claude-code@<version> @deepseek-ai/dsh-hook-protocol@<version> @deepseek-ai/dsh-llm@<version>'
+    );
+    expect(result.detail).toContain('dsh --version');
+    expect(result.detail).not.toContain('dsh plugin add');
   });
 });
 

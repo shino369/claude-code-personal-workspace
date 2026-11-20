@@ -6,12 +6,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session_start.js --harness dsh",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session_start.js\" --harness dsh",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/utils/memory/hook.js --harness dsh",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/utils/memory/hook.js\" --harness dsh",
             "timeout": 5
           }
         ]
@@ -22,12 +22,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/utils/memory/hook.js --harness dsh",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/utils/memory/hook.js\" --harness dsh",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/task_loop.js --reset --harness dsh",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/task_loop.js\" --reset --harness dsh",
             "timeout": 5
           }
         ]
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/utils/memory/hook.js --harness dsh",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/utils/memory/hook.js\" --harness dsh",
             "timeout": 5
           }
         ]
@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard.js --harness dsh",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.js\" --harness dsh",
             "timeout": 5
           }
         ]
@@ -61,7 +61,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/utils/memory/hook.js --harness dsh",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/utils/memory/hook.js\" --harness dsh",
             "timeout": 5
           }
         ]
@@ -71,7 +71,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/audit_logger.js --harness dsh",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/audit_logger.js\" --harness dsh",
             "timeout": 10
           }
         ]
@@ -81,7 +81,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/auto_format.js --harness dsh",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/auto_format.js\" --harness dsh",
             "timeout": 30
           }
         ]
@@ -92,7 +92,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/task_loop.js --harness dsh",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/task_loop.js\" --harness dsh",
             "timeout": 300
           }
         ]

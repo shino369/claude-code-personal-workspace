@@ -13,6 +13,7 @@ import path from 'path';
 import os from 'os';
 import { spawnSync } from 'child_process';
 import { main as harnessMain } from './harness/cli.js';
+import { DSH_BRIDGE_INSTALL, DSH_PATCH } from './loop/adapters.js';
 import { initLocal } from './memory/render.js';
 import { mainCheckout } from './memory/repo.js';
 import { runIfMain } from './module-runner.js';
@@ -675,8 +676,7 @@ export function stepHarnessAgents(deps) {
     results.push({
       id: 'harness-dsh',
       status: 'ok',
-      detail:
-        'start DSH with: dsh --patch .dsh/workspace.patch.yml (bridge plugin needed once: dsh plugin add @deepseek-ai/dsh-hooks-claude-code; not checkable yet)',
+      detail: `start DSH at the workspace root with: dsh <profile> --patch ${DSH_PATCH}; install the hooks bridge once in each profile you start (headless, web, tui), at the version dsh --version prints: ${DSH_BRIDGE_INSTALL} (not checkable yet)`,
     });
   }
   return results;
