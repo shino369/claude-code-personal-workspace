@@ -1146,6 +1146,39 @@ describe('review', () => {
     expect(state().quality?.base).toBe('main');
   });
 
+  test('should review a page in docs/ and Python from the task folder, not unrelated git changes', () => {
+    newTask(['--verify', 'pnpm test']);
+    finishSteps();
+    for (const rel of ['docs/index.html', 'app/clean.py', 'scripts/gen.sh']) {
+      fs.mkdirSync(path.dirname(path.join(taskDir(), rel)), {
+        recursive: true,
+      });
+      fs.writeFileSync(path.join(taskDir(), rel), '\n');
+    }
+    run(['verify']);
+    /** @type {import('../review.js').RunGit} */
+    const runGit = (args) =>
+      args[0] === 'merge-base'
+        ? 'abc'
+        : args[0] === 'diff'
+          ? 'skills-lock.json'
+          : '';
+
+    const parsed = JSON.parse(run(['review', '--json'], { runGit }).out);
+
+    expect(parsed.scope).toEqual({
+      base: null,
+      since: null,
+      files: [`tasks/${NAME}/app/clean.py`, `tasks/${NAME}/docs/index.html`],
+    });
+    const brief = read(`reviews/BRIEF_${NAME}-r1.md`);
+    expect(brief).toContain(
+      `- tasks/${NAME}/docs/index.html — pnpm task check does not lint or format it`
+    );
+    expect(brief).toContain(`- tasks/${NAME}/scripts/gen.sh`);
+    expect(brief).not.toContain('skills-lock.json');
+  });
+
   /**
    * A fake git: HEAD is `head`, merge-base(HEAD, main) is `mergeBase`, and one
    * file changed.

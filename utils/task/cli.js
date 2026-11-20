@@ -77,6 +77,7 @@ import {
   recordFindings,
   reviewFiles,
   scopeRoot,
+  taskFolderNotes,
   taskReviewScope,
 } from './review.js';
 import { trashPaths } from './trash.js';
@@ -1199,7 +1200,17 @@ export const COMMANDS = {
     fs.mkdirSync(path.join(task.dir, 'reviews'), { recursive: true });
     fs.writeFileSync(
       path.join(task.dir, files.brief),
-      formatReviewBrief({ state, round, scope, taskRel }),
+      formatReviewBrief({
+        state,
+        round,
+        scope,
+        taskRel,
+        folder: taskFolderNotes({
+          rootDir: deps.rootDir,
+          taskDir: task.dir,
+          scope,
+        }),
+      }),
       'utf-8'
     );
     const findingsPath = path.join(task.dir, files.findings);

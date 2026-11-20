@@ -5,20 +5,22 @@
  * findings into `fix:` steps.
  *
  * Scope: for a task that works in another repository (`--repo`), the git
- * changes there. Otherwise the task's own code in its folder (files `pnpm
- * task check` looks at, minus the `scripts/` helpers; no git: the folder is
- * git-ignored) when it has any, else the git changes in the workspace, else
- * the task's scripts. Git changes are counted from the task's start commit
- * when the task started on HEAD's line after the branch point (or on the
- * default branch itself), else from the branch point with the default branch
- * (`origin/HEAD` as fetched, else `main`); an explicit `--base` is used as
- * given.
+ * changes there. Otherwise the task's own code in its folder (code in any
+ * language and its config, `docs/` included, minus the `scripts/` helpers; no
+ * git: the folder is git-ignored) when it has any, else the git changes in
+ * the workspace, else the task's scripts. The brief marks scope files `pnpm
+ * task check` does not check and lists the folder's code the scope leaves
+ * out, so nothing is dropped silently. Git changes are counted from the
+ * task's start commit when the task started on HEAD's line after the branch
+ * point (or on the default branch itself), else from the branch point with
+ * the default branch (`origin/HEAD` as fetched, else `main`); an explicit
+ * `--base` is used as given.
  */
 import crypto from 'crypto';
 import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { collectTaskCode, hasTaskCode, listCodeFiles } from './check.js';
+import { isSourceFile, listCodeFiles, listReviewFiles } from './check.js';
 import { git } from './git.js';
 import { SEVERITIES, VERDICTS, freshQuality, toFix } from './quality.js';
 import { addStep } from './state.js';
@@ -53,6 +55,8 @@ export const SEVERITY_RUBRIC = `- must-fix: wrong behavior, data loss, a securit
  * @typedef {(args: string[], cwd: string) => string | null} RunGit
  * @typedef {{ base: string | null, since: string | null, files: string[] }} Scope
  *   `since` is the commit the git diff starts from (null for task code).
+ * @typedef {{ unchecked: string[], aside: string[] }} FolderNotes
+ *   see `taskFolderNotes`
  */
 
 /** @type {RunGit} */
@@ -92,32 +96,42 @@ export function defaultBranch(runGit, rootDir) {
 }
 
 /**
- * The task's own code in its folder: what `pnpm task check` looks at, minus
- * `scripts/` (task-only helpers, such as one-off generators). A helper script
- * must not turn the review away from the work it supports.
+ * The task's own code in its folder: code in any language and its config
+ * (`listReviewFiles`, `docs/` included), minus `scripts/` (task-only helpers,
+ * such as one-off generators). A helper script must not turn the review away
+ * from the work it supports.
  *
  * @param {string} taskDir
  * @returns {string[]} POSIX paths relative to the task folder
  */
 export function productFiles(taskDir) {
   if (!fs.existsSync(taskDir)) return [];
-  return listCodeFiles(taskDir).filter((file) => !file.startsWith('scripts/'));
+  return listReviewFiles(taskDir).filter(
+    (file) => !file.startsWith('scripts/')
+  );
 }
 
 /**
- * Whether the task folder holds product code (JavaScript or TypeScript, as
- * for `hasTaskCode`) outside `scripts/`.
+ * Whether the task folder holds product code: a source file in any language
+ * (`isSourceFile`) outside `scripts/`, `docs/` included. Config, prose, and
+ * data never count, so a design doc or a fixture does not move a workspace
+ * task's review off its git changes.
  *
  * @param {string} taskDir
  * @returns {boolean}
  */
 export function hasProductCode(taskDir) {
-  if (!fs.existsSync(taskDir)) return false;
-  const code = collectTaskCode(taskDir);
-  return [...code.lint, ...code.types].some(
-    (file) => !file.startsWith('scripts/')
-  );
+  return productFiles(taskDir).some(isSourceFile);
 }
+
+/**
+ * Whether the task folder holds code in any language, `scripts/` included.
+ *
+ * @param {string} taskDir
+ * @returns {boolean}
+ */
+const hasFolderCode = (taskDir) =>
+  fs.existsSync(taskDir) && listReviewFiles(taskDir).some(isSourceFile);
 
 /**
  * The base a round reviews against: an open round keeps its own; otherwise
@@ -171,12 +185,14 @@ export function reviewScope({
   if (base === null) {
     const prefix = relPosix(rootDir, taskDir);
     const product = productFiles(taskDir);
+    // No product code: the scripts are the work, with the data beside them.
+    const files = product.some(isSourceFile)
+      ? product
+      : listReviewFiles(taskDir);
     return {
       base: null,
       since: null,
-      files: (product.length > 0 ? product : listCodeFiles(taskDir)).map(
-        (file) => `${prefix}/${file}`
-      ),
+      files: files.map((file) => `${prefix}/${file}`),
     };
   }
   const mergeBase = runGit(['merge-base', 'HEAD', base], repoDir);
@@ -258,8 +274,8 @@ export function taskReviewScope({
     startCommit: base === undefined ? (state.startCommit ?? null) : null,
     repoDir,
   });
-  // A workspace task whose only code is its scripts and that changed nothing
-  // in git: the scripts are its work.
+  // A workspace task whose only code is its scripts (any language) and that
+  // changed nothing in git: the scripts are its work.
   const chosen =
     base === undefined &&
     quality.phase !== 'review' &&
@@ -269,11 +285,39 @@ export function taskReviewScope({
     chosen &&
     scope.base !== null &&
     scope.files.length === 0 &&
-    hasTaskCode(taskDir)
+    hasFolderCode(taskDir)
   ) {
     return reviewScope({ rootDir, taskDir, base: null, runGit });
   }
   return scope;
+}
+
+/**
+ * What the brief adds about the task folder, as workspace-relative paths:
+ * `unchecked`, the scope's folder files `pnpm task check` does not look at
+ * (other languages, `docs/`), so the reviewer checks their style by hand;
+ * and `aside`, the folder's code the scope leaves out (helper scripts, or the
+ * whole folder beside a git scope), so it is never dropped silently.
+ *
+ * @param {{ rootDir: string, taskDir: string, scope: Scope }} options
+ * @returns {FolderNotes}
+ */
+export function taskFolderNotes({ rootDir, taskDir, scope }) {
+  if (!fs.existsSync(taskDir)) return { unchecked: [], aside: [] };
+  const prefix = relPosix(rootDir, taskDir);
+  const fromRoot = (/** @type {string} */ file) => `${prefix}/${file}`;
+  const checked = new Set(listCodeFiles(taskDir).map(fromRoot));
+  const inScope = new Set(scope.files);
+  return {
+    unchecked:
+      scope.base === null
+        ? scope.files.filter((file) => !checked.has(file))
+        : [],
+    aside: listReviewFiles(taskDir)
+      .filter(isSourceFile)
+      .map(fromRoot)
+      .filter((file) => !inScope.has(file)),
+  };
 }
 
 /**
@@ -367,10 +411,17 @@ const where = (f) => `${f.file}${f.line ? `:${f.line}` : ''}`;
 /**
  * The brief a clean-context reviewer works from.
  *
- * @param {{ state: TaskState, round: number, scope: Scope, taskRel: string }} options
+ * @param {{ state: TaskState, round: number, scope: Scope, taskRel: string, folder?: FolderNotes }} options
  * @returns {string}
  */
-export function formatReviewBrief({ state, round, scope, taskRel }) {
+export function formatReviewBrief({
+  state,
+  round,
+  scope,
+  taskRel,
+  folder = { unchecked: [], aside: [] },
+}) {
+  const unchecked = new Set(folder.unchecked);
   const quality = state.quality ?? freshQuality();
   const files = reviewFiles(state.name, round);
   const since = String(scope.since).slice(0, 12);
@@ -402,9 +453,23 @@ export function formatReviewBrief({ state, round, scope, taskRel }) {
     `## Scope — ${scope.files.length} file(s), ${scopeLine}`,
     '',
     ...(scope.files.length > 0
-      ? scope.files.map((file) => `- ${file}`)
+      ? scope.files.map(
+          (file) =>
+            `- ${file}${unchecked.has(file) ? ' — pnpm task check does not lint or format it' : ''}`
+        )
       : ['- (no files: nothing changed)']),
     '',
+    ...(folder.aside.length > 0
+      ? [
+          '## Also in the task folder (not in scope)',
+          '',
+          'Code the scope leaves out: helper scripts, or the task folder beside a git scope.',
+          'When the plan makes it part of the work, review it too.',
+          '',
+          ...folder.aside.map((file) => `- ${file}`),
+          '',
+        ]
+      : []),
     '## Look for',
     '',
     '- spec gaps: acceptance criteria not met, plan steps missing or half done',

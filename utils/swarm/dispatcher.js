@@ -14,7 +14,7 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { listCodeFiles } from '../task/check.js';
+import { listReviewFiles } from '../task/check.js';
 import { formatGit } from '../task/git.js';
 import {
   appendSeparator,
@@ -161,15 +161,16 @@ export function releaseStaleClaims(rootDir, name, now) {
 }
 
 /**
- * Refuse a task that keeps code in its git-ignored task folder: the swarm
- * moves work between workers only through git, so that code would never
- * leave the worker that wrote it (decision 15).
+ * Refuse a task that keeps code in its git-ignored task folder (in any
+ * language, with its config, `docs/` included: what a review reads): the
+ * swarm moves work between workers only through git, so that code would
+ * never leave the worker that wrote it (decision 15).
  *
  * @param {string} taskDir
  * @param {string} name
  */
 export function assertNoTaskCode(taskDir, name) {
-  const code = listCodeFiles(taskDir);
+  const code = listReviewFiles(taskDir);
   if (code.length > 0) {
     throw new Error(
       [

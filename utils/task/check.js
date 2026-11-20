@@ -42,6 +42,8 @@ export const ANY_LEVEL_SKIP = new Set([
   'test-results',
   'playwright-report',
   'blob-report',
+  'venv',
+  '__pycache__',
 ]);
 /** Task bookkeeping files written by `pnpm task`, never checked. */
 export const TASK_FILES = new Set(['state.json', 'plan.md', 'NOTES.md']);
@@ -53,6 +55,51 @@ const FORMAT_EXT = [...new Set([...LINT_EXT, ...TYPE_EXT])].concat([
   '.css',
   '.html',
 ]);
+
+/**
+ * Code in any language, by extension: what a review reads as the work
+ * itself. An allowlist on purpose: an unknown kind of file (a model, a log,
+ * an export) must not count as product code (see `hasProductCode`).
+ */
+const SOURCE_EXT = new Set(
+  [
+    ['.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx'],
+    ['.html', '.htm', '.css', '.scss', '.sass', '.less'],
+    ['.vue', '.svelte', '.astro'],
+    ['.py', '.pyi', '.ipynb', '.r', '.jl'],
+    ['.sh', '.bash', '.zsh', '.fish', '.ps1', '.psm1', '.bat', '.cmd'],
+    ['.c', '.h', '.cc', '.cpp', '.cxx', '.hpp', '.m', '.mm'],
+    ['.cs', '.fs', '.vb', '.java', '.kt', '.kts', '.scala', '.groovy'],
+    ['.go', '.rs', '.swift', '.dart', '.zig', '.nim'],
+    ['.rb', '.php', '.pl', '.pm', '.lua'],
+    ['.ex', '.exs', '.erl', '.hs', '.ml', '.clj'],
+    ['.sql', '.tf', '.glsl', '.wgsl'],
+  ].flat()
+);
+/** Code files known by name rather than extension. */
+const SOURCE_NAMES = new Set([
+  'Dockerfile',
+  'Containerfile',
+  'Makefile',
+  'GNUmakefile',
+  'Justfile',
+  'Rakefile',
+]);
+/** Config text that belongs with the code it configures. */
+const CONFIG_EXT = new Set([
+  '.json',
+  '.jsonc',
+  '.json5',
+  '.yaml',
+  '.yml',
+  '.toml',
+  '.ini',
+  '.cfg',
+]);
+/** The review reads `docs/` (a page can be the deliverable); check does not. */
+const REVIEW_TOP_SKIP = new Set(
+  [...TOP_LEVEL_SKIP].filter((name) => name !== 'docs')
+);
 
 const NODE_SEGMENTS = new Set(['test', 'tests', '__tests__', 'e2e', 'scripts']);
 const NODE_FILE_RE = /\.(test|spec|e2e|config)\.[cm]?[jt]sx?$/;
@@ -83,13 +130,23 @@ const hasExt = (file, extensions) => extensions.includes(path.extname(file));
 export const isCodeFile = (file) => hasExt(file, FORMAT_EXT);
 
 /**
- * Every file under the task that `check` looks at, as sorted POSIX paths
- * relative to the task directory.
+ * @param {string} file
+ * @returns {boolean} whether `file` is code in any language (SOURCE_EXT)
+ */
+export const isSourceFile = (file) =>
+  SOURCE_NAMES.has(path.posix.basename(file)) ||
+  SOURCE_EXT.has(path.extname(file).toLowerCase());
+
+/**
+ * Every regular file under the task, as sorted POSIX paths relative to the
+ * task directory. Skips dot-entries, ANY_LEVEL_SKIP folders, `topSkip`
+ * folders and TASK_FILES at the top level; links are not followed.
  *
  * @param {string} taskDir
+ * @param {Set<string>} topSkip
  * @returns {string[]}
  */
-export function listCodeFiles(taskDir) {
+function listTaskFiles(taskDir, topSkip) {
   /** @type {string[]} */
   const found = [];
   /** @param {string} rel */
@@ -102,16 +159,42 @@ export function listCodeFiles(taskDir) {
       if (entry.name.startsWith('.')) continue;
       if (entry.isDirectory()) {
         if (ANY_LEVEL_SKIP.has(entry.name)) continue;
-        if (!rel && TOP_LEVEL_SKIP.has(entry.name)) continue;
+        if (!rel && topSkip.has(entry.name)) continue;
         walk(child);
       } else if (entry.isFile()) {
         if (!rel && TASK_FILES.has(entry.name)) continue;
-        if (hasExt(entry.name, FORMAT_EXT)) found.push(child);
+        found.push(child);
       }
     }
   };
   walk('');
   return found.sort();
+}
+
+/**
+ * Every file under the task that `check` looks at, as sorted POSIX paths
+ * relative to the task directory.
+ *
+ * @param {string} taskDir
+ * @returns {string[]}
+ */
+export function listCodeFiles(taskDir) {
+  return listTaskFiles(taskDir, TOP_LEVEL_SKIP).filter(isCodeFile);
+}
+
+/**
+ * Every file under the task a review reads: code in any language and its
+ * config, `docs/` included (unlike `listCodeFiles`), as sorted POSIX paths
+ * relative to the task directory.
+ *
+ * @param {string} taskDir
+ * @returns {string[]}
+ */
+export function listReviewFiles(taskDir) {
+  return listTaskFiles(taskDir, REVIEW_TOP_SKIP).filter(
+    (file) =>
+      isSourceFile(file) || CONFIG_EXT.has(path.extname(file).toLowerCase())
+  );
 }
 
 /**
