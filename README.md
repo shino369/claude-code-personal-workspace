@@ -81,7 +81,6 @@ pnpm check
 
 Then simply run the agent inside this workspace.
 
-
 ## Repository Layout
 
 ```text
