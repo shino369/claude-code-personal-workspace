@@ -251,6 +251,10 @@ describe('main', () => {
     expect(run(['help']).out).toBe(HELP);
   });
 
+  test('should document the include prerequisite for selecting tasks to export', () => {
+    expect(run(['help']).out).toContain('--tasks requires tasks in --include');
+  });
+
   test('should print the help for --help after any command', () => {
     expect(run(['add', '--help']).out).toBe(HELP);
   });

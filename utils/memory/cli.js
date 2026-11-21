@@ -132,7 +132,7 @@ Find
   history [--grep "…"] [--limit N]
                                 The journal of changes, oldest first (default: the last 20)
 
-Extraction (automatic after each Claude Code session)
+Extraction and consolidation
   extract [<session>] [--dry-run]
                                 Extract notes from the queued sessions now (the worker
                                 normally does this in the background). <session> extracts
@@ -149,6 +149,7 @@ Move or back up (an explicit step; nothing is synced)
   export [--include memory,personalization,tasks,resources] [--tasks a,b] [--out <file>]
       [--allow-secrets]           Write a .tar.gz with a checksummed manifest (default:
                                 memory,personalization to memory-export-<yymmdd>.tar.gz).
+                                --tasks requires tasks in --include.
                                 Files that look like they hold secrets stop the export
   import <file> [--include …] [--dry-run] [--replace]
                                 Validate the archive (paths, links, checksums) before
@@ -158,12 +159,13 @@ Move or back up (an explicit step; nothing is synced)
                                 settings; a snapshot is taken first
 
 Settings
+  personalize --show            Show the saved settings and whether they apply (the default)
+  personalize --presets         List the available presets
   personalize [--preset <name>] [--call-me …] [--about-me …] [--language …]
       [--persona … | --persona-file <file.md>] [--tone <text|preset>] [--traits a,b]
       [--extra …] [--reset]
-                                How agents talk to you (messages to you only); without
-                                flags, shows the settings. --presets lists the presets;
-                                an empty value clears a field. --persona-file reads the
+                                Set how agents talk to you in conversations. An empty
+                                value clears a field. --persona-file reads the
                                 persona from markdown (comments and heading marks
                                 dropped; the same 1,500-character limit). Keep the
                                 persona in memory/persona.md instead and pnpm memory init
@@ -175,8 +177,9 @@ Settings
   personalize [--persona … | --persona-file <file.md>] --audit [--agent claude|codex|dsh]
                                 Check the persona without changing it. Both commands default
                                 to Claude and use memory/persona.md or the stored persona
-                                when no source flag is given
-  personalize --off | --on     Pause or resume applying saved personalization across sessions.
+                                when no source flag is given. --agent codex requires
+                                zero configured MCP servers
+  personalize --off | --on      Pause or resume applying saved personalization across sessions.
                                 A new session loads the full settings after --on
   set [--extract-model <model>|default] [--budget <characters>|default]
                                 Extraction model and core block budget
@@ -185,8 +188,9 @@ Settings
                                 (incognito); recall still works
 
 Options
-  --json          Machine-readable output
-  --help          Show this help`;
+  --message <text>, -m <text>   Reason for rm
+  --json                       Machine-readable output
+  --help, -h                   Show this help (also pnpm memory help)`;
 
 const VALUE_FLAGS = {
   '--scope': 'scope',

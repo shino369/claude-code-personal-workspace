@@ -6,7 +6,7 @@
  *   pnpm workspace:check            # verify only, no changes
  *
  * Steps run in order; every failure prints the exact command that fixes it.
- * Run `node utils/workspace-setup.js --help` for options.
+ * Run `pnpm workspace:setup --help` for options.
  */
 import fs from 'fs';
 import path from 'path';
@@ -32,16 +32,17 @@ import {
   ROOT_DIR,
 } from './workspace-config.js';
 
-export const HELP = `Usage: node utils/workspace-setup.js [options]
+export const HELP = `Usage: pnpm workspace:setup [options]
+       pnpm workspace:check [options]
 
 Options:
   --check           Verify only; change nothing (exit 1 if a required step fails)
   --skip-install    Do not run pnpm install
   --skip-skills     Do not install third-party skills from skills-lock.json
-  --with-browsers   Also install agent-browser's browser and Playwright Chromium
+  --with-browsers   Install agent-browser's browser and Playwright Chromium (setup only)
   --target <dir>    Extra skill link directory (repeatable), e.g. .dsh/skills
   --json            Print a JSON report
-  --help            Show this help`;
+  --help, -h         Show this help`;
 
 /** Git hook shims that must be executable. */
 export const HOOK_FILES = ['pre-commit', 'commit-msg'];

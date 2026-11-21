@@ -915,6 +915,10 @@ describe('formatResult', () => {
 });
 
 describe('main', () => {
+  test('should document browser installation as a setup-only option', () => {
+    expect(HELP).toMatch(/^  --with-browsers[^\n]*\(setup only\)$/m);
+  });
+
   test('should print help', async () => {
     const deps = makeDeps();
     expect(await main({ argv: ['--help'], deps })).toBe(0);

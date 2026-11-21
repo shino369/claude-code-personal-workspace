@@ -12,6 +12,7 @@ gate. Mainly designed for Claude Code, but also works for Codex / DSH.
 - [Overview](#overview)
 - [Requirements](#requirements)
 - [Getting Started](#getting-started)
+- [CLI Reference](docs/cli.md)
 - [Repository Layout](#repository-layout)
   - [Tasks](#tasks)
   - [Memory](#memory)

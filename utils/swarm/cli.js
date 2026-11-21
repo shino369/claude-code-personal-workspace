@@ -52,7 +52,7 @@ Options
   --max-budget-usd <n>        Spend cap per agent run (claude only)
   --no-install                Skip pnpm install in new worktrees
   --dry-run                   Print what would run; start nothing
-  --help                      Show this help
+  --help, -h                  Show this help
 
 Exit code: 0 when every step is done and the final verify passes, else 1.
 Logs: tasks/<task>/swarm/run-*/ (<step>.log, <step>.result.json)`;

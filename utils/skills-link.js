@@ -17,6 +17,7 @@
 import fs from 'fs';
 import path from 'path';
 import { runIfMain } from './module-runner.js';
+import { toPosix } from './paths.js';
 import {
   DEFAULT_LINK_TARGETS,
   ROOT_DIR,
@@ -241,24 +242,29 @@ export function linkSkills({
   );
 }
 
+const HELP_FLAGS = new Set(['--help', '-h']);
+
 /**
  * @param {string[]} argv
- * @returns {{ check: boolean, json: boolean, targets: string[] }}
+ * @returns {{ check: boolean, json: boolean, targets: string[], help?: boolean }}
  */
 export function parseArgs(argv) {
   /** @type {string[]} */
   const targets = [];
   let check = false;
   let json = false;
+  let help = false;
 
   for (let i = 0; i < argv.length; i++) {
     const [flag, inline] = argv[i].split('=', 2);
     if (flag === '--check') check = true;
     else if (flag === '--json') json = true;
+    else if (HELP_FLAGS.has(flag)) help = true;
     else if (flag === '--target') {
       const value = inline ?? argv[++i];
       if (!value) throw new Error('--target needs a directory');
-      targets.push(value);
+      if (inline === undefined && HELP_FLAGS.has(value)) help = true;
+      else targets.push(value);
     } else {
       throw new Error(`Unknown option: ${argv[i]}`);
     }
@@ -268,6 +274,7 @@ export function parseArgs(argv) {
     check,
     json,
     targets: targets.length > 0 ? targets : DEFAULT_LINK_TARGETS,
+    ...(help ? { help } : {}),
   };
 }
 
@@ -285,6 +292,16 @@ export function formatResult(result) {
   return `${mark} ${path.join(result.target, result.name)} ${result.status}${detail}`;
 }
 
+const HELP = `Usage: pnpm skills:link [options]
+
+Link the workspace's skills into harness directories.
+
+Options
+  --target <dir>  Link into this directory (repeatable, default ${DEFAULT_LINK_TARGETS.map(toPosix).join(', ')})
+  --check         Verify links and exit 1 if any need repair
+  --json          Print a JSON report
+  --help, -h      Show this help`;
+
 /**
  * @param {{ argv?: string[], rootDir?: string, fsApi?: FsApi, platform?: string, log?: (message: string) => void }} [options]
  * @returns {number}
@@ -296,7 +313,11 @@ export function main({
   platform = process.platform,
   log = console.log,
 } = {}) {
-  const { check, json, targets } = parseArgs(argv);
+  const { check, json, targets, help } = parseArgs(argv);
+  if (help) {
+    log(HELP);
+    return 0;
+  }
   const results = linkSkills({ rootDir, targets, check, fsApi, platform });
   const problems = results.filter((r) => PROBLEM_STATUSES.has(r.status));
 

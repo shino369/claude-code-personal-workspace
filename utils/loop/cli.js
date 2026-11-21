@@ -52,7 +52,7 @@ Options
                               tool registry entry (pnpm tools list), else <agent>
   --max-budget-usd <n>        Spend cap per iteration (claude only)
   --dry-run                   Print the plan and the first prompt; run nothing
-  --help                      Show this help
+  --help, -h                  Show this help
 
 Exit code: 0 when verify passes (with --review: when the quality loop is
 complete), 1 otherwise. Logs: tasks/<task>/loop/run-*/ (iter-N.md; review

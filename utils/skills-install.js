@@ -14,6 +14,15 @@ import { fileURLToPath } from 'url';
 import { runIfMain } from './module-runner.js';
 import { readSkillsLock } from './skills-lock.js';
 
+const HELP = `Usage: pnpm skills:install [options]
+
+Install third-party skills listed in skills-lock.json.
+
+Options
+  --only <names>  Install only these skill names (comma-separated, repeatable)
+  --skip <names>  Exclude these skill names (comma-separated, repeatable)
+  --help, -h     Show this help`;
+
 /** skills.sh agent ids to install for. Codex reads .agents/skills directly. */
 export const INSTALL_AGENTS = ['claude-code', 'codex'];
 
@@ -149,6 +158,10 @@ export async function main({
   spawn = spawnSync,
   log = console.log,
 } = {}) {
+  if (argv.includes('--help') || argv.includes('-h')) {
+    log(HELP);
+    return 0;
+  }
   const { skip, only } = parseArgs(argv);
   return installSkills({ rootDir, lockPath, skip, only, spawn, log });
 }

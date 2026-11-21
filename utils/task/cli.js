@@ -103,11 +103,12 @@ Start / resume
                                 inner loop starts on and pnpm task check runs before verify;
                                 --repo: the git repository the task works in, when it is
                                 not this workspace (git state, notes, review scope)
-  init [name] [--goal "…"] [--verify "cmd"]… [--kind …] [--e2e …] [--repo <path>]
+  init [name] [--goal "…"] [--verify "cmd"]… [--verify-fast "cmd"]…
+      [--kind code|general] [--e2e required|no] [--repo <path>]
                                 Add state.json to a hand-written task (steps from plan.md)
 
 Work
-  next                          Print the next ready step
+  next [name]                   Print the next ready step
   claim [id]                    Atomically take the next ready step (or <id>) for --agent;
                                 exit 2 when nothing is ready (prints why)
   step add "title" [--deps s1,s2]
@@ -118,22 +119,23 @@ Work
                                 todo releases a claim; --force takes over a step another
                                 agent claimed)
   step <id> remove -m "why"     Remove a step written by mistake
-  note --done "…" --next "…" [--open "…"] [-m "…"] [--learn "…"]…
-                                Append a NOTES.md entry (State line is filled in for you);
-                                each --learn line is saved to memory as a fact, with the
+  note [--done "…"] [--next "…"] [--open "…"] [-m "…"] [--learn "…"]…
+                                Append a NOTES.md entry with an automatic State line.
+                                Supply at least one of --done, --next, --open, or -m.
+                                Each --learn line is saved to memory as a fact with the
                                 task as its source (a repo fact for a --repo task)
-  check [--fix]                 Lint (ESLint), format-check (Prettier), and typecheck (tsc)
+  check [name] [--fix]          Lint (ESLint), format-check (Prettier), and typecheck (tsc)
                                 the task's code; --fix rewrites what ESLint/Prettier can fix
   verify [--fast] [--no-check]  Run the task's verify commands; exit 1 on failure. Tasks
                                 with code run pnpm task check first (--no-check skips it)
   set [--goal "…"] [--verify "cmd"]… [--verify-fast "cmd"]…
-                                Change the goal or replace the verify command lists
-  set --kind code|general [--e2e required|no]
-                                Change the task kind (code turns the loop on) or e2e mode
-  set --repo <path>|none         Change the task's repository (restarts its start commit)
-  set --loop on|off [--loop-max N]
-                                Inner loop (Claude Stop hook): keep working until the
-                                fast verify passes, at most N times (default 5)
+      [--kind code|general] [--e2e required|no] [--repo <path>|none]
+      [--loop on|off] [--loop-max N]
+                                Change one or more task settings. Each verify list replaces
+                                its previous list. Setting kind to code turns the loop on.
+                                Changing --repo records a new start commit for reviews.
+                                The inner loop retries until the fast verify passes or the
+                                iteration cap is reached (default 5).
   review [--base <ref> | --folder] [--force]
                                 Code tasks: open the next review round (max 2) and write the
                                 brief + findings file for clean-context reviewers. Scope: the
@@ -150,7 +152,7 @@ Work
                                 folders that hold a .git or secrets)
   template review|study [--name <kebab>]
                                 Copy a REVIEW_/STUDIES_ template into the task
-  done [-m "…"] [--learn "…"]… [--force]
+  done [name] [-m "…"] [--learn "…"]… [--force]
                                 Close the task (needs every step done and a passing verify;
                                 code tasks also a finished review loop; --force overrides).
                                 Saves a task digest to memory (goal, outcome -m, open items,
@@ -160,10 +162,11 @@ Work
                                 the work from now on (2 more rounds)
 
 Options
-  --task <name>   Act on <name> instead of the active task
-  --agent <name>  Who is acting (default: $TASK_AGENT, "claude" in Claude Code, else "agent")
-  --json          Machine-readable output
-  --help          Show this help`;
+  --task <name>                Act on <name> instead of the active task
+  --agent <name>               Who is acting (default: $TASK_AGENT, "claude" in Claude Code, else "agent")
+  --message <text>, -m <text>  Note or reason for a state change
+  --json                       Machine-readable output
+  --help, -h                   Show this help (also pnpm task help)`;
 
 const VALUE_FLAGS = {
   '--goal': 'goal',
