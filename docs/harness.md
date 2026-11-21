@@ -256,7 +256,9 @@ branch differs from the one the last note recorded.
 
 **Steps** are `todo`, `in_progress`, `blocked` (the agent cannot go on), `waiting` (on the user or
 someone else: never the agent's next step, does not hold back a review, keeps the task open), or
-`done`. `pnpm task step <id> remove -m "why"` drops a step added by mistake.
+`done`. `waiting --gate` is a wait that does hold back the review, for the user's approval of a
+design before any code: the Stop hook does not ask for a review and `pnpm task review` refuses
+until the step moves on. `pnpm task step <id> remove -m "why"` drops a step added by mistake.
 
 ### 3. Resume
 
