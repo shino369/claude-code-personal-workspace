@@ -67,7 +67,10 @@ describe('headlessCommand', () => {
     const dsh = headlessCommand({ agent: 'dsh', rootDir: root });
 
     expect(codex.bin).toBe('codex');
-    expect(codex.args).toContain('read-only');
+    expect(codex.args).toContain(
+      'permissions.memory-persona.filesystem={":root"="deny"}'
+    );
+    expect(codex.args).not.toContain('--sandbox');
     expect(codex.args).toContain('--skip-git-repo-check');
     expect(codex.args).toContain('--ignore-user-config');
     expect(codex.args).toContain('shell_tool');
@@ -127,6 +130,56 @@ describe('callAgent', () => {
     expect(path.dirname(call.cwd)).toBe(root);
     expect(fs.existsSync(call.cwd)).toBe(false);
   });
+
+  test('should check for Codex MCP servers before handing it any persona text', () => {
+    const codex = headlessCommand({ agent: 'codex', rootDir: root });
+    const runAgent = agentReturning();
+    runAgent.mockReturnValueOnce({
+      stdout:
+        'No MCP servers configured yet. Try `codex mcp add my-tool -- my-command`.\n',
+      output: '',
+      code: 0,
+      signal: null,
+      durationMs: 0,
+    });
+
+    expect(callAgent(deps(runAgent), codex, 'Speak plainly.').stdout).toBe(
+      'answer'
+    );
+    expect(runAgent).toHaveBeenCalledTimes(2);
+    expect(runAgent).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        command: expect.objectContaining({
+          args: expect.arrayContaining(['mcp', 'list']),
+        }),
+        prompt: '',
+      })
+    );
+    expect(runAgent).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        prompt: 'Speak plainly.',
+      })
+    );
+  });
+
+  test.each([0, 1])(
+    'should stop before sending persona text if the Codex MCP check fails (code %d)',
+    (code) => {
+      const codex = headlessCommand({ agent: 'codex', rootDir: root });
+      const runAgent = agentReturning({
+        code,
+        stdout: 'Configured MCP server.',
+      });
+
+      expect(() => callAgent(deps(runAgent), codex, 'Speak plainly.')).toThrow(
+        /Cannot verify Codex persona isolation/
+      );
+      expect(runAgent).toHaveBeenCalledTimes(1);
+      expect(fs.readdirSync(root)).toEqual([]);
+    }
+  );
 
   test('should name the job and use its timeout', () => {
     const runAgent = agentReturning();

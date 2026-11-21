@@ -36,6 +36,17 @@ const CODEX_DISABLED_FEATURES = [
   'skill_search',
   'view_image',
 ];
+const CODEX_ISOLATION_ARGS = [
+  '-c',
+  'default_permissions="memory-persona"',
+  '-c',
+  'permissions.memory-persona.filesystem={":root"="deny"}',
+  '-c',
+  'web_search="disabled"',
+  ...CODEX_DISABLED_FEATURES.flatMap((feature) => ['--disable', feature]),
+];
+const CODEX_EMPTY_MCP_LIST =
+  'No MCP servers configured yet. Try `codex mcp add my-tool -- my-command`.';
 /**
  * @typedef {typeof CALL_AGENTS[number]} CallAgent
  * @typedef {{
@@ -76,16 +87,14 @@ export function headlessCommand({ agent, model = null, rootDir }) {
       );
       break;
     case 'codex':
+      // A legacy --sandbox flag would override the named permissions.
+      args.splice(args.lastIndexOf('exec') + 1, 2);
       args.splice(
         -1,
         0,
         '--skip-git-repo-check',
         '--ignore-user-config',
-        '-c',
-        'web_search="disabled"',
-        '-c',
-        'mcp_servers={}',
-        ...CODEX_DISABLED_FEATURES.flatMap((feature) => ['--disable', feature])
+        ...CODEX_ISOLATION_ARGS
       );
       break;
     case 'dsh':
@@ -120,14 +129,35 @@ export function callAgent(
   { job = 'extraction', timeoutMs = AGENT_CALL_TIMEOUT_MS } = {}
 ) {
   const cwd = fs.mkdtempSync(path.join(deps.tmpdir(), `memory-${job}-`));
+  const env = { ...deps.env, [EXTRACT_ENV]: '1', [INNER_LOOP_ENV]: 'off' };
   let result;
   try {
+    if (command.agent === 'codex') {
+      // An empty CLI MCP table merges with configuration rather than clearing
+      // it. Probe the configured servers with an empty stdin before the job.
+      const prefix = command.args.slice(0, command.args.lastIndexOf('exec'));
+      const probe = deps.runAgent({
+        command: {
+          ...command,
+          args: [...prefix, ...CODEX_ISOLATION_ARGS, 'mcp', 'list'],
+        },
+        cwd,
+        env,
+        prompt: '',
+        timeoutMs,
+      });
+      if (probe.code !== 0 || probe.stdout.trim() !== CODEX_EMPTY_MCP_LIST) {
+        throw new Error(
+          'Cannot verify Codex persona isolation. The MCP check must report zero configured servers.\nFix: use --agent claude or --agent dsh.'
+        );
+      }
+    }
     result = deps.runAgent({
       command,
       cwd,
       prompt,
       timeoutMs,
-      env: { ...deps.env, [EXTRACT_ENV]: '1', [INNER_LOOP_ENV]: 'off' },
+      env,
     });
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });

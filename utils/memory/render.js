@@ -12,7 +12,7 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { readIfExists, writeFileAtomic } from '../task/store.js';
+import { readIfExists, withLock, writeFileAtomic } from '../task/store.js';
 import { ROOT_DIR } from '../workspace-config.js';
 import { DEFAULT_CONFIG, readConfig } from './config.js';
 import {
@@ -341,12 +341,18 @@ export function initLocal(rootDir) {
     fs.mkdirSync(dir, { recursive: true });
     created.push('memory/');
   }
-  const persona = applyPersonaFile(dir);
+  const { persona, agentsExisted, rendered } = withLock(
+    dir,
+    () => ({
+      persona: applyPersonaFile(dir),
+      agentsExisted: fs.existsSync(path.join(rootDir, AGENTS_LOCAL_FILE)),
+      rendered: renderLocal(rootDir),
+    }),
+    { label: 'Memory' }
+  );
   if (persona.changed) {
     updated.push(`memory/personalization.json (from memory/${PERSONA_FILE})`);
   }
-  const agentsExisted = fs.existsSync(path.join(rootDir, AGENTS_LOCAL_FILE));
-  const rendered = renderLocal(rootDir);
   const { changed } = rendered;
   const warnings = [...persona.warnings, ...rendered.warnings];
   if (!agentsExisted) created.push(AGENTS_LOCAL_FILE);

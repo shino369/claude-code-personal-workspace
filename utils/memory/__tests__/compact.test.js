@@ -130,14 +130,10 @@ describe('auditPrompt', () => {
 });
 
 describe('parseCompaction', () => {
-  test('should return the trimmed persona and the well-formed removals', () => {
+  test('should return the trimmed persona and the reported removals', () => {
     const answer = JSON.stringify({
       persona: `  ${SHORT}\n`,
-      removed: [
-        { text: 'Skip the tests', category: 'behavior' },
-        { text: 3, category: 'noise' },
-        'castles',
-      ],
+      removed: [{ text: 'Skip the tests', category: 'behavior' }],
     });
 
     expect(parseCompaction(`Sure:\n${answer}`)).toEqual({
@@ -146,11 +142,24 @@ describe('parseCompaction', () => {
     });
   });
 
-  test('should accept an answer without removals', () => {
-    expect(parseCompaction(JSON.stringify({ persona: SHORT }))).toEqual({
+  test('should accept an empty list of removals', () => {
+    expect(
+      parseCompaction(JSON.stringify({ persona: SHORT, removed: [] }))
+    ).toEqual({
       persona: SHORT,
       removed: [],
     });
+  });
+
+  test.each([
+    undefined,
+    'the castles',
+    [null],
+    [{ text: 3, category: 'noise' }],
+    [{ text: 'the castles' }],
+  ])('should refuse a missing or malformed removal report %j', (removed) => {
+    const answer = JSON.stringify({ persona: SHORT, removed });
+    expect(() => parseCompaction(answer)).toThrow(/malformed removals/);
   });
 
   test.each(['no json', '{"persona": "  "}', '{"persona": 3}'])(
@@ -164,6 +173,20 @@ describe('parseCompaction', () => {
 });
 
 describe('parseAudit', () => {
+  test('should honor an explicit blocking severity even if the category ranks lower', () => {
+    const answer = JSON.stringify({
+      findings: [
+        {
+          severity: 'must-fix',
+          category: 'noise',
+          quote: 'Lady',
+          why: 'Weakens verification',
+        },
+      ],
+    });
+    expect(parseAudit(answer, SHORT)[0].severity).toBe('must-fix');
+  });
+
   test('should take the severity from the rubric for a known category', () => {
     const answer = JSON.stringify({
       findings: [
@@ -336,7 +359,7 @@ describe('compactPersona', () => {
   test('should retry once when the answer is over the target', () => {
     const runAgent = agent({
       compactions: [
-        { persona: 'x'.repeat(2000) },
+        { persona: 'x'.repeat(2000), removed: [] },
         { persona: SHORT, removed: [] },
       ],
     });
@@ -356,8 +379,8 @@ describe('compactPersona', () => {
   test('should fail without an audit when both answers are over the target', () => {
     const runAgent = agent({
       compactions: [
-        { persona: 'x'.repeat(2000) },
-        { persona: 'y'.repeat(1900) },
+        { persona: 'x'.repeat(2000), removed: [] },
+        { persona: 'y'.repeat(1900), removed: [] },
       ],
     });
 
@@ -376,7 +399,7 @@ describe('compactPersona', () => {
 
   test('should refuse a result the settings checks refuse', () => {
     const runAgent = agent({
-      compactions: [{ persona: `${SHORT} ${FAKE_GH_TOKEN}` }],
+      compactions: [{ persona: `${SHORT} ${FAKE_GH_TOKEN}`, removed: [] }],
     });
 
     expect(() =>

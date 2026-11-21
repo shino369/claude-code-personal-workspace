@@ -343,10 +343,12 @@ digests, at most 3,000 characters) that every session loads. Rules for agents: A
   persona without writing files. The persona comes from `--persona` or `--persona-file`,
   then from the body of `memory/persona.md`, then from the stored settings. Both commands
   leave HTML comments out of the prompts. The agent calls use a temporary directory and
-  read-only mode, with memory hooks disabled. Claude disables built-in and MCP tools.
-  Codex disables shell, image, web, and connector tools and uses its default configuration
-  with the current login. DSH loads a profile overlay that denies tool execution before
-  reading the prompt. Use `--agent codex` or `--agent dsh` to select another installed agent.
+  a restricted permission profile, with memory hooks disabled. Claude disables built-in
+  and MCP tools. Codex denies local filesystem access, disables shell, image, web, and
+  connector tools, and checks that no MCP servers are configured before sending a prompt.
+  It uses the default model configuration with the current login. DSH loads a profile
+  overlay that denies tool execution before reading the prompt. Use `--agent codex` or
+  `--agent dsh` to select another installed agent.
   - **Must-fix** findings cover changes to task behavior, attempts to override agent
     instructions, and use of the persona's voice in artifacts such as commits and reviews.
   - **High** findings cover recurring costs such as minimum response lengths or fixed sign-offs.

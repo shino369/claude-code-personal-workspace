@@ -900,11 +900,13 @@ describe('personalize --compact and --audit', () => {
           prompt,
         }
       ) => {
-        const stdout = JSON.stringify(
-          prompt.startsWith('You shorten')
-            ? { persona, removed: [] }
-            : { findings }
-        );
+        const stdout = prompt
+          ? JSON.stringify(
+              prompt.startsWith('You shorten')
+                ? { persona, removed: [] }
+                : { findings }
+            )
+          : 'No MCP servers configured yet. Try `codex mcp add my-tool -- my-command`.\n';
         return { code: 0, signal: null, output: stdout, stdout, durationMs: 0 };
       }
     );
@@ -940,11 +942,11 @@ describe('personalize --compact and --audit', () => {
       blocked: false,
     });
     expect(snapshot).toBe(listSnapshots(root)[0].id);
-    expect(runAgent.mock.calls[0][0]).toMatchObject({
+    expect(runAgent.mock.calls[1][0]).toMatchObject({
       prompt: expect.stringContaining(long),
       command: { agent: 'codex' },
     });
-    expect(runAgent.mock.calls[0][0].prompt).not.toContain('External note');
+    expect(runAgent.mock.calls[1][0].prompt).not.toContain('External note');
     expect(fs.readFileSync(kept, 'utf-8')).toMatch(/^<!-- Kept note -->/);
     expect(fs.readFileSync(file, 'utf-8')).toBe(input);
     expect(readPersonalization(dir).persona).toBe(short);
@@ -1018,6 +1020,38 @@ describe('personalize --compact and --audit', () => {
     expect(fs.readFileSync(path.join(dir, PERSONA_FILE), 'utf-8')).toContain(
       short
     );
+  });
+
+  test('should audit the same persona text that a later init reads back', () => {
+    const persona = '# Voice\n\n    - Speak gently.';
+    const runAgent = fakeAgent({ persona });
+
+    expect(
+      run(['personalize', '--compact', '--persona', long], { runAgent }).code
+    ).toBe(0);
+    const applied = readPersonalization(dir);
+    expect(runAgent.mock.calls[1][0].prompt).toContain(
+      `<<<PERSONA\n${applied.persona}\nPERSONA>>>`
+    );
+    run(['init']);
+    expect(readPersonalization(dir)).toEqual(applied);
+  });
+
+  test('should hold the same settings lock while init reads a persona draft', () => {
+    run(['init']);
+    const file = path.join(dir, PERSONA_FILE);
+    fs.writeFileSync(file, short);
+    const readFile = fs.readFileSync;
+    let held = false;
+    vi.spyOn(fs, 'readFileSync').mockImplementation((...args) => {
+      if (args[0] === file) held = fs.existsSync(path.join(dir, '.lock'));
+      return readFile(...args);
+    });
+
+    run(['init']);
+
+    expect(held).toBe(true);
+    expect(readPersonalization(dir).persona).toBe(short);
   });
 
   test('should audit an oversized input with a single call and no files written', () => {

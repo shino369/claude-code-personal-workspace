@@ -14,6 +14,7 @@ import {
   PERSONA_SCOPE_RULES,
   normalizePersonalization,
   personaRoom,
+  personaFromMarkdown,
   personaSize,
   readPersonalization,
   stripPersonaComments,
@@ -147,22 +148,27 @@ export function parseCompaction(answer) {
   if (typeof data?.persona !== 'string' || !data.persona.trim()) {
     throw new Error('the compaction agent answered without a "persona" text');
   }
-  const removed = Array.isArray(data.removed) ? data.removed : [];
+  if (
+    !Array.isArray(data.removed) ||
+    data.removed.some(
+      (item) =>
+        typeof item?.text !== 'string' || typeof item.category !== 'string'
+    )
+  ) {
+    throw new Error(
+      'The compaction agent returned a missing or malformed removals list.'
+    );
+  }
   return {
     persona: data.persona.trim(),
-    removed: removed
-      .filter(
-        (item) =>
-          typeof item?.text === 'string' && typeof item.category === 'string'
-      )
-      .map(({ text, category }) => ({
-        text: reportText(text),
-        category: reportText(category),
-      })),
+    removed: data.removed.map(({ text, category }) => ({
+      text: reportText(text),
+      category: reportText(category),
+    })),
   };
 }
 
-const SEVERITIES = new Set(RUBRIC.map(({ severity }) => severity));
+const SEVERITIES = /** @type {const} */ (['must-fix', 'high', 'medium', 'low']);
 /** @param {string} text */
 const collapseWhitespace = (text) => text.replace(/\s+/g, ' ').trim();
 
@@ -184,10 +190,13 @@ export function parseAudit(answer, persona) {
       throw new Error('The audit agent returned a malformed finding.');
     }
     const category = item.category.trim().toLowerCase();
-    const severity =
-      RUBRIC.find((entry) => entry.category === category)?.severity ??
-      item.severity;
-    if (!SEVERITIES.has(severity)) {
+    const rubric = RUBRIC.find(
+      (entry) => entry.category === category
+    )?.severity;
+    const severity = SEVERITIES.find(
+      (rank) => rank === rubric || rank === item.severity
+    );
+    if (severity === undefined) {
       throw new Error('The audit agent returned a malformed finding severity.');
     }
     const quote = collapseWhitespace(item.quote);
@@ -320,7 +329,7 @@ export function compactPersona({ persona, settings, agent, deps }) {
   }
   try {
     normalizePersonalization({ ...settings, persona: result.persona });
-    result.persona = checkedText(result.persona);
+    result.persona = checkedText(personaFromMarkdown(result.persona));
   } catch (error) {
     throw new Error(
       `The compacted persona was refused: ${/** @type {Error} */ (error).message}`,
