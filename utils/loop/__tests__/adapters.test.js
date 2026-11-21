@@ -262,6 +262,24 @@ describe('runAgent', () => {
     });
   });
 
+  test('should not open a console window for the child agent', () => {
+    const spawn = vi.fn(() => ({ status: 0, stdout: '', stderr: '' }));
+    runAgent({
+      command,
+      cwd: '/wt',
+      prompt: 'p',
+      timeoutMs: 1,
+      env: {},
+      spawn,
+      now,
+    });
+    expect(spawn).toHaveBeenCalledWith(
+      'codex',
+      command.args,
+      expect.objectContaining({ windowsHide: true })
+    );
+  });
+
   test('should report a timeout kill', () => {
     const result = runAgent({
       command,
