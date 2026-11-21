@@ -13,14 +13,15 @@ import path from 'path';
 import { findSecrets } from '../redact.js';
 import { readIfExists, writeFileAtomic } from '../task/store.js';
 import { ROOT_DIR } from '../workspace-config.js';
+import { injectionsIn } from './instructions.js';
 import { MemoryError } from './store.js';
 
 export const PERSONALIZATION_FILE = 'personalization.json';
 /**
  * memory/persona.md: the persona in markdown, when the user keeps one.
  * `pnpm memory init` (and workspace:setup) apply it; any other persona
- * change (personalize, import) rewrites it, so init never brings back an
- * old persona.
+ * change (personalize, import, compact) rewrites its text, so init never
+ * brings back an old persona. Its HTML comments (the user's notes) stay.
  */
 export const PERSONA_FILE = 'persona.md';
 export const PERSONA_PLACEHOLDER =
@@ -33,6 +34,12 @@ export const PRESETS_DIR = path.join(
 );
 /** Characters the user's settings may take in the core block. */
 export const PERSONALIZATION_BUDGET = 1500;
+/** What `--compact` aims for: a share of the room, so a later edit still fits. */
+export const COMPACT_RATIO = 0.9;
+export const COMPACT_HINT =
+  '(a clean-context agent shortens and audits memory/persona.md)';
+const PERSONA_LABEL = '- Persona: ';
+const COMMENT_RE = /<!--[\s\S]*?-->/g;
 const MAX_TRAITS = 10;
 const PRESET_NAME = /^[a-z][a-z0-9-]*$/;
 /** The core block markers (render.js); a value holding one would break it. */
@@ -158,12 +165,56 @@ export function normalizePersonalization(input) {
   }
   const size = fieldLines(result).join('\n').length;
   if (size > PERSONALIZATION_BUDGET) {
-    invalid(
-      `The personalization is ${size} characters; the limit is ${PERSONALIZATION_BUDGET}. Shorten the persona or the other fields.`
+    const room =
+      result.persona === undefined
+        ? ''
+        : ` (the persona has room for ${personaRoom(result).room})`;
+    throw new MemoryError(
+      'budget',
+      `The personalization is ${size} characters; the limit is ${PERSONALIZATION_BUDGET}${room}. Shorten the persona or the other fields.`
     );
   }
   return result;
 }
+
+/**
+ * The persona's size in the core block: its text, plus the indent of each
+ * continuation line.
+ *
+ * @param {string} persona
+ */
+export const personaSize = (persona) =>
+  persona.length + 2 * (persona.split('\n').length - 1);
+
+/**
+ * How much persona fits beside the other settings: `room` is the most
+ * personaSize can be, `target` what `--compact` aims for.
+ *
+ * @param {Personalization} settings the persona itself is not counted
+ * @returns {{ room: number, target: number }}
+ */
+export function personaRoom(settings) {
+  const { persona: _persona, ...others } = settings;
+  const lines = fieldLines(others);
+  const used =
+    lines.join('\n').length + (lines.length > 0 ? 1 : 0) + PERSONA_LABEL.length;
+  const room = Math.max(0, PERSONALIZATION_BUDGET - used);
+  return { room, target: Math.floor(room * COMPACT_RATIO) };
+}
+
+/**
+ * Warnings for text in the persona that reads like an override of the
+ * agent's instructions (instructions.js). A warning, not a refusal: "ignore
+ * the rules of etiquette" matches too; the audit tells them apart.
+ *
+ * @param {string} persona
+ * @returns {string[]}
+ */
+export const personaWarnings = (persona) =>
+  injectionsIn(persona).map(
+    (quote) =>
+      `The persona has "${quote}", which reads like an instruction override. Check it: pnpm memory personalize --audit`
+  );
 
 /**
  * The `## Personalization` section, or '' without settings.
@@ -304,18 +355,40 @@ export function storedPersona(dir) {
 }
 
 /**
+ * A persona.md holding `persona`: the HTML comments of `existing` (the
+ * user's notes; not the placeholder) first, then `note` as a new comment,
+ * then the text.
+ *
+ * @param {string | null} existing the current file, if any
+ * @param {string} persona
+ * @param {{ note?: string }} [options]
+ */
+export function personaMarkdown(existing, persona, { note } = {}) {
+  const comments = (existing?.match(COMMENT_RE) ?? []).filter(
+    (comment) => comment !== PERSONA_PLACEHOLDER.trim()
+  );
+  if (note) comments.push(`<!-- ${note} -->`);
+  return [...comments, `${persona}\n`].join('\n\n');
+}
+
+/**
  * Rewrite memory/persona.md, when the user keeps one, to hold `persona` (a
- * placeholder when there is none). Called when the stored persona changed.
+ * placeholder when there is none), keeping its comments. Called when the
+ * stored persona changed.
  *
  * @param {string} dir the memory directory
  * @param {string | undefined} persona
+ * @param {{ note?: string }} [options] a comment to add (compact)
  * @returns {boolean} whether the file changed
  */
-export function syncPersonaFile(dir, persona) {
+export function syncPersonaFile(dir, persona, options = {}) {
   const file = path.join(dir, PERSONA_FILE);
-  if (!fs.existsSync(file)) return false;
-  const content = persona ? `${persona}\n` : PERSONA_PLACEHOLDER;
-  if (readIfExists(file) === content) return false;
+  const existing = readIfExists(file);
+  if (existing === null) return false;
+  const content = persona
+    ? personaMarkdown(existing, persona, options)
+    : PERSONA_PLACEHOLDER;
+  if (existing === content) return false;
   writeFileAtomic(file, content);
   return true;
 }
@@ -323,13 +396,14 @@ export function syncPersonaFile(dir, persona) {
 /**
  * Apply memory/persona.md to the stored settings (init). A file without
  * persona text changes nothing; settings the checks refuse come back as a
- * warning and are not applied.
+ * warning and are not applied (over the budget, with the --compact Fix).
+ * An applied persona with an override comes back with its warnings.
  *
  * @param {string} dir the memory directory
- * @returns {{ changed: boolean, warning: string | null }}
+ * @returns {{ changed: boolean, warnings: string[] }}
  */
 export function applyPersonaFile(dir) {
-  const none = { changed: false, warning: null };
+  const none = { changed: false, warnings: [] };
   const markdown = readIfExists(path.join(dir, PERSONA_FILE));
   if (markdown === null) return none;
   const persona = personaFromMarkdown(markdown);
@@ -338,12 +412,18 @@ export function applyPersonaFile(dir) {
     const current = readPersonalization(dir);
     if (current.persona === persona) return none;
     writePersonalization(dir, { ...current, persona });
-    return { changed: true, warning: null };
+    return { changed: true, warnings: personaWarnings(persona) };
   } catch (error) {
     if (!(error instanceof MemoryError)) throw error;
+    const fix =
+      error.code === 'budget'
+        ? `\nFix: pnpm memory personalize --compact ${COMPACT_HINT}`
+        : '';
     return {
       changed: false,
-      warning: `memory/${PERSONA_FILE} was not applied: ${error.message}`,
+      warnings: [
+        `memory/${PERSONA_FILE} was not applied: ${error.message}${fix}`,
+      ],
     };
   }
 }

@@ -107,7 +107,7 @@ const SOURCE_FIELDS = /** @type {const} */ (['harness', 'session', 'task']);
 
 export class MemoryError extends Error {
   /**
-   * @param {'invalid' | 'secret' | 'not-found' | 'deleted'} code
+   * @param {'invalid' | 'budget' | 'secret' | 'not-found' | 'deleted'} code
    * @param {string} message
    */
   constructor(code, message) {

@@ -348,10 +348,7 @@ export function initLocal(rootDir) {
   const agentsExisted = fs.existsSync(path.join(rootDir, AGENTS_LOCAL_FILE));
   const rendered = renderLocal(rootDir);
   const { changed } = rendered;
-  const warnings = [
-    ...(persona.warning ? [persona.warning] : []),
-    ...rendered.warnings,
-  ];
+  const warnings = [...persona.warnings, ...rendered.warnings];
   if (!agentsExisted) created.push(AGENTS_LOCAL_FILE);
   else if (changed) updated.push(AGENTS_LOCAL_FILE);
   const claudeFile = path.join(rootDir, CLAUDE_LOCAL_FILE);

@@ -795,7 +795,7 @@ describe('planImport and applyImport', () => {
     expect(result.snapshot).not.toBeNull();
   });
 
-  test('should replace memory/persona.md with the imported persona', () => {
+  test('should replace the text of memory/persona.md with the imported persona, keeping its comments', () => {
     initLocal(source);
     writePersonalization(memoryDir(source), { persona: 'Imported cat.' });
     initLocal(target);
@@ -810,7 +810,7 @@ describe('planImport and applyImport', () => {
 
     expect(
       fs.readFileSync(path.join(memoryDir(target), 'persona.md'), 'utf-8')
-    ).toBe('Imported cat.\n');
+    ).toBe('<!-- empty -->\n\nImported cat.\n');
   });
 
   test('should leave memory/persona.md alone when the persona is not imported', () => {
