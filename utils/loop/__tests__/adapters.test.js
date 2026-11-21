@@ -183,7 +183,7 @@ describe('AGY permission settings', () => {
     );
   }
 
-  test('should scope write settings to the worktree and deny secrets and destructive commands', () => {
+  test('should grant workspace commands and include protected-path denies in write settings', () => {
     const { permissions } = JSON.parse(AGY_WRITE_SETTINGS);
     expect(permissions.allow).not.toContain('write_file(*)');
     expect(permissions.allow).not.toContain('read_file(*)');
@@ -201,10 +201,16 @@ describe('AGY permission settings', () => {
     for (const cmd of [
       'pnpm check',
       'pnpm test',
+      'pnpm test:coverage',
       'pnpm test utils/task/__tests__/store.test.js',
       'pnpm add -D foo --save-catalog-name=dev',
       'pnpm task step s1 done -m "fix(agy): verified"',
+      'pnpm task verify',
+      'pnpm harness check',
+      'pnpm docs:cli --check',
+      'pnpm workspace:check',
       'git status --short',
+      'git branch --show-current',
       'git commit -m "feat(agy): add support"',
       'node utils/task/cli.js status',
       'mkdir -p src/new-dir',
@@ -254,7 +260,28 @@ describe('AGY permission settings', () => {
     }
   });
 
-  test('should deny all file mutations and secret reads in read settings', () => {
+  test.each(['pnpm workspace:setup', 'pnpm memory', 'pnpm memory export'])(
+    'should omit shared setup and memory grants in write settings (%s)',
+    (cmd) => {
+      const { permissions } = JSON.parse(AGY_WRITE_SETTINGS);
+      expect(matchesCommand(permissions.allow, cmd)).toBe(false);
+    }
+  );
+
+  test.each([
+    'node utils/workspace-setup.js',
+    'node utils/memory/cli.js export',
+    'node utils/WORKSPACE-SETUP.js',
+    'node utils/MEMORY/CLI.js export',
+  ])(
+    'should deny the direct Node entries for shared setup and memory (%s)',
+    (cmd) => {
+      const { permissions } = JSON.parse(AGY_WRITE_SETTINGS);
+      expect(matchesCommand(permissions.deny, cmd)).toBe(true);
+    }
+  );
+
+  test('should include inspection grants and file write and protected-path denies in read settings', () => {
     const { permissions } = JSON.parse(AGY_READ_SETTINGS);
     expect(permissions.allow).not.toContain('write_file(*)');
     expect(permissions.allow).not.toContain('read_file(*)');
@@ -274,17 +301,6 @@ describe('AGY permission settings', () => {
       'git log -n 5 --oneline',
       'git show HEAD:package.json',
       'git branch --show-current',
-      'pnpm test',
-      'pnpm test utils/loop/__tests__/adapters.test.js',
-      'pnpm lint',
-      'pnpm typecheck',
-      'pnpm format:check',
-      'pnpm workspace:check',
-      'pnpm harness check',
-      'pnpm docs:cli --check',
-      'pnpm skills:check',
-      'pnpm task status --json',
-      'pnpm tools show agy',
       'ls utils',
       'pwd',
       'node -v',
@@ -309,6 +325,23 @@ describe('AGY permission settings', () => {
     ]) {
       expect(allowedCommand(AGY_READ_SETTINGS, cmd)).toBe(false);
     }
+  });
+
+  test.each([
+    'pnpm test',
+    'pnpm test utils/loop/__tests__/adapters.test.js',
+    'pnpm lint',
+    'pnpm typecheck',
+    'pnpm format:check',
+    'pnpm workspace:check',
+    'pnpm harness check',
+    'pnpm docs:cli --check',
+    'pnpm skills:check',
+    'pnpm task status --json',
+    'pnpm tools show agy',
+  ])('should omit checkout script grants in read settings (%s)', (cmd) => {
+    const { permissions } = JSON.parse(AGY_READ_SETTINGS);
+    expect(matchesCommand(permissions.allow, cmd)).toBe(false);
   });
 });
 

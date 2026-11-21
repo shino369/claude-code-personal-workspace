@@ -3,23 +3,18 @@
  * array; the prompt always goes on stdin and nothing runs through a shell, so
  * task text can never become a command.
  *
- * Two modes. `write` (the default, used by `pnpm loop`) keeps unattended runs
- * inside the worktree:
+ * Two modes. `write` (the default, used by `pnpm loop`) configures agents
+ * for work in a worktree:
  * - claude: `acceptEdits` auto-approves file edits; Bash still follows the
  *   project allow/deny lists (anything else is denied in -p mode).
  * - codex: the `workspace-write` sandbox.
  * - dsh: the `workspace-write` preset with `--approval-policy never`
  *   (headless has no approval channel; calls that need one are rejected).
- * - agy: `stream-json` I/O with `--mode accept-edits` (which auto-approves
- *   reads and edits inside the worktree only) and `--settings` granting
- *   anchored, non-chaining workspace commands while denying protected secret
- *   paths, `.git/` writes, and destructive commands even when a new worktree
- *   is not yet in `trustedWorkspaces` (where `.agents/hooks.json` `guard.js`
- *   does not run).
- * `read` (the default for `pnpm agent ask`) cannot change files: claude `plan`
- * mode, codex `read-only` sandbox, dsh `read-only` preset, agy `--settings`
- * denying `write_file(*)` and secret reads while allowing only non-mutating
- * inspection commands.
+ * - agy: `stream-json` I/O with `--mode accept-edits` and `--settings`
+ *   containing worktree command grants and deny rules.
+ * `read` (the default for `pnpm agent ask`) selects claude `plan` mode,
+ * codex `read-only` sandbox, dsh `read-only` preset, or agy `--settings`
+ * with `write_file(*)` and protected-path deny rules and inspection grants.
  */
 import { crossSpawn } from '../spawn.js';
 import { HARNESS_SESSION_VARS } from '../task/store.js';
@@ -56,11 +51,11 @@ const AGY_SECRET_DENY = [
   'read_file(~/.ssh)',
   'read_file(~/.aws)',
 ];
-/** Antigravity headless write-mode settings: worktree-scoped edits + safe commands. */
+/** Antigravity headless write-mode settings and command grants. */
 export const AGY_WRITE_SETTINGS = JSON.stringify({
   permissions: {
     allow: [
-      `command(regex:^pnpm (check|test|test:coverage|test:e2e|lint|lint:fix|typecheck|format|format:check|docs:cli|skills:check|skills:link|harness|workspace:check|workspace:setup|tools|memory|install|add|remove)( ${AGY_SAFE_ARGS})?$)`,
+      `command(regex:^pnpm (check|test|test:coverage|test:e2e|lint|lint:fix|typecheck|format|format:check|docs:cli|skills:check|skills:link|harness|workspace:check|tools|install|add|remove)( ${AGY_SAFE_ARGS})?$)`,
       `command(regex:^pnpm task( ${AGY_QUOTED_SAFE})*$)`,
       `command(regex:^git (status|diff|log|show|branch|rev-parse|add|switch|checkout)( ${AGY_SAFE_ARGS})?$)`,
       `command(regex:^git commit( ${AGY_QUOTED_SAFE})*$)`,
@@ -72,6 +67,7 @@ export const AGY_WRITE_SETTINGS = JSON.stringify({
     deny: [
       ...AGY_SECRET_DENY,
       'write_file(.git/)',
+      'command(regex:^node utils/(?i:workspace-setup|memory/cli)\\.js( |$))',
       'command(regex:^pnpm\\b.*(\\s-[a-zA-Z]*[gC]|--global\\b|--dir\\b|--workspace-root\\b).*)',
       'command(regex:^git branch\\b.*(\\s-[a-zA-Z]*[dD]|--delete).*)',
       'command(regex:^git commit\\b.*(--no-verify|\\s-[a-zA-Z]*n[a-zA-Z]*\\b).*)',
@@ -80,16 +76,12 @@ export const AGY_WRITE_SETTINGS = JSON.stringify({
     ],
   },
 });
-/** Antigravity headless read-mode settings: deny writes/secrets, allow read inspection. */
+/** Antigravity headless read-mode settings. Checkout scripts run in write mode. */
 export const AGY_READ_SETTINGS = JSON.stringify({
   permissions: {
     allow: [
       `command(regex:^git (status|diff|log|show|rev-parse)( ${AGY_SAFE_ARGS})?$)`,
       'command(regex:^git branch( (--show-current|--list|-a|-r|-v|--all|--remotes))?$)',
-      'command(regex:^pnpm (typecheck|lint|format:check|workspace:check|harness check|docs:cli --check|skills:check)$)',
-      `command(regex:^pnpm test( ${AGY_REL_PATH})*$)`,
-      'command(regex:^pnpm task (status|list|next)( (--json|--all|--task [A-Za-z0-9._-]+))*$)',
-      'command(regex:^pnpm tools (list|show)( (--all|--json|[A-Za-z0-9._-]+))*$)',
       `command(regex:^(ls|dir)( ${AGY_SAFE_ARGS})?$)`,
       'command(pwd)',
       'command(regex:^node (-v|--version)$)',
