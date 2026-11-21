@@ -32,6 +32,11 @@
  */
 import fs from 'fs';
 import path from 'path';
+import {
+  HARNESSES,
+  agyInjectOutput,
+  normalizeHookInput,
+} from '../harness/input.js';
 import { runIfMain } from '../module-runner.js';
 import { SESSION_ID_RE, readIfExists } from '../task/store.js';
 import { ROOT_DIR } from '../workspace-config.js';
@@ -71,6 +76,7 @@ import {
   readUsage,
   recordHits,
 } from './store.js';
+import { recentAgyFailures } from './transcript.js';
 
 /** Roles that must review in a clean context. */
 export const SKIP_AGENTS = ['reviewer', 'verifier'];
@@ -79,7 +85,6 @@ export const SESSIONS_DIR = 'sessions';
 export const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Characters of a failed command's output used in the query. */
 export const ERROR_CHARS = 600;
-const HARNESSES = ['claude', 'codex', 'dsh'];
 const EXIT_CODE_RE = /\bexit code:?\s*(-?\d+)/i;
 const NOTE_ID_RE = /^- ([mt][1-9]\d*) \(/;
 /** Repeated at every typed prompt, so progress notes keep the persona. */
@@ -93,9 +98,10 @@ const PERSONALIZATION_EMPTY =
 export const REMINDER_LANGUAGE_CHARS = 200;
 
 /**
- * @typedef {'claude' | 'codex' | 'dsh'} Harness
+ * @typedef {import('../harness/input.js').Harness} Harness
  * @typedef {Record<string, any>} HookInput
- * @typedef {{ hookSpecificOutput: { hookEventName: string, additionalContext: string }, systemMessage?: string }} HookOutput
+ * @typedef {{ hookSpecificOutput: { hookEventName: string, additionalContext: string }, systemMessage?: string }} StandardHookOutput
+ * @typedef {StandardHookOutput | import('../harness/input.js').AgyInjectOutput} HookOutput
  * @typedef {{ harness?: Harness, rootDir?: string, now?: Date, env?: NodeJS.ProcessEnv, kick?: typeof kickWorker }} HookOptions
  */
 
@@ -105,7 +111,7 @@ export const REMINDER_LANGUAGE_CHARS = 200;
  */
 export function parseHarness(argv) {
   const value = argv[argv.indexOf('--harness') + 1];
-  return HARNESSES.includes(value) ? /** @type {Harness} */ (value) : 'claude';
+  return HARNESSES.find((name) => name === value) ?? 'claude';
 }
 
 /**
@@ -159,13 +165,18 @@ function pruneSessions(dir, now) {
 
 /**
  * @param {string} event
- * @param {string} text
+ * @param {string | null} text
+ * @param {Harness} harness
+ * @param {string} [userMarkdown]
  * @returns {HookOutput | null}
  */
-const contextOutput = (event, text) =>
-  text
-    ? { hookSpecificOutput: { hookEventName: event, additionalContext: text } }
-    : null;
+function contextOutput(event, text, harness, userMarkdown) {
+  if (!text) return null;
+  if (harness === 'agy') return agyInjectOutput(text, userMarkdown);
+  return {
+    hookSpecificOutput: { hookEventName: event, additionalContext: text },
+  };
+}
 
 /**
  * The shell command of a tool event, as one string.
@@ -242,7 +253,11 @@ function personaReminder(dir) {
  */
 function startupMemory(rootDir, home, harness, config) {
   const localFile = harness === 'dsh' ? AGENTS_LOCAL_FILE : CLAUDE_LOCAL_FILE;
-  if (harness === 'codex' || !fs.existsSync(path.join(rootDir, localFile))) {
+  if (
+    harness === 'codex' ||
+    harness === 'agy' ||
+    !fs.existsSync(path.join(rootDir, localFile))
+  ) {
     return renderStored(home, config).block;
   }
   if (rootDir === home) return '';
@@ -268,11 +283,10 @@ function startupMemory(rootDir, home, harness, config) {
  * injection (usage and the session's record).
  *
  * @param {{ dir: string, session: string | null, now: Date }} store
- * @param {string} event
  * @param {(notes: import('./store.js').Note[], index: import('./recall.js').Index) => import('./recall.js').RecallResult[] | { note: import('./store.js').Note }[]} pick
- * @returns {HookOutput | null}
+ * @returns {string | null}
  */
-function inject({ dir, session, now }, event, pick) {
+function injectText({ dir, session, now }, pick) {
   const { notes, index } = loadIndex(dir);
   const injected = readInjected(dir, session);
   const text = formatRecall(
@@ -289,48 +303,51 @@ function inject({ dir, session, now }, event, pick) {
     .filter((id) => id !== undefined);
   recordHits(dir, ids, now);
   writeInjected(dir, session, new Set([...injected, ...ids]));
-  return contextOutput(event, text);
+  return text;
 }
 
 /**
+ * @template {Harness} [H='claude']
  * @param {HookInput} input
- * @param {HookOptions} [options]
- * @returns {HookOutput | null}
+ * @param {{ harness?: H, rootDir?: string, now?: Date, env?: NodeJS.ProcessEnv, kick?: typeof kickWorker }} [options]
+ * @returns {(H extends 'agy' ? import('../harness/input.js').AgyInjectOutput : StandardHookOutput) | null}
  */
 export function handleHook(
   input,
   {
-    harness = 'claude',
+    harness = /** @type {H} */ ('claude'),
     rootDir = ROOT_DIR,
     now = new Date(),
     env = process.env,
     kick = kickWorker,
   } = {}
 ) {
-  const event = input.hook_event_name;
-  if (env[EXTRACT_ENV] === '1' || SKIP_AGENTS.includes(input.agent_type)) {
+  const normalized = normalizeHookInput(input, harness);
+  const event = normalized.hook_event_name;
+  if (env[EXTRACT_ENV] === '1' || SKIP_AGENTS.includes(normalized.agent_type)) {
     return null;
   }
   const home = mainCheckout(rootDir);
   const dir = memoryDir(home);
   if (!fs.existsSync(dir)) return null;
   const session =
-    typeof input.session_id === 'string' && SESSION_ID_RE.test(input.session_id)
-      ? input.session_id
+    typeof normalized.session_id === 'string' &&
+    SESSION_ID_RE.test(normalized.session_id)
+      ? normalized.session_id
       : null;
   const store = { dir, session, now };
   const context = () =>
     taskContext({
       rootDir,
       session,
-      cwd: typeof input.cwd === 'string' ? input.cwd : rootDir,
+      cwd: typeof normalized.cwd === 'string' ? normalized.cwd : rootDir,
     });
 
   const entry = {
     session,
     harness,
-    transcript: input.transcript_path,
-    cwd: input.cwd,
+    transcript: normalized.transcript_path,
+    cwd: normalized.cwd,
     at: now.toISOString(),
   };
   const startWorker = (/** @type {boolean} */ orConsolidate) => {
@@ -348,7 +365,7 @@ export function handleHook(
     return null;
   }
   if (event === 'SessionStart') {
-    if (input.source !== 'resume') writeInjected(dir, session, new Set());
+    if (normalized.source !== 'resume') writeInjected(dir, session, new Set());
     pruneSessions(dir, now);
     registerOpen(dir, entry);
     catchUp(dir, { current: session, now });
@@ -364,22 +381,40 @@ export function handleHook(
             `[Memory] Saving to memory is off ${off === 'global' ? 'everywhere' : 'for this session'}: do not save notes (pnpm memory add) unless the user asks; recall still works.`,
           ]
         : []),
-      // Claude Code shows the user a systemMessage; Codex relies on the agent.
+      // Claude Code and Antigravity show the user a UI message; Codex relies on the agent.
       ...(news
         ? [
-            harness === 'claude'
+            harness === 'claude' || harness === 'agy'
               ? news
               : `${news}\nMention these saves to the user in one line.`,
           ]
         : []),
     ].filter(Boolean);
-    const output = contextOutput(event, parts.join('\n\n'));
-    return output && news && harness === 'claude'
-      ? { ...output, systemMessage: news }
-      : output;
+    const output = contextOutput(
+      event,
+      parts.join('\n\n'),
+      harness,
+      news ?? undefined
+    );
+    return /** @type {any} */ (
+      output && news && harness === 'claude'
+        ? { ...output, systemMessage: news }
+        : output
+    );
   }
-  if (event === 'UserPromptSubmit') {
-    const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : '';
+  if (
+    event === 'UserPromptSubmit' ||
+    (harness === 'agy' && event === 'PreInvocation')
+  ) {
+    if (
+      harness === 'agy' &&
+      typeof normalized.invocationNum === 'number' &&
+      normalized.invocationNum !== 0
+    ) {
+      return null;
+    }
+    const prompt =
+      typeof normalized.prompt === 'string' ? normalized.prompt.trim() : '';
     // Slash commands, and queued background-task notifications (not typed).
     if (
       !prompt ||
@@ -390,31 +425,29 @@ export function handleHook(
     }
     const { goal, repo } = context();
     const query = [prompt, goal].filter(Boolean).join('\n');
-    const recalled = inject(store, event, (notes, index) =>
+    const recalled = injectText(store, (notes, index) =>
       recall(notes, query, { index, repo, usage: readUsage(dir), now })
     );
-    return contextOutput(
-      event,
-      [personaReminder(dir), recalled?.hookSpecificOutput.additionalContext]
-        .filter(Boolean)
-        .join('\n\n')
+    return /** @type {any} */ (
+      contextOutput(
+        event,
+        [personaReminder(dir), recalled].filter(Boolean).join('\n\n'),
+        harness
+      )
     );
   }
-  if (event === 'PreToolUse') {
-    const command = commandOf(input);
-    if (!command) return null;
-    return inject(store, event, (notes) =>
-      matchTriggers(notes, command)
-        .slice(0, RECALL_LIMIT)
-        .map((note) => ({ note }))
+  if (harness === 'agy' && event === 'PostInvocation') {
+    const failures = recentAgyFailures(
+      normalized.transcript_path,
+      normalized.initialNumSteps
     );
-  }
-  if (event === 'PostToolUse' || event === 'PostToolUseFailure') {
-    const error = failureText(input);
-    const query = [commandOf(input), error ?? ''].join('\n').trim();
-    if (error === null || !query) return null;
+    const query = failures
+      .map((f) => `${f.command}\n${f.error.slice(0, ERROR_CHARS)}`)
+      .join('\n')
+      .trim();
+    if (!query) return null;
     const { repo } = context();
-    return inject(store, event, (notes, index) =>
+    const recalled = injectText(store, (notes, index) =>
       recall(notes, query, {
         index,
         repo,
@@ -423,40 +456,75 @@ export function handleHook(
         now,
       })
     );
+    return /** @type {any} */ (contextOutput(event, recalled, harness));
+  }
+  if (event === 'PreToolUse') {
+    const command = commandOf(normalized);
+    if (!command) return null;
+    const recalled = injectText(store, (notes) =>
+      matchTriggers(notes, command)
+        .slice(0, RECALL_LIMIT)
+        .map((note) => ({ note }))
+    );
+    return /** @type {any} */ (contextOutput(event, recalled, harness));
+  }
+  if (event === 'PostToolUse' || event === 'PostToolUseFailure') {
+    const error = failureText(normalized);
+    const query = [commandOf(normalized), error ?? ''].join('\n').trim();
+    if (error === null || !query) return null;
+    const { repo } = context();
+    const recalled = injectText(store, (notes, index) =>
+      recall(notes, query, {
+        index,
+        repo,
+        failure: true,
+        usage: readUsage(dir),
+        now,
+      })
+    );
+    return /** @type {any} */ (contextOutput(event, recalled, harness));
   }
   return null;
 }
 
 /**
- * Parse the hook's stdin and answer it; '' when there is nothing to say or
- * anything goes wrong (a hook must never break the session).
+ * Parse the hook's stdin and answer it; '' (or '{}' for Antigravity) when
+ * there is nothing to say or anything goes wrong (a hook must never break the
+ * session).
  *
  * @param {string} raw stdin
  * @param {HookOptions} [options]
  * @returns {string}
  */
 export function runHook(raw, options = {}) {
+  const empty = options.harness === 'agy' ? '{}' : '';
   try {
     const input = raw.trim() ? JSON.parse(raw) : {};
     const output = handleHook(input, options);
-    return output ? JSON.stringify(output) : '';
+    return output ? JSON.stringify(output) : empty;
   } catch {
-    return '';
+    return empty;
   }
 }
 
 /* c8 ignore start - stdin/stdout wiring; the logic is tested through runHook */
 function main() {
+  const harness = parseHarness(process.argv.slice(2));
+  const failOpen = () => {
+    if (harness === 'agy') process.stdout.write('{}', () => process.exit(0));
+    else process.exit(0);
+  };
   let data = '';
   process.stdin.setEncoding('utf-8');
   process.stdin.on('data', (chunk) => {
     data += chunk;
   });
   process.stdin.on('end', () => {
-    const out = runHook(data, { harness: parseHarness(process.argv.slice(2)) });
+    const out = runHook(data, { harness });
     if (out) process.stdout.write(out, () => process.exit(0));
     else process.exit(0);
   });
+  process.stdin.on('error', failOpen);
 }
 /* c8 ignore stop */
 

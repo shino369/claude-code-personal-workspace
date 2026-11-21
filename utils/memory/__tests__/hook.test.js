@@ -100,17 +100,24 @@ beforeEach(() => {
 });
 
 /**
+ * @template {'claude' | 'codex' | 'dsh' | 'agy'} [H='claude']
  * @param {Record<string, unknown>} input
- * @param {{ harness?: 'claude' | 'codex' | 'dsh', env?: NodeJS.ProcessEnv }} [options]
+ * @param {{ harness?: H, env?: NodeJS.ProcessEnv }} [options]
  */
-const hook = (input, { harness = 'claude', env = {} } = {}) =>
+const hook = (
+  input,
+  { harness = /** @type {H} */ ('claude'), env = {} } = {}
+) =>
   handleHook(
     { session_id: SESSION, cwd: root, ...input },
     { harness, rootDir: root, now: NOW, env, kick }
   );
 
 /** @param {ReturnType<typeof hook>} output */
-const context = (output) => output?.hookSpecificOutput.additionalContext ?? '';
+const context = (output) =>
+  /** @type {any} */ (output)?.hookSpecificOutput?.additionalContext ??
+  /** @type {any} */ (output)?.injectSteps?.[0]?.systemMessage?.systemMessage ??
+  '';
 
 const prompt = (/** @type {string} */ text) =>
   hook({ hook_event_name: 'UserPromptSubmit', prompt: text });
@@ -118,6 +125,7 @@ const prompt = (/** @type {string} */ text) =>
 describe('parseHarness', () => {
   test('should read --harness', () => {
     expect(parseHarness(['--harness', 'codex'])).toBe('codex');
+    expect(parseHarness(['--harness', 'agy'])).toBe('agy');
   });
 
   test('should default to claude for no or unknown values', () => {
@@ -919,6 +927,148 @@ describe('extraction hooks', () => {
     ).toBeNull();
     expect(readOpen(dir)).toEqual([]);
     expect(readQueue(dir)).toEqual([]);
+  });
+});
+
+describe('Antigravity hooks', () => {
+  test('should inject core block, announcements with user_markdown, and register open session at SessionStart', () => {
+    const transcript = path.join(root, 'transcript_full.jsonl');
+    fs.writeFileSync(transcript, '');
+    appendJournal(dir, {
+      at: '2026-11-20T11:00:00.000Z',
+      session: 'prev',
+      status: 'applied',
+      changes: [
+        {
+          action: 'added',
+          id: 'm9',
+          scope: 'machine',
+          repo: null,
+          type: 'fact',
+          text: 'Saved earlier.',
+        },
+      ],
+    });
+    const output = /** @type {any} */ (
+      handleHook(
+        {
+          hookEventName: 'SessionStart',
+          conversationId: 'agy-1',
+          transcriptPath: transcript,
+          cwd: root,
+        },
+        { harness: 'agy', rootDir: root, now: NOW, env: {}, kick }
+      )
+    );
+    expect(output.injectSteps[0].systemMessage.systemMessage).toContain(
+      '## Memory'
+    );
+    expect(
+      output.injectSteps[0].systemMessage.metadata.user_markdown
+    ).toContain('Saved earlier.');
+    expect(readOpen(dir).map((e) => e.session)).toEqual(['agy-1']);
+  });
+
+  test('should recall on PreInvocation only when invocationNum === 0', () => {
+    writePersonalization(dir, { persona: 'Direct.' });
+    expect(
+      handleHook(
+        {
+          hookEventName: 'PreInvocation',
+          conversationId: 'agy-1',
+          lastUserInput: 'how do I merge this PR on github',
+          invocationNum: 1,
+          cwd: root,
+        },
+        { harness: 'agy', rootDir: root, now: NOW, env: {}, kick }
+      )
+    ).toBeNull();
+
+    const output = /** @type {any} */ (
+      handleHook(
+        {
+          hookEventName: 'PreInvocation',
+          conversationId: 'agy-1',
+          lastUserInput: 'how do I merge this PR on github',
+          invocationNum: 0,
+          cwd: root,
+        },
+        { harness: 'agy', rootDir: root, now: NOW, env: {}, kick }
+      )
+    );
+    const text = output.injectSteps[0].systemMessage.systemMessage;
+    expect(text).toContain(PERSONA_REMINDER);
+    expect(text).toContain('- m1 ');
+  });
+
+  test('should recall failure notes on PostInvocation from transcriptPath', () => {
+    const transcript = path.join(root, 'transcript_full.jsonl');
+    fs.writeFileSync(
+      transcript,
+      [
+        JSON.stringify({
+          step_index: 4,
+          type: 'PLANNER_RESPONSE',
+          tool_calls: [
+            { name: 'run_command', args: { CommandLine: 'pnpm install foo' } },
+          ],
+        }),
+        JSON.stringify({
+          step_index: 5,
+          type: 'GENERIC',
+          status: 'DONE',
+          content:
+            'Command exited with code 1.\nERR_PNPM_NO_MATURE_MATCHING_VERSION minimumReleaseAge',
+        }),
+      ].join('\n')
+    );
+
+    const output = /** @type {any} */ (
+      handleHook(
+        {
+          hookEventName: 'PostInvocation',
+          conversationId: 'agy-1',
+          transcriptPath: transcript,
+          initialNumSteps: 4,
+          cwd: root,
+        },
+        { harness: 'agy', rootDir: root, now: NOW, env: {}, kick }
+      )
+    );
+    expect(output.injectSteps[0].systemMessage.systemMessage).toContain(
+      '- m2 '
+    );
+
+    // No failures after step 6 stays silent, as does a failure matching no note.
+    expect(
+      handleHook(
+        {
+          hookEventName: 'PostInvocation',
+          conversationId: 'agy-1',
+          transcriptPath: transcript,
+          initialNumSteps: 6,
+          cwd: root,
+        },
+        { harness: 'agy', rootDir: root, now: NOW, env: {}, kick }
+      )
+    ).toBeNull();
+    expect(
+      handleHook(
+        {
+          hookEventName: 'PostInvocation',
+          conversationId: 'agy-1',
+          transcriptPath: transcript,
+          initialNumSteps: 4,
+          cwd: root,
+        },
+        { harness: 'agy', rootDir: root, now: NOW, env: {}, kick }
+      )
+    ).toBeNull();
+  });
+
+  test('should output {} when silent or on bad JSON in runHook for agy', () => {
+    expect(runHook('', { rootDir: root, harness: 'agy' })).toBe('{}');
+    expect(runHook('{bad', { rootDir: root, harness: 'agy' })).toBe('{}');
   });
 });
 

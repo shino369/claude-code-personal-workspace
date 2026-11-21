@@ -4,7 +4,9 @@ import path from 'path';
 import {
   HARNESSES,
   TAIL_CHUNK_BYTES,
+  agyInjectOutput,
   findLastLine,
+  normalizeHookInput,
   parseHarness,
   patchFiles,
   projectDir,
@@ -63,20 +65,92 @@ describe('projectDir', () => {
     expect(projectDir({ harness: 'dsh', env, rootDir: '/root' })).toBe('/proj');
   });
 
-  test('should ignore CLAUDE_PROJECT_DIR in Codex, which may inherit it from a parent', () => {
-    expect(
-      projectDir({
-        harness: 'codex',
-        env: { CLAUDE_PROJECT_DIR: '/parent' },
-        rootDir: '/root',
-      })
-    ).toBe('/root');
+  test('should ignore CLAUDE_PROJECT_DIR in Codex and Antigravity, which may inherit it from a parent', () => {
+    for (const harness of /** @type {const} */ (['codex', 'agy'])) {
+      expect(
+        projectDir({
+          harness,
+          env: { CLAUDE_PROJECT_DIR: '/parent' },
+          rootDir: '/root',
+        })
+      ).toBe('/root');
+    }
   });
 
   test('should fall back to the workspace root', () => {
     expect(projectDir({ harness: 'claude', env: {}, rootDir: '/root' })).toBe(
       '/root'
     );
+  });
+});
+
+describe('normalizeHookInput', () => {
+  test('should pass through objects for non-Antigravity harnesses and default non-objects to empty', () => {
+    const raw = { session_id: 's1', prompt: 'hi' };
+    expect(normalizeHookInput(raw)).toBe(raw);
+    expect(normalizeHookInput(raw, 'codex')).toBe(raw);
+    expect(normalizeHookInput(null, 'claude')).toEqual({});
+    expect(normalizeHookInput([], 'agy')).toEqual({});
+  });
+
+  test('should map Antigravity camelCase fields while keeping snake_case and original fields', () => {
+    expect(
+      normalizeHookInput(
+        {
+          conversationId: 'agy-1',
+          transcriptPath: '/t.jsonl',
+          hookEventName: 'PreToolUse',
+          lastUserInput: 'hello',
+          toolCall: { name: 'run_command', args: { CommandLine: 'ls' } },
+          error: 'boom',
+          invocationNum: 0,
+        },
+        'agy'
+      )
+    ).toMatchObject({
+      session_id: 'agy-1',
+      transcript_path: '/t.jsonl',
+      hook_event_name: 'PreToolUse',
+      prompt: 'hello',
+      tool_name: 'run_command',
+      tool_input: { CommandLine: 'ls' },
+      tool_response: { error: 'boom' },
+      invocationNum: 0,
+    });
+    expect(
+      normalizeHookInput(
+        {
+          session_id: 'kept',
+          conversationId: 'ignored',
+          toolCall: null,
+          error: '',
+        },
+        'agy'
+      )
+    ).toEqual({
+      session_id: 'kept',
+      conversationId: 'ignored',
+      toolCall: null,
+      error: '',
+    });
+  });
+});
+
+describe('agyInjectOutput', () => {
+  test('should wrap text as an Antigravity injectSteps systemMessage with optional user_markdown', () => {
+    expect(agyInjectOutput('hello')).toEqual({
+      injectSteps: [{ systemMessage: { systemMessage: 'hello' } }],
+    });
+    expect(agyInjectOutput('hello', '**warn**')).toEqual({
+      injectSteps: [
+        {
+          systemMessage: {
+            systemMessage: 'hello',
+            metadata: { user_markdown: '**warn**' },
+          },
+        },
+      ],
+    });
   });
 });
 
@@ -314,6 +388,42 @@ describe('toolEvent', () => {
     }
   });
 
+  test('should read Antigravity tools from normalized or raw toolCall payloads', () => {
+    expect(
+      toolEvent({
+        toolCall: { name: 'run_command', args: { CommandLine: 'pnpm test' } },
+      })
+    ).toEqual({
+      kind: 'shell',
+      name: 'run_command',
+      command: 'pnpm test',
+      files: [],
+    });
+    for (const [name, args] of [
+      ['edit_file', { Path: 'a.js' }],
+      ['write_file', { Path: 'a.js' }],
+      ['write_to_file', { TargetFile: 'a.js' }],
+      ['replace_file_content', { TargetFile: 'a.js' }],
+      ['multi_replace_file_content', { TargetFile: 'a.js' }],
+      ['sed_file', { Path: 'a.js' }],
+      ['notebook_edit', { Path: 'a.js' }],
+    ]) {
+      expect(toolEvent({ toolCall: { name, args } })).toMatchObject({
+        kind: 'edit',
+        files: ['a.js'],
+      });
+    }
+    for (const [name, args] of [
+      ['read_file', { Path: '.env' }],
+      ['view_file', { AbsolutePath: '.env' }],
+    ]) {
+      expect(toolEvent({ toolCall: { name, args } })).toMatchObject({
+        kind: 'read',
+        files: ['.env'],
+      });
+    }
+  });
+
   test('should read other tools, and malformed input, as other', () => {
     expect(toolEvent({ tool_name: 'WebFetch', tool_input: {} })).toEqual({
       kind: 'other',
@@ -443,10 +553,37 @@ describe('transcriptUsage', () => {
     expect(transcriptUsage(file, 'codex')).toEqual({ tokens: 7, window: null });
   });
 
+  test("should read Antigravity's newest PLANNER_RESPONSE token usage", () => {
+    const file = writeLines('agy.jsonl', [
+      { type: 'PLANNER_RESPONSE', input_tokens: 100, cache_read_tokens: 200 },
+      { type: 'PLANNER_RESPONSE', input_tokens: 2406, cache_read_tokens: 6837 },
+      { type: 'GENERIC', status: 'DONE' },
+    ]);
+    expect(transcriptUsage(file, 'agy')).toEqual({
+      tokens: 9243,
+      window: null,
+    });
+    const partial = writeLines('agy-partial.jsonl', [
+      { type: 'PLANNER_RESPONSE', cache_read_tokens: 500 },
+    ]);
+    expect(transcriptUsage(partial, 'agy')).toEqual({
+      tokens: 500,
+      window: null,
+    });
+    const inputOnly = writeLines('agy-input.jsonl', [
+      { type: 'PLANNER_RESPONSE', input_tokens: 300 },
+    ]);
+    expect(transcriptUsage(inputOnly, 'agy')).toEqual({
+      tokens: 300,
+      window: null,
+    });
+  });
+
   test('should return null without usage, without a transcript, and for DSH', () => {
     const file = writeLines('t.jsonl', [{ type: 'user' }]);
     expect(transcriptUsage(file, 'claude')).toBeNull();
     expect(transcriptUsage(file, 'codex')).toBeNull();
+    expect(transcriptUsage(file, 'agy')).toBeNull();
     expect(transcriptUsage(undefined, 'claude')).toBeNull();
     expect(transcriptUsage('', 'codex')).toBeNull();
     expect(transcriptUsage(file, 'dsh')).toBeNull();

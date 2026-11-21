@@ -408,6 +408,25 @@ describe('auto_format in Codex and DSH', () => {
     ).toEqual([path.join(project, 'sub', 'a.js')]);
   });
 
+  test("should format an Antigravity edit's files at PostToolUse", () => {
+    const input = {
+      hookEventName: 'PostToolUse',
+      conversationId: 'agy-1',
+      cwd: project,
+      toolCall: {
+        name: 'edit_file',
+        args: { Path: path.join(project, 'a.js') },
+      },
+    };
+    expect(
+      processOtherHarness(
+        input,
+        'agy',
+        options({ env: { CLAUDE_PROJECT_DIR: '/parent-claude' } })
+      )
+    ).toEqual([path.join(project, 'a.js')]);
+  });
+
   test('should ignore tools that edit nothing', () => {
     const input = {
       hook_event_name: 'PostToolUse',

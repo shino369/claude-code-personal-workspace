@@ -21,14 +21,14 @@ Run `pnpm docs:cli` to refresh this reference from the workspace CLI help. Run `
 ## `pnpm agent`
 
 ```text
-Usage: pnpm agent ask --agent claude|codex|dsh [options] "<prompt>" | -
+Usage: pnpm agent ask --agent claude|codex|dsh|agy [options] "<prompt>" | -
 
 Runs one headless turn of another coding agent in this repository and prints
 its answer: a second opinion, a review, or a delegated question. Which agents
 are installed here: pnpm tools list
 
 Options
-  --agent <name>       claude | codex | dsh (required)
+  --agent <name>       claude | codex | dsh | agy (required)
   --write              Let the agent edit files (default: read-only). Prefer a
                        git worktree; in the main checkout it edits your tree
   --timeout-min <n>    Stop the agent after n minutes (default 10)
@@ -48,7 +48,7 @@ Exit code: the agent's exit code (1 when it was stopped by the timeout).
 
 ```text
 Usage:
-  pnpm harness sync    write the Codex/DSH files generated from utils/harness/hooks.js
+  pnpm harness sync    write the Codex/DSH/Antigravity files generated from utils/harness/hooks.js
   pnpm harness check   fail when a generated file or .claude/settings.json hooks differ from it
   pnpm harness help    show this help (the default)
 ```
@@ -56,14 +56,14 @@ Usage:
 ## `pnpm loop`
 
 ```text
-Usage: pnpm loop [task] --agent claude|codex|dsh [options]
+Usage: pnpm loop [task] --agent claude|codex|dsh|agy [options]
 
 Re-runs a headless agent until the task's verify commands pass. Runs in a git
 worktree: from the main checkout it creates (or reuses) ../<repo>-wt/<task> on
 branch loop/<task>, copies the task folder there, and installs dependencies.
 
 Options
-  --agent <name>              claude | codex | dsh (required)
+  --agent <name>              claude | codex | dsh | agy (required)
   --review                    Code tasks: after verify passes, run the quality
                               loop — review round (reviewer + triage, read-only,
                               fresh agents), fix confirmed must-fix/high
@@ -162,9 +162,9 @@ Settings
                                 (or workspace:setup) applies your edits; persona changes
                                 here and by import rewrite it
   personalize [--persona … | --persona-file <file.md>] --compact [--dry-run]
-      [--agent claude|codex|dsh] Shorten the persona to fit, then audit it in a fresh context.
+      [--agent claude|codex|dsh|agy] Shorten the persona to fit, then audit it in a fresh context.
                                 --dry-run writes only memory/persona.candidate.md
-  personalize [--persona … | --persona-file <file.md>] --audit [--agent claude|codex|dsh]
+  personalize [--persona … | --persona-file <file.md>] --audit [--agent claude|codex|dsh|agy]
                                 Check the persona without changing it. Both commands default
                                 to Claude and use memory/persona.md or the stored persona
                                 when no source flag is given. --agent codex requires
@@ -213,7 +213,7 @@ Options
 ## `pnpm swarm`
 
 ```text
-Usage: pnpm swarm [task] --agent claude|codex|dsh [options]
+Usage: pnpm swarm [task] --agent claude|codex|dsh|agy [options]
 
 Runs the task's steps with parallel headless workers. Each worker claims a
 ready step (dependencies done; same lock as pnpm task claim), works in its own
@@ -226,7 +226,7 @@ Only git-tracked code moves between workers: a task that keeps code in its
 (git-ignored) task folder is refused — use pnpm loop for it instead.
 
 Options
-  --agent <name>              claude | codex | dsh (required)
+  --agent <name>              claude | codex | dsh | agy (required)
   --workers <n>               Parallel workers, 1–8 (default 2)
   --fix <n>                   Fix-until-green iterations per step after the
                               first run, 0–50 (default 3)

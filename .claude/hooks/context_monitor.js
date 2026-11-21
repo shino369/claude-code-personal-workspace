@@ -16,7 +16,12 @@
  * Codex records the model's window in its rollout, and that wins. DSH gives
  * hooks no transcript, so there the monitor stays silent.
  */
-import { parseHarness, transcriptUsage } from '#utils/harness/input.js';
+import {
+  agyInjectOutput,
+  normalizeHookInput,
+  parseHarness,
+  transcriptUsage,
+} from '#utils/harness/input.js';
 import { runIfMain } from '#utils/module-runner.js';
 import { sessionTask } from '#utils/task/store.js';
 import { ROOT_DIR } from '#utils/workspace-config.js';
@@ -137,26 +142,36 @@ export function buildMessage(
 }
 
 /**
- * @typedef {{ hookSpecificOutput: { hookEventName: string, additionalContext: string }, systemMessage?: string }} HookOutput
+ * @typedef {{ hookSpecificOutput: { hookEventName: string, additionalContext: string }, systemMessage?: string }} StandardHookOutput
+ * @typedef {StandardHookOutput | import('#utils/harness/input.js').AgyInjectOutput} HookOutput
  */
 
 /**
  * Convert hook input into hook output, or null when no warning is needed.
  *
- * @param {{ transcript_path?: string, session_id?: string }} [input]
+ * @template {import('#utils/harness/input.js').Harness} [H='claude']
+ * @param {{ transcript_path?: string, transcriptPath?: string, session_id?: string, conversationId?: string, invocationNum?: number }} [input]
  * @param {NodeJS.ProcessEnv} [env]
- * @param {{ activeTask?: (session: string | null) => string | null, harness?: import('#utils/harness/input.js').Harness }} [options]
- * @returns {HookOutput | null}
+ * @param {{ activeTask?: (session: string | null) => string | null, harness?: H }} [options]
+ * @returns {(H extends 'agy' ? import('#utils/harness/input.js').AgyInjectOutput : StandardHookOutput) | null}
  */
 export function processHookInput(
   input,
   env = process.env,
   {
     activeTask = (session) => getActiveTask(ROOT_DIR, session),
-    harness = 'claude',
+    harness = /** @type {H} */ ('claude'),
   } = {}
 ) {
-  const usage = transcriptUsage(input?.transcript_path, harness);
+  const normalized = normalizeHookInput(input, harness);
+  if (
+    harness === 'agy' &&
+    typeof normalized.invocationNum === 'number' &&
+    normalized.invocationNum !== 0
+  ) {
+    return null;
+  }
+  const usage = transcriptUsage(normalized.transcript_path, harness);
   if (!usage) return null;
 
   const contextWindow = usage.window ?? getContextWindow(env);
@@ -164,11 +179,22 @@ export function processHookInput(
   const message = buildMessage(
     usagePct,
     contextWindow,
-    usagePct >= THRESHOLDS.warn ? activeTask(input?.session_id ?? null) : null
+    usagePct >= THRESHOLDS.warn
+      ? activeTask(normalized.session_id ?? null)
+      : null
   );
   if (!message) return null;
 
-  /** @type {HookOutput} */
+  if (harness === 'agy') {
+    return /** @type {any} */ (
+      agyInjectOutput(
+        message,
+        usagePct >= THRESHOLDS.warn ? message : undefined
+      )
+    );
+  }
+
+  /** @type {StandardHookOutput} */
   const output = {
     hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
@@ -181,11 +207,12 @@ export function processHookInput(
     output.systemMessage = message;
   }
 
-  return output;
+  return /** @type {any} */ (output);
 }
 
 /* istanbul ignore next - stdin handling is tested through processHookInput */
 function main() {
+  const harness = parseHarness(process.argv.slice(2));
   let inputData = '';
 
   if (process.stdin.isTTY) {
@@ -197,27 +224,34 @@ function main() {
     inputData += chunk;
   });
 
+  const failOpen = () => {
+    if (harness === 'agy') {
+      process.stdout.write('{}', () => process.exit(0));
+      return;
+    }
+    process.exit(0);
+  };
   process.stdin.on('end', () => {
     try {
       const hookInput = JSON.parse(inputData);
-      const output = processHookInput(hookInput, process.env, {
-        harness: parseHarness(process.argv.slice(2)),
-      });
+      const output = processHookInput(hookInput, process.env, { harness });
 
-      if (output) {
+      if (output || harness === 'agy') {
         // Wait for stdout to flush before exiting; process.exit() during a
         // pending pipe write can truncate the hook output on Windows.
-        process.stdout.write(JSON.stringify(output), () => process.exit(0));
+        process.stdout.write(JSON.stringify(output ?? {}), () =>
+          process.exit(0)
+        );
         return;
       }
 
       process.exit(0);
     } catch {
-      process.exit(0);
+      failOpen();
     }
   });
 
-  process.stdin.on('error', () => process.exit(0));
+  process.stdin.on('error', failOpen);
 }
 
 runIfMain(import.meta.url, main);

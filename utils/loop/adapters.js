@@ -10,13 +10,97 @@
  * - codex: the `workspace-write` sandbox.
  * - dsh: the `workspace-write` preset with `--approval-policy never`
  *   (headless has no approval channel; calls that need one are rejected).
+ * - agy: `stream-json` I/O with `--mode accept-edits` (which auto-approves
+ *   reads and edits inside the worktree only) and `--settings` granting
+ *   anchored, non-chaining workspace commands while denying protected secret
+ *   paths, `.git/` writes, and destructive commands even when a new worktree
+ *   is not yet in `trustedWorkspaces` (where `.agents/hooks.json` `guard.js`
+ *   does not run).
  * `read` (the default for `pnpm agent ask`) cannot change files: claude `plan`
- * mode, codex `read-only` sandbox, dsh `read-only` preset.
+ * mode, codex `read-only` sandbox, dsh `read-only` preset, agy `--settings`
+ * denying `write_file(*)` and secret reads while allowing only non-mutating
+ * inspection commands.
  */
 import { crossSpawn } from '../spawn.js';
 import { HARNESS_SESSION_VARS } from '../task/store.js';
 
-export const AGENTS = /** @type {const} */ (['claude', 'codex', 'dsh']);
+export const AGENTS = /** @type {const} */ (['claude', 'codex', 'dsh', 'agy']);
+/** Argument characters that cannot chain, redirect, or run subshells/PowerShell `(expr)`. */
+const AGY_SAFE_ARGS = '[^;&|<>`$()\\r\\n]*';
+/**
+ * Safe tokens for commands whose quoted arguments legitimately contain `(...)`
+ * (e.g. `git commit -m "feat(agy): ..."` or `pnpm task ... -m "..."`):
+ * forbids `\`, `$`, `` ` `` inside quotes and `(` / `)` outside quotes.
+ */
+const AGY_QUOTED_SAFE =
+  '("[^;&|<>`$\\\\\\r\\n"]*"|\'[^;&|<>`$\\r\\n\']*\'|[^;&|<>`$()\\r\\n\\s"\']+)';
+/** Relative JS path inside repo dirs with no `..` traversal or shell meta. */
+const AGY_SCRIPT_PATH =
+  '[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*(\\.[A-Za-z0-9_-]+)*\\.m?js';
+/** Relative path that cannot start with `-`, `/`, `~`, drive, or contain `..`. */
+const AGY_REL_PATH =
+  '\\.?[A-Za-z0-9_][A-Za-z0-9_-]*(/\\.?[A-Za-z0-9_][A-Za-z0-9_-]*)*(\\.[A-Za-z0-9_-]+)*';
+/**
+ * Antigravity `read_file(...)` matches exact paths and directory prefixes (not
+ * globs); denying `read_file` also blocks `write_file` on those paths.
+ */
+const AGY_SECRET_DENY = [
+  'read_file(.env)',
+  'read_file(.env.local)',
+  'read_file(.env.development)',
+  'read_file(.env.production)',
+  'read_file(.env.test)',
+  'read_file(.env.staging)',
+  'read_file(secrets/)',
+  'read_file(credentials.json)',
+  'read_file(~/.ssh)',
+  'read_file(~/.aws)',
+];
+/** Antigravity headless write-mode settings: worktree-scoped edits + safe commands. */
+export const AGY_WRITE_SETTINGS = JSON.stringify({
+  permissions: {
+    allow: [
+      `command(regex:^pnpm (check|test|test:coverage|test:e2e|lint|lint:fix|typecheck|format|format:check|docs:cli|skills:check|skills:link|harness|workspace:check|workspace:setup|tools|memory|install|add|remove)( ${AGY_SAFE_ARGS})?$)`,
+      `command(regex:^pnpm task( ${AGY_QUOTED_SAFE})*$)`,
+      `command(regex:^git (status|diff|log|show|branch|rev-parse|add|switch|checkout)( ${AGY_SAFE_ARGS})?$)`,
+      `command(regex:^git commit( ${AGY_QUOTED_SAFE})*$)`,
+      `command(regex:^node (utils|\\.claude/hooks|\\.agents/skills)/${AGY_SCRIPT_PATH}( ${AGY_SAFE_ARGS})?$)`,
+      `command(regex:^(ls|dir|cd|echo)( ${AGY_SAFE_ARGS})?$)`,
+      `command(regex:^mkdir( -p)?( ${AGY_REL_PATH})+$)`,
+      'command(pwd)',
+    ],
+    deny: [
+      ...AGY_SECRET_DENY,
+      'write_file(.git/)',
+      'command(regex:^pnpm\\b.*(\\s-[a-zA-Z]*[gC]|--global\\b|--dir\\b|--workspace-root\\b).*)',
+      'command(regex:^git branch\\b.*(\\s-[a-zA-Z]*[dD]|--delete).*)',
+      'command(regex:^git commit\\b.*(--no-verify|\\s-[a-zA-Z]*n[a-zA-Z]*\\b).*)',
+      'command(regex:^git add\\b.*(\\s-[a-zA-Z]*f[a-zA-Z]*\\b|--force).*)',
+      'command(regex:^git .*(--output|--ext-diff|--textconv|--no-index).*)',
+    ],
+  },
+});
+/** Antigravity headless read-mode settings: deny writes/secrets, allow read inspection. */
+export const AGY_READ_SETTINGS = JSON.stringify({
+  permissions: {
+    allow: [
+      `command(regex:^git (status|diff|log|show|rev-parse)( ${AGY_SAFE_ARGS})?$)`,
+      'command(regex:^git branch( (--show-current|--list|-a|-r|-v|--all|--remotes))?$)',
+      'command(regex:^pnpm (typecheck|lint|format:check|workspace:check|harness check|docs:cli --check|skills:check)$)',
+      `command(regex:^pnpm test( ${AGY_REL_PATH})*$)`,
+      'command(regex:^pnpm task (status|list|next)( (--json|--all|--task [A-Za-z0-9._-]+))*$)',
+      'command(regex:^pnpm tools (list|show)( (--all|--json|[A-Za-z0-9._-]+))*$)',
+      `command(regex:^(ls|dir)( ${AGY_SAFE_ARGS})?$)`,
+      'command(pwd)',
+      'command(regex:^node (-v|--version)$)',
+    ],
+    deny: [
+      'write_file(*)',
+      ...AGY_SECRET_DENY,
+      'command(regex:.*(--output|--fix|--write|--update|--no-index|--ext-diff|--textconv|\\s-[oO]|\\s-[wWu]\\b).*)',
+    ],
+  },
+});
 /** The DSH overlay that enables the workspace's hooks (utils/harness/cli.js). */
 export const DSH_PATCH = '.dsh/workspace.patch.yml';
 /**
@@ -114,6 +198,33 @@ const ADAPTERS = {
     },
     install: 'pass --bin "npx -y @deepseek-ai/dsh" (Node ^22.19 or >=24)',
   },
+  agy: {
+    bin: 'agy',
+    args: {
+      write: [
+        '--input-format',
+        'stream-json',
+        '--output-format',
+        'stream-json',
+        '--disable-slash-commands',
+        '--mode',
+        'accept-edits',
+        '--settings',
+        AGY_WRITE_SETTINGS,
+      ],
+      read: [
+        '--input-format',
+        'stream-json',
+        '--output-format',
+        'stream-json',
+        '--disable-slash-commands',
+        '--settings',
+        AGY_READ_SETTINGS,
+      ],
+    },
+    install:
+      'https://antigravity.google/docs/cli/reference (then: agy --version)',
+  },
 };
 
 /**
@@ -185,6 +296,45 @@ export function installHint(agent) {
  */
 
 /**
+ * Parse Antigravity's `--output-format stream-json` NDJSON output: extract the
+ * final `result` event's `response` as `stdout`, and flag a non-SUCCESS status
+ * or an empty response caused by auto-denied headless tool actions.
+ *
+ * @param {string} raw
+ * @returns {{ stdout: string, failed: boolean }}
+ */
+export function parseAgyStreamJson(raw) {
+  const lines = raw.split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    let parsed;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (
+      parsed?.event === 'result' &&
+      typeof parsed.result === 'object' &&
+      parsed.result !== null
+    ) {
+      const response =
+        typeof parsed.result.response === 'string'
+          ? parsed.result.response
+          : '';
+      const denied =
+        Array.isArray(parsed.result.denied_actions) &&
+        parsed.result.denied_actions.length > 0;
+      const failed =
+        parsed.result.status !== 'SUCCESS' || (!response && denied);
+      return { stdout: response, failed };
+    }
+  }
+  return { stdout: raw, failed: false };
+}
+
+/**
  * Run one headless agent turn with the prompt on stdin. The child gets the
  * caller's env without the harness session ids: a child that inherited them
  * would act as the caller's session in `pnpm task` (`TASK_SESSION`, set on
@@ -209,10 +359,14 @@ export function runAgent({
     const problem = dshDirProblem(cwd, platform);
     if (problem) throw new Error(problem);
   }
+  const input =
+    command.agent === 'agy'
+      ? `${JSON.stringify({ event: 'user', message: { content: prompt } })}\n`
+      : prompt;
   const started = now();
   const result = spawn(command.bin, command.args, {
     cwd,
-    input: prompt,
+    input,
     encoding: 'utf-8',
     timeout: timeoutMs,
     killSignal: 'SIGTERM',
@@ -229,17 +383,20 @@ export function runAgent({
       `${command.bin} was not found (agent ${command.agent}).\nFix: ${installHint(command.agent)}`
     );
   }
+  const rawStdout = String(result.stdout ?? '');
+  const parsed = command.agent === 'agy' ? parseAgyStreamJson(rawStdout) : null;
+  const code = parsed?.failed && result.status === 0 ? 1 : result.status;
   const output = [result.stdout, result.stderr, result.error?.message]
     .filter(Boolean)
     .map(String)
     .join('\n');
   return {
-    code: result.status,
+    code,
     signal: result.signal ?? null,
     output: result.signal
       ? `${output}\n(stopped by ${result.signal}; timeout ${Math.round(timeoutMs / 1000)}s)`
       : output,
-    stdout: String(result.stdout ?? ''),
+    stdout: parsed ? parsed.stdout : rawStdout,
     durationMs: now() - started,
   };
 }

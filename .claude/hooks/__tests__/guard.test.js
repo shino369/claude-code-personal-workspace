@@ -28,8 +28,9 @@ afterEach(() => {
 });
 
 /**
+ * @template {import('#utils/harness/input.js').Harness} H
  * @param {Record<string, unknown>} input
- * @param {import('#utils/harness/input.js').Harness} harness
+ * @param {H} harness
  */
 const guard = (input, harness) =>
   processHookInput(
@@ -74,6 +75,46 @@ describe('guard processHookInput', () => {
         'dsh'
       )
     ).toBeNull();
+  });
+
+  test('should return Antigravity allow, ask, and deny decisions and fail open with allow', () => {
+    expect(
+      guard(
+        {
+          toolCall: { name: 'run_command', args: { CommandLine: 'rm -rf x' } },
+        },
+        'agy'
+      )
+    ).toMatchObject({
+      decision: 'deny',
+      reason: expect.stringContaining('pnpm task rm'),
+    });
+    expect(
+      guard(
+        {
+          toolCall: { name: 'run_command', args: { CommandLine: 'git push' } },
+        },
+        'agy'
+      )
+    ).toMatchObject({ decision: 'ask' });
+    expect(
+      guard({ toolCall: { name: 'read_file', args: { Path: '.env' } } }, 'agy')
+    ).toMatchObject({ decision: 'deny' });
+    expect(
+      guard(
+        {
+          toolCall: { name: 'run_command', args: { CommandLine: 'pnpm test' } },
+        },
+        'agy'
+      )
+    ).toEqual({ decision: 'allow' });
+    fs.writeFileSync(path.join(root, '.claude/settings.json'), '{');
+    expect(
+      guard(
+        { toolCall: { name: 'run_command', args: { CommandLine: 'rm x' } } },
+        'agy'
+      )
+    ).toEqual({ decision: 'allow' });
   });
 
   test('should fail open when the settings cannot be read', () => {

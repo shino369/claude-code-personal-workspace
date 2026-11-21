@@ -57,17 +57,19 @@ describe('audit_logger', () => {
       expect(getLogRoot(undefined, {})).toBe(process.cwd());
     });
 
-    test('should use the workspace root in Codex, ignoring an inherited CLAUDE_PROJECT_DIR', () => {
-      expect(
-        getLogRoot(
-          { cwd: '/cwd' },
-          { CLAUDE_PROJECT_DIR: '/p' },
-          {
-            harness: 'codex',
-            rootDir: '/root',
-          }
-        )
-      ).toBe('/root');
+    test('should use the workspace root in Codex and Antigravity, ignoring an inherited CLAUDE_PROJECT_DIR', () => {
+      for (const harness of /** @type {const} */ (['codex', 'agy'])) {
+        expect(
+          getLogRoot(
+            { cwd: '/cwd' },
+            { CLAUDE_PROJECT_DIR: '/p' },
+            {
+              harness,
+              rootDir: '/root',
+            }
+          )
+        ).toBe('/root');
+      }
     });
   });
 
@@ -332,6 +334,35 @@ describe('audit_logger', () => {
         hook_event: 'PreToolUse',
         harness: 'codex',
       });
+    });
+
+    test('should log Antigravity camelCase payloads under the workspace root and truncate Content', () => {
+      const logFile = /** @type {string} */ (
+        processHookInput(
+          /** @type {any} */ ({
+            conversationId: 'agy-1',
+            hookEventName: 'PostToolUse',
+            cwd: '/elsewhere',
+            toolCall: {
+              name: 'write_file',
+              args: { Path: 'a.js', Content: 'x'.repeat(600) },
+            },
+            error: 'disk full',
+          }),
+          { CLAUDE_PROJECT_DIR: '/parent-claude' },
+          { harness: 'agy', rootDir: tmpDir }
+        )
+      );
+      expect(logFile.startsWith(path.join(tmpDir, 'logs'))).toBe(true);
+      const [entry] = readLines(logFile);
+      expect(entry).toMatchObject({
+        harness: 'agy',
+        session_id: 'agy-1',
+        hook_event: 'PostToolUse',
+        tool_name: 'write_file',
+        tool_response: { error: 'disk full' },
+      });
+      expect(entry.tool_input.Content).toMatch(/^x{500}\.\.\./);
     });
 
     test('should fall back to input cwd and append across calls', () => {

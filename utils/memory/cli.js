@@ -9,6 +9,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { runAgent } from '../loop/adapters.js';
+import { CALL_AGENTS } from './agent-call.js';
 import {
   applyImport,
   exportArchive,
@@ -172,9 +173,9 @@ Settings
                                 (or workspace:setup) applies your edits; persona changes
                                 here and by import rewrite it
   personalize [--persona … | --persona-file <file.md>] --compact [--dry-run]
-      [--agent claude|codex|dsh] Shorten the persona to fit, then audit it in a fresh context.
+      [--agent ${CALL_AGENTS.join('|')}] Shorten the persona to fit, then audit it in a fresh context.
                                 --dry-run writes only memory/persona.candidate.md
-  personalize [--persona … | --persona-file <file.md>] --audit [--agent claude|codex|dsh]
+  personalize [--persona … | --persona-file <file.md>] --audit [--agent ${CALL_AGENTS.join('|')}]
                                 Check the persona without changing it. Both commands default
                                 to Claude and use memory/persona.md or the stored persona
                                 when no source flag is given. --agent codex requires

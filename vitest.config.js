@@ -24,7 +24,14 @@ export default defineConfig({
 
     // Tests never see the session of the agent running them: task commands
     // would otherwise resolve to that session's task (utils/task/store.js).
-    env: { TASK_SESSION: '', CLAUDE_CODE_SESSION_ID: '' },
+    env: {
+      TASK_SESSION: '',
+      CODEX_THREAD_ID: '',
+      CODEX_SESSION_ID: '',
+      DSH_SESSION_ID: '',
+      ANTIGRAVITY_CONVERSATION_ID: '',
+      CLAUDE_CODE_SESSION_ID: '',
+    },
 
     // Include patterns
     include: [

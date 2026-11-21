@@ -223,11 +223,14 @@ pip-log.txt
 /CLAUDE.local.md
 /memory/
 
-# Skills live in .agents/skills/ (the skills.sh layout, read directly by Codex
-# and other agents). Project-owned skills are tracked; third-party skills from
-# skills.sh stay local. Keep this list in sync with OWNED_SKILLS in
+# Skills live in .agents/skills/ (the skills.sh layout, read directly by Codex,
+# Antigravity, and other agents). Project-owned skills and generated Antigravity
+# configs (.agents/hooks.json, .agents/agents/) are tracked; third-party skills
+# from skills.sh stay local. Keep the skill list in sync with OWNED_SKILLS in
 # utils/workspace-config.js.
 /.agents/*
+!/.agents/hooks.json
+!/.agents/agents/
 !/.agents/skills/
 /.agents/skills/*
 !/.agents/skills/context-manager/

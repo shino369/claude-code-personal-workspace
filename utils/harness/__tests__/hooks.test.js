@@ -6,7 +6,9 @@ import {
   diffEntries,
   hookCommand,
   hookEntries,
+  readAgyHookEntries,
   readHookEntries,
+  renderAgyHooksConfig,
   renderHooksConfig,
 } from '../hooks.js';
 
@@ -35,6 +37,15 @@ describe('hookCommand', () => {
   test('should find the script from the git top level in Codex, which sets no project dir', () => {
     expect(hookCommand('codex', spec)).toBe(
       'node "$(git rev-parse --show-toplevel)/.claude/hooks/x.js" --harness codex'
+    );
+  });
+
+  test('should run scripts relative to .agents/ in Antigravity', () => {
+    expect(hookCommand('agy', spec)).toBe(
+      'node ../.claude/hooks/x.js --harness agy'
+    );
+    expect(hookCommand('agy', { ...spec, args: ['--reset'] })).toBe(
+      'node ../.claude/hooks/x.js --reset --harness agy'
     );
   });
 
@@ -182,6 +193,143 @@ describe('renderHooksConfig', () => {
   });
 });
 
+describe('renderAgyHooksConfig and readAgyHookEntries', () => {
+  test('should render flat lifecycle hooks and grouped tool hooks keyed by spec id', () => {
+    const specs = [
+      {
+        id: 'a',
+        script: 'a.js',
+        timeout: 5,
+        agy: [
+          { event: 'SessionStart' },
+          { event: 'PreToolUse', matcher: 'run_command', timeout: 7 },
+          { event: 'PreToolUse', matcher: 'run_command' },
+          { event: 'PostToolUse' },
+          { event: 'PostToolUse', timeout: 9 },
+        ],
+      },
+      { id: 'b', script: 'b.js', timeout: 3, codex: [{ event: 'Stop' }] },
+    ];
+    const config = renderAgyHooksConfig({ specs });
+    expect(config).toEqual({
+      a: {
+        SessionStart: [
+          {
+            type: 'command',
+            command: 'node ../a.js --harness agy',
+            timeout: 5,
+          },
+        ],
+        PreToolUse: [
+          {
+            matcher: 'run_command',
+            hooks: [
+              {
+                type: 'command',
+                command: 'node ../a.js --harness agy',
+                timeout: 7,
+              },
+              {
+                type: 'command',
+                command: 'node ../a.js --harness agy',
+                timeout: 5,
+              },
+            ],
+          },
+        ],
+        PostToolUse: [
+          {
+            hooks: [
+              {
+                type: 'command',
+                command: 'node ../a.js --harness agy',
+                timeout: 5,
+              },
+              {
+                type: 'command',
+                command: 'node ../a.js --harness agy',
+                timeout: 9,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(readAgyHookEntries(config)).toEqual([
+      {
+        event: 'SessionStart',
+        matcher: null,
+        command: 'node ../a.js --harness agy',
+        timeout: 5,
+      },
+      {
+        event: 'PreToolUse',
+        matcher: 'run_command',
+        command: 'node ../a.js --harness agy',
+        timeout: 7,
+      },
+      {
+        event: 'PreToolUse',
+        matcher: 'run_command',
+        command: 'node ../a.js --harness agy',
+        timeout: 5,
+      },
+      {
+        event: 'PostToolUse',
+        matcher: null,
+        command: 'node ../a.js --harness agy',
+        timeout: 5,
+      },
+      {
+        event: 'PostToolUse',
+        matcher: null,
+        command: 'node ../a.js --harness agy',
+        timeout: 9,
+      },
+    ]);
+    expect(
+      diffEntries(hookEntries('agy', specs), readAgyHookEntries(config))
+    ).toEqual({
+      missing: [],
+      extra: [],
+    });
+    expect(renderAgyHooksConfig({ specs: [] })).toBeNull();
+  });
+
+  test('should skip disabled hooks, malformed sections, and non-command handlers', () => {
+    expect(readAgyHookEntries(null)).toEqual([]);
+    expect(
+      readAgyHookEntries({
+        disabled: {
+          enabled: false,
+          Stop: [{ command: 'node a.js' }],
+        },
+        broken: null,
+        mixed: {
+          enabled: true,
+          Stop: [
+            { command: 'node ok.js' },
+            { type: 'http', command: 'ignored' },
+          ],
+          PreToolUse: [
+            null,
+            { hooks: [{ command: 'node no-matcher.js' }] },
+            { matcher: '*', hooks: 'not-array' },
+          ],
+        },
+      })
+    ).toEqual([
+      { event: 'Stop', matcher: null, command: 'node ok.js', timeout: null },
+      {
+        event: 'PreToolUse',
+        matcher: null,
+        command: 'node no-matcher.js',
+        timeout: null,
+      },
+    ]);
+  });
+});
+
 describe('readHookEntries', () => {
   test('should flatten a Claude-format hooks config', () => {
     const config = {
@@ -322,6 +470,29 @@ describe('the DSH wiring', () => {
   });
 });
 
+describe('the Antigravity wiring', () => {
+  const events = (/** @type {string} */ id) =>
+    (HOOKS.find((spec) => spec.id === id)?.agy ?? []).map(
+      (p) => `${p.event}${p.matcher ? ` [${p.matcher}]` : ''}`
+    );
+
+  test('should wire task-brief, memory, guard, loop, reset, context-monitor, audit, and format', () => {
+    expect(events('task-brief')).toEqual(['SessionStart']);
+    expect(events('memory')).toEqual([
+      'SessionStart',
+      'PreInvocation',
+      'PostInvocation',
+    ]);
+    expect(events('task-loop')).toEqual(['Stop']);
+    expect(events('task-loop-reset')).toEqual(['PreInvocation']);
+    expect(events('context-monitor')).toEqual(['PreInvocation']);
+    expect(events('audit')).toEqual(['PostToolUse [*]']);
+    expect(events('guard')).toHaveLength(1);
+    expect(events('format')).toHaveLength(1);
+    expect(events('compact-note')).toEqual([]);
+  });
+});
+
 describe('the committed configs', () => {
   test('should match the manifest in .codex/hooks.json (run pnpm harness sync)', () => {
     expect(
@@ -350,6 +521,22 @@ describe('the committed configs', () => {
       expect(command).toMatch(/^node "\$\{CLAUDE_PROJECT_DIR\}\/[^"]+\.js" /);
       expect(command).not.toContain('"$CLAUDE_PROJECT_DIR"/');
     }
+  });
+
+  test('should match the manifest in .agents/hooks.json (run pnpm harness sync)', () => {
+    expect(
+      diffEntries(
+        hookEntries('agy'),
+        readAgyHookEntries(readJson('.agents/hooks.json'))
+      )
+    ).toEqual({ missing: [], extra: [] });
+  });
+
+  test('should keep AGENTS.md within Antigravity CLI 24,000-byte per-file rule cap', () => {
+    const bytes = Buffer.byteLength(
+      fs.readFileSync(path.join(ROOT_DIR, 'AGENTS.md'), 'utf-8')
+    );
+    expect(bytes).toBeLessThanOrEqual(24_000);
   });
 
   test('should match the manifest in .claude/settings.json', () => {

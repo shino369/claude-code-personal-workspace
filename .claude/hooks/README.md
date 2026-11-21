@@ -1,23 +1,22 @@
 # Claude Code Hooks
 
 This directory contains hook scripts that automatically execute during various events. They run in
-Claude Code, Codex, and DSH. `utils/harness/hooks.js` lists each hook once, with its event and
-matcher per harness; `pnpm harness sync` writes `.codex/hooks.json` and `.dsh/hooks.json` from it,
-and `pnpm harness check` fails when they or `.claude/settings.json` differ from it. Every script
-takes `--harness claude|codex|dsh` (default `claude`). DSH is partly tested (`dsh web` on
-Windows ran the SessionStart, UserPromptSubmit, PreToolUse/PostToolUse guard, audit, and memory
-hooks, and Stop; `auto_format` has not run yet). Details: `docs/harness.md`, "Three harnesses".
+Claude Code, Codex, DSH, and Antigravity CLI (`agy`). `utils/harness/hooks.js` lists each hook
+once, with its event and matcher per harness; `pnpm harness sync` writes `.codex/hooks.json`,
+`.dsh/hooks.json`, and `.agents/hooks.json` from it, and `pnpm harness check` fails when they or
+`.claude/settings.json` differ from it. Every script takes `--harness claude|codex|dsh|agy`
+(default `claude`). Details: `docs/harness.md`, "Four harnesses".
 
-| Hook                   | Claude Code | Codex                                            | DSH (partly tested)    |
-| ---------------------- | ----------- | ------------------------------------------------ | ---------------------- |
-| `audit_logger.js`      | yes         | yes (edits from PreToolUse)                      | yes                    |
-| `auto_format.js`       | yes         | yes, queued; formatted at the next tool or Stop  | yes                    |
-| `context_monitor.js`   | yes         | yes (from the rollout)                           | no (no transcript)     |
-| `session_start.js`     | yes         | yes                                              | yes                    |
-| `pre_compact.js`       | yes         | yes                                              | no (no event)          |
-| `task_loop.js`         | yes         | yes                                              | yes                    |
-| `guard.js`             | no (native) | patches only (shell commands use the rules file) | commands, reads, edits |
-| `utils/memory/hook.js` | yes         | yes, with extraction                             | recall only            |
+| Hook                   | Claude Code | Codex                                            | DSH (partly tested)    | Antigravity CLI (`agy`)                           |
+| ---------------------- | ----------- | ------------------------------------------------ | ---------------------- | ------------------------------------------------- |
+| `audit_logger.js`      | yes         | yes (edits from PreToolUse)                      | yes                    | yes (`PostToolUse *`)                             |
+| `auto_format.js`       | yes         | yes, queued; formatted at the next tool or Stop  | yes                    | yes (`PostToolUse` on edit tools)                 |
+| `context_monitor.js`   | yes         | yes (from the rollout)                           | no (no transcript)     | yes (`PreInvocation` turn 0, from transcript)     |
+| `session_start.js`     | yes         | yes                                              | yes                    | yes (`SessionStart` via `injectSteps`)            |
+| `pre_compact.js`       | yes         | yes                                              | no (no event)          | no (no PreCompact event)                          |
+| `task_loop.js`         | yes         | yes                                              | yes                    | yes (`Stop` `continue`, `--reset` on turn 0)      |
+| `guard.js`             | no (native) | patches only (shell commands use the rules file) | commands, reads, edits | commands, reads, edits (`allow`/`ask`/`deny`)     |
+| `utils/memory/hook.js` | yes         | yes, with extraction                             | recall only            | core block, prompt & failure recall, idle extract |
 
 ## Installed Hooks
 
@@ -187,7 +186,7 @@ by running `pnpm task status`.
 
 ### 7. Guard (`guard.js`)
 
-**Event:** PreToolUse (Codex: `Bash|apply_patch`; DSH: `bash|pwsh|read|edit|write|apply_patch|str_replace_editor`)
+**Event:** PreToolUse (Codex: `Bash|apply_patch`; DSH: `bash|pwsh|read|edit|write|apply_patch|str_replace_editor`; Antigravity: `run_command|read_file|view_file|edit_file|write_file|...`)
 **Purpose:** Enforces the `permissions` of `.claude/settings.json` where the harness does not.
 
 **What it does:**
@@ -195,20 +194,23 @@ by running `pnpm task status`.
 - Not wired in Claude Code, which enforces its own permissions
 - Codex: denies a patch that edits a protected path (secrets). Shell commands are covered by
   `.codex/rules/workspace.rules`, which `pnpm harness sync` generates from the same permissions
-- DSH: also denies reads of protected paths, and denies or asks (`permissionDecision: ask`) for
-  shell commands, since DSH has no command rules
+- DSH & Antigravity: also deny reads of protected paths, and deny or ask (`permissionDecision: ask`
+  / `decision: "ask"`) for shell commands, since neither has a project-level command rules file.
+  For Antigravity, allowed calls emit an explicit `{"decision":"allow"}` (an empty `{}` denies)
 - Handles only `Bash`, `Read`, and `Edit` rules; other kinds (web fetch, MCP) stay Claude-only
 - A guardrail, not a sandbox; fails open on any error
 
 ### 8. Memory (`utils/memory/hook.js`)
 
 **Events:** SessionStart, UserPromptSubmit, PreToolUse (`Bash`), PostToolUseFailure (`Bash`),
-SessionEnd
+SessionEnd (Antigravity: `SessionStart`, `PreInvocation`, `PostInvocation`)
 **Purpose:** Personal memory (`pnpm memory`): recall notes from earlier sessions when they are
 relevant, and learn new ones after a session. The same script serves Codex through
 `.codex/hooks.json` (`--harness codex`; trust it once with `/hooks`; extraction reads the Codex
-rollout through `condenseCodex`) and DSH through `.dsh/hooks.json` (`--harness dsh`; recall only,
-no SessionEnd; untested).
+rollout through `condenseCodex`), DSH through `.dsh/hooks.json` (`--harness dsh`; recall only, no
+SessionEnd), and Antigravity through `.agents/hooks.json` (`--harness agy`; injects the core block
+at `SessionStart`, recalls prompts on `PreInvocation` turn 0 and failed commands on
+`PostInvocation`, and extracts idle transcripts via `condenseAgy`).
 
 **What it does:**
 

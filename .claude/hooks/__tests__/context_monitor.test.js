@@ -285,6 +285,69 @@ describe('context_monitor', () => {
       );
     });
 
+    test("uses Antigravity's transcript usage on invocationNum === 0 and injects systemMessage", () => {
+      const noteFile = transcript([
+        {
+          type: 'PLANNER_RESPONSE',
+          input_tokens: 50_000,
+          cache_read_tokens: 200_000,
+        },
+      ]);
+      expect(
+        processHookInput(
+          {
+            transcriptPath: noteFile,
+            conversationId: 'agy-1',
+            invocationNum: 1,
+          },
+          {},
+          { harness: 'agy' }
+        )
+      ).toBeNull();
+
+      const noteOut = processHookInput(
+        { transcriptPath: noteFile, conversationId: 'agy-1', invocationNum: 0 },
+        {},
+        { harness: 'agy' }
+      );
+      expect(noteOut).toEqual({
+        injectSteps: [
+          {
+            systemMessage: {
+              systemMessage: expect.stringContaining('25.0%'),
+            },
+          },
+        ],
+      });
+
+      const warnFile = transcript([
+        {
+          type: 'PLANNER_RESPONSE',
+          input_tokens: 100_000,
+          cache_read_tokens: 350_000,
+        },
+      ]);
+      const activeTask = vi.fn(() => 'demo-261122');
+      const warnOut = processHookInput(
+        { transcriptPath: warnFile, conversationId: 'agy-1', invocationNum: 0 },
+        {},
+        { harness: 'agy', activeTask }
+      );
+      expect(activeTask).toHaveBeenCalledWith('agy-1');
+      expect(warnOut).toEqual({
+        injectSteps: [
+          {
+            systemMessage: {
+              systemMessage: expect.stringContaining('demo-261122'),
+              metadata: {
+                user_markdown: expect.stringContaining('[WARNING]'),
+              },
+            },
+          },
+        ],
+      });
+    });
+
     test('stays silent in DSH, which gives hooks no transcript', () => {
       const file = transcript([
         {

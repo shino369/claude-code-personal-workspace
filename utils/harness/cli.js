@@ -20,10 +20,11 @@ import {
   diffEntries,
   hookEntries,
   readHookEntries,
+  renderAgyHooksConfig,
   renderHooksConfig,
 } from './hooks.js';
 import { readPermissions, renderCodexRules } from './permissions.js';
-import { codexRoleFiles } from './roles.js';
+import { agyRoleFiles, codexRoleFiles } from './roles.js';
 import { DSH_BRIDGE_INSTALL, DSH_PATCH } from '../loop/adapters.js';
 
 const MANIFEST = 'utils/harness/hooks.js';
@@ -117,7 +118,15 @@ export function generatedFiles({ specs = HOOKS, rootDir = ROOT_DIR } = {}) {
       { file: DSH_PATCH, content: DSH_PATCH_CONTENT }
     );
   }
-  files.push(...codexRoleFiles(rootDir));
+  const agy = renderAgyHooksConfig({ specs });
+  if (agy) {
+    files.push({
+      file: '.agents/hooks.json',
+      content: `${JSON.stringify(agy, null, 2)}\n`,
+      json: true,
+    });
+  }
+  files.push(...codexRoleFiles(rootDir), ...agyRoleFiles(rootDir));
   const settings = readSettings(rootDir);
   if (settings) {
     files.push({
@@ -254,7 +263,7 @@ const COMMANDS = {
     deps.log(
       [
         'Usage:',
-        `  pnpm harness sync    write the Codex/DSH files generated from ${MANIFEST}`,
+        `  pnpm harness sync    write the Codex/DSH/Antigravity files generated from ${MANIFEST}`,
         `  pnpm harness check   fail when a generated file or ${CLAUDE_SETTINGS} hooks differ from it`,
         '  pnpm harness help    show this help (the default)',
       ].join('\n')

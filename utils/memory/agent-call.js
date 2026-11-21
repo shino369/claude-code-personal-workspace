@@ -17,8 +17,26 @@ import { EXTRACT_ENV } from './queue.js';
 
 export const AGENT_CALL_TIMEOUT_MS = 5 * 60 * 1000;
 /** The agents a memory job can call. */
-export const CALL_AGENTS = /** @type {const} */ (['claude', 'codex', 'dsh']);
+export const CALL_AGENTS = /** @type {const} */ ([
+  'claude',
+  'codex',
+  'dsh',
+  'agy',
+]);
 const ERROR_TAIL = 300;
+const AGY_ISOLATION_SETTINGS = JSON.stringify({
+  toolPermission: 'strict',
+  permissions: {
+    deny: [
+      'command(*)',
+      'write_file(*)',
+      'read_file(*)',
+      'read_url(*)',
+      'execute_url(*)',
+      'mcp(*)',
+    ],
+  },
+});
 const DSH_PERSONA_PATCH = fileURLToPath(
   new URL('./dsh-persona.patch.yml', import.meta.url)
 );
@@ -104,6 +122,14 @@ export function headlessCommand({ agent, model = null, rootDir }) {
         0,
         '--patch',
         DSH_PERSONA_PATCH
+      );
+      break;
+    case 'agy':
+      args.splice(
+        args.lastIndexOf('--settings'),
+        2,
+        '--settings',
+        AGY_ISOLATION_SETTINGS
       );
       break;
   }

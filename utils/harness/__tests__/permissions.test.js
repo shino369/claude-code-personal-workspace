@@ -282,12 +282,90 @@ describe('guardDecision', () => {
     ).toBe('deny');
   });
 
-  test('should resolve . and .. and doubled slashes in relative paths', () => {
-    for (const file of ['./secrets/a', 'x/../secrets/a', 'secrets//a']) {
+  test('should resolve . and .. and doubled slashes in relative, absolute, Windows, and home paths', () => {
+    for (const file of [
+      './secrets/a',
+      'x/../secrets/a',
+      'secrets//a',
+      '/proj/sub/../secrets/a',
+      '/proj/./secrets//a',
+      '/../../proj/secrets/a',
+    ]) {
       expect(
         decide({ tool_name: 'edit', tool_input: { file_path: file } })?.decision
       ).toBe('deny');
     }
+    expect(
+      decide({
+        tool_name: 'read',
+        tool_input: { file_path: '~/sub/../.ssh/authorized_keys' },
+      })?.decision
+    ).toBe('deny');
+    for (const winPath of [
+      'C:\\proj\\.\\secrets\\a',
+      '\\proj\\secrets\\new.txt',
+      '\\proj\\sub\\..\\secrets\\new.txt',
+    ]) {
+      expect(
+        guardDecision(
+          {
+            cwd: 'C:\\proj',
+            toolCall: {
+              name: 'write_file',
+              args: { Path: winPath },
+            },
+          },
+          PERMS,
+          {
+            harness: 'agy',
+            projectDir: 'C:\\proj',
+            home: 'C:\\Users\\me',
+            platform: 'win32',
+          }
+        )?.decision
+      ).toBe('deny');
+    }
+    for (const homePath of [
+      '~\\.ssh\\id_rsa',
+      '~\\sub\\..\\.ssh\\authorized_keys',
+    ]) {
+      expect(
+        guardDecision(
+          {
+            cwd: 'C:\\proj',
+            toolCall: {
+              name: 'read_file',
+              args: { Path: homePath },
+            },
+          },
+          PERMS,
+          {
+            harness: 'agy',
+            projectDir: 'C:\\proj',
+            home: 'C:\\Users\\me',
+            platform: 'win32',
+          }
+        )?.decision
+      ).toBe('deny');
+    }
+    expect(
+      guardDecision(
+        {
+          cwd: 'C:\\proj',
+          toolCall: {
+            name: 'write_file',
+            args: { Path: 'C:\\proj\\sub\\..\\..' },
+          },
+        },
+        PERMS,
+        {
+          harness: 'agy',
+          projectDir: 'C:\\proj',
+          home: 'C:\\Users\\me',
+          platform: 'win32',
+        }
+      )
+    ).toBeNull();
     expect(
       decide({
         tool_name: 'edit',
@@ -336,6 +414,45 @@ describe('guardDecision', () => {
     expect(
       decide({ tool_name: 'bash', tool_input: { command: 'ls' } })
     ).toBeNull();
+  });
+
+  test('should deny or ask for Antigravity shell commands, reads, and edits', () => {
+    expect(
+      decide(
+        {
+          toolCall: { name: 'run_command', args: { CommandLine: 'rm -rf x' } },
+        },
+        'agy'
+      )
+    ).toMatchObject({ decision: 'deny' });
+    expect(
+      decide(
+        {
+          toolCall: { name: 'run_command', args: { CommandLine: 'git push' } },
+        },
+        'agy'
+      )
+    ).toMatchObject({ decision: 'ask' });
+    expect(
+      decide(
+        {
+          toolCall: { name: 'run_command', args: { CommandLine: 'pnpm test' } },
+        },
+        'agy'
+      )
+    ).toBeNull();
+    expect(
+      decide(
+        { toolCall: { name: 'read_file', args: { Path: '/proj/.env' } } },
+        'agy'
+      )
+    ).toMatchObject({ decision: 'deny' });
+    expect(
+      decide(
+        { toolCall: { name: 'edit_file', args: { Path: 'secrets/a.txt' } } },
+        'agy'
+      )
+    ).toMatchObject({ decision: 'deny' });
   });
 
   test("should leave Codex shell commands to Codex's own rules", () => {
