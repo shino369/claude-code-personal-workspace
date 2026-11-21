@@ -5,6 +5,7 @@ way: start from the same rules, resume where the last session stopped, keep chec
 work, and get an independent review before a coding task is closed.
 
 The rules agents follow are in `AGENTS.md`. This document explains how the pieces fit together.
+For command syntax and options, see the [CLI reference](cli.md).
 
 ## Design goals
 

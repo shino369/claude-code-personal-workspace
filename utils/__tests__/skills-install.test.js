@@ -300,6 +300,21 @@ describe('installSkills', () => {
 });
 
 describe('main', () => {
+  test.each([[['--help']], [['-h']], [['--only', 'tdd', '--help']]])(
+    'prints help for %j before opening the skills lock or installing',
+    async (argv) => {
+      const rootDir = await makeTempDir();
+      const log = vi.fn();
+      const { calls, spawn } = makeSpawn(0);
+
+      expect(await main({ argv, rootDir, log, spawn })).toBe(0);
+      expect(log).toHaveBeenCalledWith(
+        expect.stringContaining('--only <names>')
+      );
+      expect(calls).toEqual([]);
+    }
+  );
+
   test('passes parsed arguments through', async () => {
     const root = await makeTempDir();
     const lockPath = await writeLock(root, {

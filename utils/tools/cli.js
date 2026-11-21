@@ -40,16 +40,18 @@ Commands
                          --reset starts from an empty registry)
   check                  Re-run every recorded tool's check; exit 1 if any is broken
   show <name>            Details: path, version, headless usage, install hint
-  add <name> --kind agent|cli|runtime|source (--path <p> | --command "<cmd>")
+  add <name> [--kind agent|cli|runtime|source] [--path <p>] [--command "<cmd>"]
       [--via "how installed"] [--check "argv"] [--headless "…"] [--env A,B]
-      [-m "notes"] [--task <name>]
-                         Record a tool the scan cannot find (npx-only, source checkout, …)
+      [--message "notes" | -m "notes"] [--task <name>]
+                         Record a tool using --path, --command, or both.
+                         A source checkout requires --path <directory>.
+                         If the tool is in the catalog, --kind defaults to its catalog kind.
   remove <name>          Forget a tool (does not uninstall anything)
   sources                Print the directory for source checkouts
 
 Options
-  --json   Machine-readable output
-  --help   Show this help
+  --json      Machine-readable output
+  --help, -h  Show this help (also pnpm tools help)
 
 Call another agent: pnpm agent ask --agent <name> "…". Never put secrets in the
 registry; --env records env var names only.`;
@@ -341,7 +343,7 @@ export const COMMANDS = {
   add(options, deps) {
     const name = requireName(
       options,
-      'pnpm tools add <name> --kind agent|cli|runtime|source (--path <p> | --command "<cmd>")'
+      'pnpm tools add <name> [options] (see pnpm tools help)'
     );
     if (!TOOL_NAME_RE.test(name)) {
       throw new Error(

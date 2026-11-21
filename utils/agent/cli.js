@@ -40,7 +40,7 @@ Options
   --task <name>        Save under tasks/<name>/tmp/ (default: the active task;
                        with no active task, logs/<YYYYMMDD>/)
   --json               Print a JSON result instead of the answer
-  --help               Show this help
+  --help, -h           Show this help (also pnpm agent help)
 
 The prompt is the rest of the command line, or stdin when it is "-".
 Exit code: the agent's exit code (1 when it was stopped by the timeout).`;

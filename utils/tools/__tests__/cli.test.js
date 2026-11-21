@@ -135,6 +135,12 @@ describe('help and dispatch', () => {
     expect(run(['scan', '--help']).out).toBe(HELP);
   });
 
+  test('should explain that a source checkout requires a path', () => {
+    expect(run(['help']).out).toContain(
+      'A source checkout requires --path <directory>'
+    );
+  });
+
   test('should default to list and reject unknown commands', () => {
     expect(run([]).out).toContain('No tools recorded on this machine yet.');
     expect(() => run(['nope'])).toThrow('Unknown command "nope"');

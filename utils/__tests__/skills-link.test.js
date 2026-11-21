@@ -372,6 +372,24 @@ describe('formatResult', () => {
 });
 
 describe('main', () => {
+  test.each([
+    [['--help']],
+    [['-h']],
+    [['--check', '--help']],
+    [['--target', '--help']],
+    [['--target', '-h']],
+  ])('should print help for %j before creating skill links', (argv) => {
+    makeSkill(skillsDir(), 'alpha');
+    const lines = /** @type {string[]} */ ([]);
+
+    expect(main({ argv, rootDir: root, log: (m) => lines.push(m) })).toBe(0);
+    expect(lines[0]).toContain('--target <dir>');
+    expect(lines[0]).toContain('default .claude/skills');
+    expect(fs.existsSync(claudeDir())).toBe(false);
+    expect(fs.existsSync(path.join(root, '--help'))).toBe(false);
+    expect(fs.existsSync(path.join(root, '-h'))).toBe(false);
+  });
+
   test('should print a JSON report', () => {
     makeSkill(skillsDir(), 'alpha');
     const lines = /** @type {string[]} */ ([]);

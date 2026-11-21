@@ -256,6 +256,7 @@ const COMMANDS = {
         'Usage:',
         `  pnpm harness sync    write the Codex/DSH files generated from ${MANIFEST}`,
         `  pnpm harness check   fail when a generated file or ${CLAUDE_SETTINGS} hooks differ from it`,
+        '  pnpm harness help    show this help (the default)',
       ].join('\n')
     );
     return 0;

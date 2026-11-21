@@ -167,6 +167,24 @@ describe('main', () => {
     expect(run(['status', '--help']).code).toBe(0);
   });
 
+  test('should show the optional task name on next and done', () => {
+    const { out } = run(['help']);
+
+    expect(out).toMatch(/^  next \[name\]/m);
+    expect(out).toMatch(/^  done \[name\]/m);
+  });
+
+  test('should show e2e and the loop cap as independent settings', () => {
+    const { out } = run(['help']);
+    const settings = out.slice(
+      out.indexOf('\n  set '),
+      out.indexOf('\n  review ')
+    );
+
+    expect(settings).toContain('[--kind code|general] [--e2e required|no]');
+    expect(settings).toContain('[--loop on|off] [--loop-max N]');
+  });
+
   test('should reject an unknown command', () => {
     expect(() => run(['explode'])).toThrow(/Unknown command "explode"/);
   });
