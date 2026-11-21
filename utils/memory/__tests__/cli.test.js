@@ -808,9 +808,9 @@ describe('consolidate and undo', () => {
 });
 
 describe('personalize --persona-file', () => {
-  /** @param {string} text */
-  const personaFile = (text) => {
-    const file = path.join(tmp, 'persona.md');
+  /** @param {string} text @param {string} [name] */
+  const personaFile = (text, name = 'persona.md') => {
+    const file = path.join(tmp, name);
     fs.writeFileSync(file, text);
     return file;
   };
@@ -874,12 +874,26 @@ describe('personalize --persona-file', () => {
     ).toThrow(/has no persona text/);
   });
 
-  test('should apply the same limits and checks as --persona', () => {
+  test.each([
+    [
+      'persona.md',
+      'Fix: pnpm memory personalize --persona-file persona.md --compact',
+    ],
+    [
+      'draft persona.md',
+      'Fix: add --compact to the same command (with only the persona input)',
+    ],
+  ])('should suggest compaction for the oversized file %s', (name, hint) => {
+    personaFile('x'.repeat(2000), name);
+
     expect(() =>
-      run(['personalize', '--persona-file', personaFile('x'.repeat(2000))])
+      run(['personalize', '--persona-file', name], { cwd: tmp })
     ).toThrow(
-      /limit is 1500 \(the persona has room for 1489\)\.[\s\S]*Fix: pnpm memory personalize --persona-file .*persona\.md --compact/
+      `The personalization is 2011 characters; the limit is 1500 (the persona has room for 1489). Shorten the persona or the other fields.\n${hint}`
     );
+  });
+
+  test('should refuse secrets in a persona file', () => {
     expect(() =>
       run(['personalize', '--persona-file', personaFile(`token ${SECRET}`)])
     ).toThrow(/secret/);
