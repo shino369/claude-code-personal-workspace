@@ -296,6 +296,16 @@ describe('formatBrief', () => {
       'Next step: none for you — the rest waits on someone else'
     );
     expect(text).toContain('Waiting: s2. Two — the user submits it');
+    const gated = steps.map((s, i) =>
+      i === 1 ? { ...s, gate: /** @type {const} */ (true) } : s
+    );
+    expect(
+      formatBrief(
+        summarizeTask({ ...task, state: { ...state, steps: gated } }, GIT)
+      )
+    ).toContain(
+      'Waiting: s2. Two (gate: holds the review) — the user submits it'
+    );
     const bare = steps.map(({ note: _n, ...s }) => s);
     expect(
       formatBrief(

@@ -723,6 +723,22 @@ describe('openRound', () => {
     });
     expect(open(waiting).round).toBe(1);
   });
+
+  test('should wait for a gate step unless forced', () => {
+    const gated = codeState({
+      steps: [
+        ...codeState().steps,
+        {
+          ...makeSteps(['Approve the design'])[0],
+          id: 's2',
+          status: 'waiting',
+          gate: true,
+        },
+      ],
+    });
+    expect(() => open(gated)).toThrow('Review finished work: s2 not done yet.');
+    expect(open(gated, true).round).toBe(1);
+  });
 });
 
 describe('formatReviewBrief', () => {

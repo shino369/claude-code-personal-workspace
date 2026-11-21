@@ -402,7 +402,8 @@ export function openRound(state, { fingerprint: print, base, force = false }) {
   const unfinished = state.steps.filter(
     (s) =>
       s.status !== 'done' &&
-      s.status !== 'waiting' &&
+      // A plain wait does not hold back a review of finished work; a gate does.
+      (s.status !== 'waiting' || s.gate === true) &&
       !s.title.startsWith('fix: ')
   );
   if (!force && unfinished.length > 0) {

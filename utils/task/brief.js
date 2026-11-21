@@ -23,7 +23,7 @@ export const LINE_WIDTH = 220;
  *   goal: string,
  *   progress: { done: number, total: number },
  *   nextStep: { id: string | null, title: string, status: string, owner: string | null } | null,
- *   waiting: Array<{ id: string, title: string, note: string | null }>,
+ *   waiting: Array<{ id: string, title: string, note: string | null, gate?: true }>,
  *   next: string | null,
  *   lastVerify: import('./state.js').VerifyResult | null,
  *   loop: import('./state.js').TaskState['loop'] | null,
@@ -119,7 +119,12 @@ export function summarizeTask(task, git) {
         : null,
       waiting: state.steps
         .filter((s) => s.status === 'waiting')
-        .map((s) => ({ id: s.id, title: s.title, note: s.note ?? null })),
+        .map((s) => ({
+          id: s.id,
+          title: s.title,
+          note: s.note ?? null,
+          ...(s.gate ? { gate: true } : {}),
+        })),
       next: state.next ?? lastNext,
       lastVerify: state.lastVerify,
       loop: state.loop,
@@ -238,7 +243,9 @@ export function formatBrief(summary, { active = false } = {}) {
     );
   }
   for (const s of summary.waiting) {
-    lines.push(`Waiting: ${s.id}. ${s.title}${s.note ? ` — ${s.note}` : ''}`);
+    lines.push(
+      `Waiting: ${s.id}. ${s.title}${s.gate ? ' (gate: holds the review)' : ''}${s.note ? ` — ${s.note}` : ''}`
+    );
   }
   if (summary.next) lines.push(`Next (last note): ${summary.next}`);
 
