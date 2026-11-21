@@ -12,6 +12,7 @@
  * Codex rollout (dsh is a later phase).
  */
 import fs from 'fs';
+import { TAIL_CHUNK_BYTES } from '../harness/input.js';
 import { findSecrets, redactSecrets } from '../redact.js';
 
 /** Characters kept per item. */
@@ -340,10 +341,202 @@ export function condenseCodex(text) {
   return { items, model, cwd, dropped };
 }
 
+const AGY_USER_REQUEST_RE =
+  /<USER_REQUEST>\r?\n?([\s\S]*?)\r?\n?<\/USER_REQUEST>/;
+const AGY_EXIT_RE = /^Command exited with code (-?\d+)\.$/m;
+
+/**
+ * Extract the user prompt from an Antigravity `USER_INPUT` step's content.
+ *
+ * @param {unknown} content
+ * @returns {string}
+ */
+function agyPromptOf(content) {
+  if (typeof content !== 'string') return '';
+  const matched = AGY_USER_REQUEST_RE.exec(content);
+  const raw = (matched ? matched[1] : content).replace(REMINDER_RE, '').trim();
+  return NOT_PROMPT_RE.test(raw) ? '' : raw;
+}
+
+/**
+ * Error text of a failed Antigravity `GENERIC` tool result step, or null when
+ * it succeeded. Antigravity records shell non-zero exits in `content` as
+ * `Command exited with code N.` with `status: "DONE"`, and tool errors with
+ * `status: "ERROR"`.
+ *
+ * @param {Record<string, any>} entry
+ * @returns {string | null}
+ */
+function agyFailureText(entry) {
+  const content = typeof entry.content === 'string' ? entry.content : '';
+  const err = typeof entry.error === 'string' ? entry.error : '';
+  const exit = AGY_EXIT_RE.exec(content);
+  const failed =
+    entry.status === 'ERROR' || (exit !== null && Number(exit[1]) !== 0);
+  if (!failed) return null;
+  return [err, content].filter(Boolean).join('\n');
+}
+
+/**
+ * Condense an Antigravity CLI transcript (`transcript_full.jsonl`): typed
+ * prompts from `USER_INPUT`, final text from `PLANNER_RESPONSE` per turn, and
+ * failed `run_command` tool calls paired in order with their following
+ * `GENERIC` tool result steps.
+ *
+ * @param {string} text
+ * @returns {Condensed}
+ */
+export function condenseAgy(text) {
+  /** @type {Item[]} */
+  const items = [];
+  /** @type {Record<string, any>[]} */
+  let pendingCalls = [];
+  let model = null;
+  let dropped = 0;
+  let reply = '';
+  const flushReply = () => {
+    if (reply) {
+      items.push({
+        kind: 'reply',
+        text: clip(redactSecrets(reply), ITEM_CHARS.reply),
+      });
+    }
+    reply = '';
+  };
+
+  for (const line of text.split('\n')) {
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!isObject(entry)) continue;
+
+    if (entry.type === 'USER_INPUT') {
+      pendingCalls = [];
+      const prompt = agyPromptOf(entry.content);
+      if (prompt) {
+        flushReply();
+        items.push({
+          kind: 'user',
+          text: clip(redactSecrets(prompt), ITEM_CHARS.user),
+        });
+      }
+    } else if (entry.type === 'PLANNER_RESPONSE') {
+      if (typeof entry.model === 'string') model = entry.model;
+      if (typeof entry.content === 'string' && entry.content.trim()) {
+        reply = entry.content.trim();
+      }
+      pendingCalls = Array.isArray(entry.tool_calls)
+        ? [...entry.tool_calls]
+        : [];
+    } else if (entry.type === 'GENERIC' && pendingCalls.length > 0) {
+      const call = pendingCalls.shift();
+      if (
+        call?.name !== 'run_command' ||
+        typeof call.args?.CommandLine !== 'string'
+      ) {
+        continue;
+      }
+      const error = agyFailureText(entry);
+      if (error === null) continue;
+      if (findSecrets(call.args.CommandLine).length > 0) {
+        dropped += 1;
+        continue;
+      }
+      items.push({
+        kind: 'failure',
+        command: clip(call.args.CommandLine.trim(), ITEM_CHARS.command),
+        error: clip(redactSecrets(error.trim()), ITEM_CHARS.error),
+      });
+    }
+  }
+  flushReply();
+  return { items, model, cwd: null, dropped };
+}
+
+/**
+ * Failed `run_command` steps from the latest Antigravity invocation, read from
+ * the tail of `transcriptPath`. When `initialNumSteps` is given (as in
+ * `PostInvocation`), only steps at or after that index are inspected; otherwise
+ * the latest `PLANNER_RESPONSE` and its following `GENERIC` steps are used.
+ *
+ * @param {string | undefined} transcriptPath
+ * @param {unknown} [initialNumSteps]
+ * @returns {{ command: string, error: string }[]}
+ */
+export function recentAgyFailures(transcriptPath, initialNumSteps) {
+  if (!transcriptPath) return [];
+  let text;
+  let fd;
+  try {
+    fd = fs.openSync(transcriptPath, 'r');
+    const size = fs.fstatSync(fd).size;
+    const start = Math.max(0, size - TAIL_CHUNK_BYTES);
+    const length = size - start;
+    const buf = Buffer.alloc(length);
+    fs.readSync(fd, buf, 0, length, start);
+    text = buf.toString('utf-8');
+    if (start > 0) {
+      const nl = text.indexOf('\n');
+      text = nl === -1 ? '' : text.slice(nl + 1);
+    }
+  } catch {
+    return [];
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+  /** @type {Record<string, any>[]} */
+  const entries = [];
+  for (const line of text.split('\n')) {
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (isObject(entry)) entries.push(entry);
+  }
+  const hasCutoff = typeof initialNumSteps === 'number';
+  const relevant = hasCutoff
+    ? entries.filter(
+        (e) =>
+          typeof e.step_index === 'number' && e.step_index >= initialNumSteps
+      )
+    : (() => {
+        const idx = entries.findLastIndex((e) => e.type === 'PLANNER_RESPONSE');
+        return idx === -1 ? [] : entries.slice(idx);
+      })();
+  /** @type {{ command: string, error: string }[]} */
+  const failures = [];
+  /** @type {Record<string, any>[]} */
+  let pending = [];
+  for (const entry of relevant) {
+    if (entry.type === 'PLANNER_RESPONSE') {
+      pending = Array.isArray(entry.tool_calls) ? [...entry.tool_calls] : [];
+    } else if (entry.type === 'GENERIC' && pending.length > 0) {
+      const call = pending.shift();
+      if (
+        call?.name !== 'run_command' ||
+        typeof call.args?.CommandLine !== 'string'
+      ) {
+        continue;
+      }
+      const error = agyFailureText(entry);
+      if (error !== null) {
+        failures.push({ command: call.args.CommandLine, error });
+      }
+    }
+  }
+  return failures;
+}
+
 /** Transcript adapters by harness. */
 export const TRANSCRIPT_ADAPTERS = {
   claude: condenseClaude,
   codex: condenseCodex,
+  agy: condenseAgy,
 };
 
 /** @param {Item} item */

@@ -250,22 +250,25 @@ export const SESSION_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
 /**
  * Session ids each harness sets for the model's shell commands, equal to its
- * hooks' `session_id`: Codex (`CODEX_SESSION_ID` is the same value), DSH, and
- * Claude Code. Child agents must not inherit them (utils/loop/adapters.js).
+ * hooks' `session_id`: Codex (`CODEX_SESSION_ID` is the same value), DSH,
+ * Antigravity CLI, and Claude Code. Child agents must not inherit them
+ * (utils/loop/adapters.js).
  */
 export const HARNESS_SESSION_VARS = [
   'CODEX_THREAD_ID',
   'CODEX_SESSION_ID',
   'DSH_SESSION_ID',
+  'ANTIGRAVITY_CONVERSATION_ID',
   'CLAUDE_CODE_SESSION_ID',
 ];
 
 /**
  * The calling session: `$TASK_SESSION` (any harness can set it), else the
- * harness's own id: Codex's `$CODEX_THREAD_ID`, DSH's `$DSH_SESSION_ID`, then
- * Claude Code's `$CLAUDE_CODE_SESSION_ID`. Claude comes last because a codex
- * or dsh started from Claude Code's shell inherits Claude's id. The first one
- * set decides; null when it is not a safe id or none is set.
+ * harness's own id: Codex's `$CODEX_THREAD_ID`, DSH's `$DSH_SESSION_ID`,
+ * Antigravity's `$ANTIGRAVITY_CONVERSATION_ID`, then Claude Code's
+ * `$CLAUDE_CODE_SESSION_ID`. Claude comes last because another harness started
+ * from Claude Code's shell inherits Claude's id. The first one set decides;
+ * null when it is not a safe id or none is set.
  *
  * @param {NodeJS.ProcessEnv} env
  * @returns {string | null}
@@ -275,6 +278,7 @@ export function sessionFromEnv(env) {
     env.TASK_SESSION ||
     env.CODEX_THREAD_ID ||
     env.DSH_SESSION_ID ||
+    env.ANTIGRAVITY_CONVERSATION_ID ||
     env.CLAUDE_CODE_SESSION_ID;
   return id && SESSION_ID_RE.test(id) ? id : null;
 }

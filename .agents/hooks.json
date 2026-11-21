@@ -1,0 +1,103 @@
+{
+  "task-brief": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "node ../.claude/hooks/session_start.js --harness agy",
+        "timeout": 10
+      }
+    ]
+  },
+  "memory": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "node ../utils/memory/hook.js --harness agy",
+        "timeout": 5
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node ../utils/memory/hook.js --harness agy",
+        "timeout": 5
+      }
+    ],
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "node ../utils/memory/hook.js --harness agy",
+        "timeout": 5
+      }
+    ]
+  },
+  "guard": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command|read_file|view_file|edit_file|write_file|write_to_file|replace_file_content|multi_replace_file_content|sed_file|notebook_edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ../.claude/hooks/guard.js --harness agy",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+  "task-loop": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node ../.claude/hooks/task_loop.js --harness agy",
+        "timeout": 300
+      }
+    ]
+  },
+  "task-loop-reset": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node ../.claude/hooks/task_loop.js --reset --harness agy",
+        "timeout": 5
+      }
+    ]
+  },
+  "context-monitor": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node ../.claude/hooks/context_monitor.js --harness agy",
+        "timeout": 5
+      }
+    ]
+  },
+  "audit": {
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ../.claude/hooks/audit_logger.js --harness agy",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "format": {
+    "PostToolUse": [
+      {
+        "matcher": "edit_file|write_file|write_to_file|replace_file_content|multi_replace_file_content|sed_file|notebook_edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ../.claude/hooks/auto_format.js --harness agy",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

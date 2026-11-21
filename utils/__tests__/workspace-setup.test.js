@@ -21,6 +21,7 @@ import {
   stepTools,
   stepHarness,
   stepHarnessAgents,
+  agyTrustsProject,
   codexTrustsProject,
 } from '../workspace-setup.js';
 
@@ -764,6 +765,26 @@ describe('codexTrustsProject', () => {
   });
 });
 
+describe('agyTrustsProject', () => {
+  test('should match normalized paths and ignore case on Windows/macOS', () => {
+    const settings = JSON.stringify({
+      trustedWorkspaces: ['C:\\Work\\Repo\\', '/Users/Me/Proj'],
+    });
+    expect(agyTrustsProject(settings, 'c:\\work\\repo', 'win32')).toBe(true);
+    expect(agyTrustsProject(settings, '/users/me/proj', 'darwin')).toBe(true);
+    expect(agyTrustsProject(settings, '/users/me/proj', 'linux')).toBe(false);
+    expect(agyTrustsProject(settings, '/Users/Me/Proj', 'linux')).toBe(true);
+  });
+
+  test('should return false for invalid JSON, non-array, or non-string entries', () => {
+    expect(agyTrustsProject('{bad', '/repo')).toBe(false);
+    expect(agyTrustsProject('{}', '/repo')).toBe(false);
+    expect(
+      agyTrustsProject(JSON.stringify({ trustedWorkspaces: [42] }), '/repo')
+    ).toBe(false);
+  });
+});
+
 describe('stepHarnessAgents', () => {
   const registryOf = (/** @type {string[]} */ names) => ({
     registry: () => ({
@@ -839,6 +860,27 @@ describe('stepHarnessAgents', () => {
     expect(result).toMatchObject({ id: 'harness-dsh', status: 'warn' });
     expect(result.detail).toContain("DSH cannot run this workspace's hooks");
     expect(result.fix).toMatch(/move the checkout/);
+  });
+
+  test('should report Antigravity trust status from ~/.gemini/antigravity-cli/settings.json', () => {
+    const readFile = vi.fn(() =>
+      JSON.stringify({ trustedWorkspaces: ['/repo'] })
+    );
+    const okDeps = makeDeps({ tools: registryOf(['agy']), readFile });
+    expect(stepHarnessAgents(okDeps)[0]).toMatchObject({
+      id: 'harness-agy',
+      status: 'ok',
+    });
+    expect(readFile).toHaveBeenCalledWith(
+      path.join('/home/u', '.gemini', 'antigravity-cli', 'settings.json')
+    );
+
+    const warnDeps = makeDeps({ tools: registryOf(['agy']) });
+    expect(stepHarnessAgents(warnDeps)[0]).toMatchObject({
+      id: 'harness-agy',
+      status: 'warn',
+      fix: 'run agy in this folder and trust the workspace',
+    });
   });
 });
 

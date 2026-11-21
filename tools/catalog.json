@@ -34,6 +34,15 @@
       "notes": "Reads AGENTS.md, CLAUDE.md, and .agents/skills/. See tasks/*/studies/STUDIES_dsh-harness.md if present."
     },
     {
+      "name": "agy",
+      "kind": "agent",
+      "purpose": "Antigravity CLI: Google Antigravity coding agent",
+      "check": ["agy", "--version"],
+      "headless": "pnpm agent ask --agent agy \"…\"  (raw: agy --input-format stream-json --output-format stream-json --disable-slash-commands)",
+      "docs": "https://antigravity.google/docs/cli/reference",
+      "notes": "Reads AGENTS.md (24,000-byte cap), .agents/skills/, .agents/agents/, and .agents/hooks.json."
+    },
+    {
       "name": "opencode",
       "kind": "agent",
       "purpose": "OpenCode CLI: open-source coding agent (no pnpm loop adapter yet)",

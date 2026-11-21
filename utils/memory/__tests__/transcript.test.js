@@ -4,6 +4,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { TAIL_CHUNK_BYTES } from '../../harness/input.js';
 import { REDACTED } from '../../redact.js';
 import {
   ITEM_CHARS,
@@ -11,11 +12,13 @@ import {
   SESSION_BUDGET,
   TRANSCRIPT_ADAPTERS,
   clip,
+  condenseAgy,
   condenseClaude,
   condenseCodex,
   formatSession,
   isTrivial,
   readNewLines,
+  recentAgyFailures,
 } from '../transcript.js';
 
 const TOKEN = `ghp_${'a1B2c3D4e5'.repeat(4)}`;
@@ -648,6 +651,208 @@ describe('condenseCodex', () => {
 
   test('should be the Codex transcript adapter', () => {
     expect(TRANSCRIPT_ADAPTERS.codex).toBe(condenseCodex);
+  });
+});
+
+describe('condenseAgy and recentAgyFailures', () => {
+  test('should keep USER_REQUEST prompts, final replies, model, and failed run_command steps', () => {
+    const condensed = condenseAgy(
+      jsonl([
+        {
+          step_index: 0,
+          type: 'USER_INPUT',
+          content:
+            '<USER_REQUEST>\nuse pnpm here\n</USER_REQUEST>\n<ADDITIONAL_METADATA>x</ADDITIONAL_METADATA>',
+        },
+        {
+          step_index: 1,
+          type: 'PLANNER_RESPONSE',
+          model: 'gemini-4-neon-low',
+          content: 'Trying first.',
+          tool_calls: [
+            { name: 'read_file', args: { Path: 'a.js' } },
+            { name: 'run_command', args: { CommandLine: 'npm install' } },
+            { name: 'run_command', args: { CommandLine: 'pnpm test' } },
+            { name: 'run_command', args: { CommandLine: 'bad tool' } },
+          ],
+        },
+        {
+          step_index: 2,
+          type: 'GENERIC',
+          status: 'DONE',
+          content: 'file text',
+        },
+        {
+          step_index: 3,
+          type: 'GENERIC',
+          status: 'DONE',
+          content: 'Command exited with code 1.\nnpm ERR! blocked',
+        },
+        {
+          step_index: 4,
+          type: 'GENERIC',
+          status: 'DONE',
+          content: 'Command exited with code 0.\nok',
+        },
+        {
+          step_index: 5,
+          type: 'GENERIC',
+          status: 'ERROR',
+          error: 'tool denied',
+          content: '',
+        },
+        {
+          step_index: 6,
+          type: 'PLANNER_RESPONSE',
+          model: 'gemini-4-neon-low',
+          content: 'Switched to pnpm.',
+        },
+        {
+          step_index: 7,
+          type: 'USER_INPUT',
+          content: 'plain prompt without tags',
+        },
+        {
+          step_index: 8,
+          type: 'USER_INPUT',
+          content: '<USER_REQUEST>\n<task-notification>skip\n</USER_REQUEST>',
+        },
+        { step_index: 9, type: 'USER_INPUT', content: 42 },
+      ])
+    );
+    expect(condensed).toEqual({
+      items: [
+        { kind: 'user', text: 'use pnpm here' },
+        {
+          kind: 'failure',
+          command: 'npm install',
+          error: 'Command exited with code 1.\nnpm ERR! blocked',
+        },
+        { kind: 'failure', command: 'bad tool', error: 'tool denied' },
+        { kind: 'reply', text: 'Switched to pnpm.' },
+        { kind: 'user', text: 'plain prompt without tags' },
+      ],
+      model: 'gemini-4-neon-low',
+      cwd: null,
+      dropped: 0,
+    });
+    expect(TRANSCRIPT_ADAPTERS.agy).toBe(condenseAgy);
+  });
+
+  test('should drop secret commands, redact secrets, and ignore malformed entries', () => {
+    const condensed = condenseAgy(
+      [
+        'not json',
+        '42',
+        JSON.stringify({
+          type: 'PLANNER_RESPONSE',
+          content: '  ',
+          tool_calls: [
+            {
+              name: 'run_command',
+              args: { CommandLine: `curl -H "Authorization: ${TOKEN}" x` },
+            },
+            { name: 'run_command', args: { CommandLine: 'gh status' } },
+          ],
+        }),
+        JSON.stringify({
+          type: 'GENERIC',
+          status: 'ERROR',
+          error: 'denied',
+        }),
+        JSON.stringify({
+          type: 'GENERIC',
+          status: 'DONE',
+          content: `Command exited with code 2.\ntoken ${TOKEN}`,
+        }),
+        JSON.stringify({ type: 'GENERIC', status: 'ERROR', error: 'unpaired' }),
+      ].join('\n')
+    );
+    expect(condensed.dropped).toBe(1);
+    expect(condensed.items).toHaveLength(1);
+    expect(JSON.stringify(condensed.items)).not.toContain(TOKEN);
+    expect(JSON.stringify(condensed.items)).toContain(REDACTED);
+  });
+
+  test('should read recent failed run_command steps by initialNumSteps or last planner step', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-tr-'));
+    try {
+      const file = path.join(dir, 'transcript_full.jsonl');
+      fs.writeFileSync(
+        file,
+        [
+          'bad-json',
+          '7',
+          JSON.stringify({
+            step_index: 1,
+            type: 'PLANNER_RESPONSE',
+            tool_calls: [{ name: 'run_command', args: { CommandLine: 'old' } }],
+          }),
+          JSON.stringify({
+            step_index: 2,
+            type: 'GENERIC',
+            status: 'ERROR',
+            error: 'old err',
+          }),
+          JSON.stringify({
+            step_index: 5,
+            type: 'PLANNER_RESPONSE',
+            tool_calls: [
+              { name: 'read_file', args: { Path: 'x' } },
+              { name: 'run_command', args: { CommandLine: 'ok' } },
+              { name: 'run_command', args: { CommandLine: 'pnpm fail' } },
+            ],
+          }),
+          JSON.stringify({ step_index: 6, type: 'GENERIC', status: 'DONE' }),
+          JSON.stringify({
+            step_index: 7,
+            type: 'GENERIC',
+            status: 'DONE',
+            content: 'Command exited with code 0.',
+          }),
+          JSON.stringify({
+            step_index: 8,
+            type: 'GENERIC',
+            status: 'DONE',
+            content: 'Command exited with code 1.\nERR_PNPM',
+          }),
+          JSON.stringify({ step_index: 9, type: 'GENERIC', status: 'ERROR' }),
+          JSON.stringify({ step_index: 10, type: 'USER_INPUT', content: 'hi' }),
+        ].join('\n')
+      );
+      expect(recentAgyFailures(file, 5)).toEqual([
+        {
+          command: 'pnpm fail',
+          error: 'Command exited with code 1.\nERR_PNPM',
+        },
+      ]);
+      expect(recentAgyFailures(file)).toEqual([
+        {
+          command: 'pnpm fail',
+          error: 'Command exited with code 1.\nERR_PNPM',
+        },
+      ]);
+      expect(recentAgyFailures(undefined, 0)).toEqual([]);
+      expect(recentAgyFailures(path.join(dir, 'missing.jsonl'), 0)).toEqual([]);
+
+      const emptyFile = path.join(dir, 'empty.jsonl');
+      fs.writeFileSync(emptyFile, JSON.stringify({ type: 'USER_INPUT' }));
+      expect(recentAgyFailures(emptyFile)).toEqual([]);
+
+      // Tail-chunk path when file exceeds TAIL_CHUNK_BYTES (with and without newline).
+      const bigFile = path.join(dir, 'big.jsonl');
+      fs.writeFileSync(
+        bigFile,
+        `${JSON.stringify({ step_index: 0, type: 'USER_INPUT', content: 'a'.repeat(TAIL_CHUNK_BYTES + 10) })}\n${JSON.stringify({ step_index: 2, type: 'PLANNER_RESPONSE' })}\n`
+      );
+      expect(recentAgyFailures(bigFile)).toEqual([]);
+
+      const oneLineBig = path.join(dir, 'oneline.jsonl');
+      fs.writeFileSync(oneLineBig, 'x'.repeat(TAIL_CHUNK_BYTES + 50));
+      expect(recentAgyFailures(oneLineBig)).toEqual([]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

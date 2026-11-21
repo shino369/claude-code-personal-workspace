@@ -404,33 +404,44 @@ export function pathMatches(
 }
 
 /**
- * A path as an absolute, forward-slash path: absolute ones (`/x`, `C:/x`) as
- * they are, relative ones against `cwd`. Pure string work, so a POSIX path
- * stays POSIX on Windows and the reverse.
+ * A path as an absolute, forward-slash, normalized path: `.`, `..`, and `//`
+ * segments are collapsed for both relative and absolute/`~/` inputs, keeping a
+ * leading `/` or Windows drive prefix (`C:`). Pure string work, so a POSIX
+ * path stays POSIX on Windows and the reverse.
  *
  * @param {string} cwd
  * @param {string} file
  * @param {string} home a leading `~/` means this
  */
 function absolute(cwd, file, home) {
-  const f = file.startsWith('~/')
-    ? `${toSlash(home)}/${toSlash(file).slice(2)}`
-    : toSlash(file);
-  if (f.startsWith('/') || /^[A-Za-z]:\//.test(f)) return f;
-  const parts = `${toSlash(cwd)}/${f}`.split('/');
+  const f = toSlash(file);
+  const expanded = f.startsWith('~/') ? `${toSlash(home)}/${f.slice(2)}` : f;
+  const cwdSlash = toSlash(cwd);
+  const cwdDrive = /^[A-Za-z]:\//.test(cwdSlash) ? cwdSlash.slice(0, 2) : '';
+  const full = /^[A-Za-z]:\//.test(expanded)
+    ? expanded
+    : expanded.startsWith('/')
+      ? `${cwdDrive}${expanded}`
+      : `${cwdSlash}/${expanded}`;
+  const drive = /^[A-Za-z]:\//.test(full) ? full.slice(0, 2) : '';
+  const body = drive ? full.slice(2) : full;
   /** @type {string[]} */
   const out = [];
-  for (const part of parts) {
-    if (part === '..') out.pop();
-    else if (part !== '.' && (part !== '' || out.length === 0)) out.push(part);
+  for (const part of body.split('/')) {
+    if (part === '..') {
+      if (out.at(-1) !== '') out.pop();
+    } else if (part !== '.' && (part !== '' || out.length === 0)) {
+      out.push(part);
+    }
   }
-  return out.join('/');
+  const normalized = out.join('/') || '/';
+  return drive ? `${drive}${normalized}` : normalized;
 }
 
 /**
  * What the guard hook says about a tool call: deny an edit or a read of a
- * protected path; in DSH also deny or ask for a shell command (Codex has its
- * own command rules). Null to let it through.
+ * protected path; in DSH and Antigravity also deny or ask for a shell command
+ * (Codex has its own command rules). Null to let it through.
  *
  * @param {Record<string, any>} input PreToolUse payload
  * @param {Permissions} permissions
@@ -480,7 +491,8 @@ export function guardDecision(
     return protectedFile(permissions.deny.edit, 'Edit');
   if (event.kind === 'read')
     return protectedFile(permissions.deny.read, 'Read');
-  if (event.kind !== 'shell' || harness !== 'dsh') return null;
+  if (event.kind !== 'shell' || (harness !== 'dsh' && harness !== 'agy'))
+    return null;
   const denied = commandMatch(event.command, permissions.deny.commands);
   if (denied) return { decision: 'deny', reason: justification(denied) };
   return commandMatch(event.command, permissions.ask.commands)

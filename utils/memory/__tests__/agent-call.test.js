@@ -88,9 +88,35 @@ describe('headlessCommand', () => {
     expect(dsh.args).not.toContain('--tools');
   });
 
+  test('should run agy in strict all-tools-denied isolation mode', () => {
+    const agy = headlessCommand({
+      agent: 'agy',
+      model: 'gemini-3.8-flash-low',
+      rootDir: root,
+    });
+    expect(agy.bin).toBe('agy');
+    expect(agy.args).toContain('--disable-slash-commands');
+    expect(agy.args.slice(-2)).toEqual(['--model', 'gemini-3.8-flash-low']);
+    const idx = agy.args.indexOf('--settings');
+    expect(idx).toBeGreaterThan(-1);
+    expect(JSON.parse(agy.args[idx + 1])).toEqual({
+      toolPermission: 'strict',
+      permissions: {
+        deny: [
+          'command(*)',
+          'write_file(*)',
+          'read_file(*)',
+          'read_url(*)',
+          'execute_url(*)',
+          'mcp(*)',
+        ],
+      },
+    });
+  });
+
   test('should refuse an agent memory jobs cannot call', () => {
     expect(() => headlessCommand({ agent: 'gemini', rootDir: root })).toThrow(
-      `Memory jobs run on claude, codex, dsh (got gemini).\nFix: use --agent ${CALL_AGENTS.join('|')}`
+      `Memory jobs run on claude, codex, dsh, agy (got gemini).\nFix: use --agent ${CALL_AGENTS.join('|')}`
     );
   });
 });

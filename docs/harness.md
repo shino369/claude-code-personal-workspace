@@ -1,8 +1,8 @@
 # The workspace harness
 
-How this workspace makes coding agents (Claude Code, Codex, the DeepSeek harness) work the same
-way: start from the same rules, resume where the last session stopped, keep checking their own
-work, and get an independent review before a coding task is closed.
+How this workspace makes coding agents (Claude Code, Codex, the DeepSeek harness, Antigravity CLI)
+work the same way: start from the same rules, resume where the last session stopped, keep checking
+their own work, and get an independent review before a coding task is closed.
 
 The rules agents follow are in `AGENTS.md`. This document explains how the pieces fit together.
 For command syntax and options, see the [CLI reference](cli.md).
@@ -11,8 +11,8 @@ For command syntax and options, see the [CLI reference](cli.md).
 
 - **One source of truth for every harness.** Rules live in `AGENTS.md`, task state in
   `tasks/<task>/state.json`, and both are reached through plain `pnpm` commands, so a weaker model
-  in any harness can follow the same procedure. Hooks add convenience on top (in Claude Code, Codex, and DSH:
-  see "Three harnesses"); they are never the only way to do something.
+  in any harness can follow the same procedure. Hooks add convenience on top (in Claude Code, Codex,
+  DSH, and Antigravity CLI: see "Four harnesses"); they are never the only way to do something.
 - **Machines decide "done", not the agent's opinion.** Verify commands, lint, types, and a
   recorded review gate the work.
 - **Independent review.** The agent that wrote the code never reviews it. A fresh agent reviews,
@@ -41,48 +41,52 @@ For command syntax and options, see the [CLI reference](cli.md).
                  gates: pnpm task check · verify commands · review rounds · pnpm check
 ```
 
-## Three harnesses
+## Four harnesses
 
 Claude Code is the first-class harness: `.claude/settings.json` is hand-written, and nothing there
-is made slower or worse for the others. Codex and DSH run the same hook scripts, started with
-`--harness codex|dsh` and reading their payload through `utils/harness/input.js`. The generated
-files are `.codex/hooks.json`, `.codex/rules/workspace.rules`, `.codex/agents/*.toml`,
-`.dsh/hooks.json`, and `.dsh/workspace.patch.yml`.
+is made slower or worse for the others. Codex, DSH, and Antigravity CLI (`agy`) run the same hook
+scripts, started with `--harness codex|dsh|agy` and reading their payload through
+`utils/harness/input.js`. The generated files are `.codex/hooks.json`,
+`.codex/rules/workspace.rules`, `.codex/agents/*.toml`, `.dsh/hooks.json`,
+`.dsh/workspace.patch.yml`, `.agents/hooks.json`, and `.agents/agents/*.md`.
 
-**DSH is partly tested.** `dsh web` 0.2.2-rc.3 on Windows read `AGENTS.md` and
-`AGENTS.local.md`, saw the skills, and ran `pnpm task`. With the hook commands below, the
-SessionStart brief, UserPromptSubmit, PreToolUse and PostToolUse (guard, audit, and the memory
-triggers), and Stop hooks ran (exit 0). `auto_format` has not run in DSH yet, because the test did
-not make an edit or write tool call, so that cell comes from reading its source and docs. Codex was
-tested live (Codex 0.155): a smoke test of the
-task brief, the Stop verify, formatting of a patch, audit entries, `rm` refused by the rules, and a
-`.env` patch refused by the guard passed 7 of 7.
+**Verification status:**
+
+- **Codex (tested live, 0.155):** task brief, Stop verify, patch formatting, audit entries, `rm`
+  refused by rules, and `.env` patch refused by guard passed 7 of 7.
+- **Antigravity CLI (tested live, `agy` 1.5.14 on Windows):** all 6 hook events (`SessionStart`,
+  `PreInvocation`, `PostInvocation`, `PreToolUse`, `PostToolUse`, `Stop`), guard deny/allow,
+  subagent discovery (`.agents/agents/*.md`), `stream-json` headless read/write/isolated calls, and
+  transcript parsing verified live.
+- **DSH (partly tested, `dsh web` 0.2.2-rc.3 on Windows):** read `AGENTS.md` and `AGENTS.local.md`,
+  saw skills, ran `pnpm task`, and ran SessionStart, UserPromptSubmit, PreToolUse/PostToolUse
+  (guard, audit, memory triggers), and Stop (exit 0). `auto_format` has not run in DSH yet.
 
 ### Behavior matrix
 
 ✅ same behavior · 🟡 close equivalent · ❌ gap
 
-| Behavior                       | Claude Code                     | Codex                                                                           | DSH (partly tested)                                                             |
-| ------------------------------ | ------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `AGENTS.md` rules              | ✅ through `@AGENTS.md`         | ✅ native (the file must stay under 32 KiB)                                     | ✅ native                                                                       |
-| Memory core block              | ✅ `CLAUDE.local.md`            | ✅ SessionStart hook                                                            | ✅ loads `AGENTS.local.md` natively                                             |
-| Memory recall                  | ✅                              | ✅ a failed command is a PostToolUse with a non-zero exit                       | 🟡 prompt and triggers; failures only if the output shows an exit code          |
-| Memory extraction              | ✅ SessionEnd                   | ✅ SessionEnd (3 s cap, queues only) and `condenseCodex` on the rollout         | ❌ no SessionEnd                                                                |
-| Task brief at session start    | ✅ SessionStart                 | ✅ SessionStart                                                                 | ✅ SessionStart                                                                 |
-| `pnpm task` knows the session  | ✅ `CLAUDE_CODE_SESSION_ID`     | ✅ `CODEX_THREAD_ID`                                                            | ✅ `DSH_SESSION_ID` (equal to the hook's `session_id`: unverified)              |
-| Inner loop, review reminders   | ✅ Stop, `--reset` on a prompt  | ✅ same                                                                         | ✅ same; it ignores DSH's "Background subagent … finished" notice               |
-| Wait for a reviewer            | ✅ `background_tasks`           | 🟡 by instruction: `wait_agent` before the turn ends                            | 🟡 a subagent always runs in the background; wait for its notice by instruction |
-| Reviewer and verifier roles    | ✅ `.claude/agents/*.md`        | ✅ generated `.codex/agents/*.toml`                                             | 🟡 the prompt says to follow `.claude/agents/<role>.md`                         |
-| Compaction checkpoint in NOTES | ✅ PreCompact                   | ✅ PreCompact                                                                   | ❌ no event; AGENTS.md says to note before you stop                             |
-| Context-usage warnings         | ✅ transcript usage             | ✅ rollout `token_count`, with the real window size                             | ❌ hooks get no transcript                                                      |
-| Format after edits             | ✅ PostToolUse `Edit\|Write`    | 🟡 queued at PreToolUse of `apply_patch`, formatted at the next tool or at Stop | ✅ PostToolUse on its edit tools                                                |
-| Audit log of tool calls        | ✅                              | ✅ edits are logged from PreToolUse                                             | ✅                                                                              |
-| Command guardrails             | ✅ `permissions.deny` and `ask` | ✅ generated rules (`forbidden`, `prompt`)                                      | 🟡 `guard.js` on `bash\|pwsh` (deny, or ask)                                    |
-| Secret files                   | ✅ `Read` and `Edit` deny       | 🟡 `guard.js` refuses patches to them; reads by instruction                     | 🟡 `guard.js` on `read`, `edit`, `write`                                        |
-| Skills                         | ✅ `.claude/skills` links       | ✅ native `.agents/skills`                                                      | ✅ native `.agents/skills`                                                      |
-| Path-scoped rules              | ✅ `.claude/rules`              | 🟡 AGENTS.md §7 says to read them                                               | 🟡 same                                                                         |
-| Workflows                      | ✅ `.claude/workflows`          | 🟡 `pnpm swarm`, `pnpm loop --review`                                           | 🟡 same                                                                         |
-| Headless runs                  | ✅                              | ✅                                                                              | ✅ the adapter adds `--patch`                                                   |
+| Behavior                       | Claude Code                     | Codex                                                                           | DSH (partly tested)                                                             | Antigravity CLI (`agy`)                                                                                   |
+| ------------------------------ | ------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `AGENTS.md` rules              | ✅ through `@AGENTS.md`         | ✅ native (under 32 KiB)                                                        | ✅ native                                                                       | ✅ native (24,000-byte per-file cap; tested in CI)                                                        |
+| Memory core block              | ✅ `CLAUDE.local.md`            | ✅ SessionStart hook                                                            | ✅ loads `AGENTS.local.md` natively                                             | ✅ SessionStart hook (`injectSteps`)                                                                      |
+| Memory recall                  | ✅                              | ✅ a failed command is a PostToolUse with a non-zero exit                       | 🟡 prompt and triggers; failures only if the output shows an exit code          | 🟡 prompt (`PreInvocation` turn 0) & failures (`PostInvocation` transcript); no PreToolUse trigger inject |
+| Memory extraction              | ✅ SessionEnd                   | ✅ SessionEnd (3 s cap, queues only) and `condenseCodex` on the rollout         | ❌ no SessionEnd                                                                | 🟡 no SessionEnd; `SessionStart` catch-up queues idle transcripts (`condenseAgy`) + `pnpm memory extract` |
+| Task brief at session start    | ✅ SessionStart                 | ✅ SessionStart                                                                 | ✅ SessionStart                                                                 | ✅ SessionStart (`injectSteps`)                                                                           |
+| `pnpm task` knows the session  | ✅ `CLAUDE_CODE_SESSION_ID`     | ✅ `CODEX_THREAD_ID`                                                            | ✅ `DSH_SESSION_ID` (equal to the hook's `session_id`: unverified)              | ✅ `ANTIGRAVITY_CONVERSATION_ID`                                                                          |
+| Inner loop, review reminders   | ✅ Stop, `--reset` on a prompt  | ✅ same                                                                         | ✅ same; ignores DSH's "Background subagent … finished" notice                  | ✅ Stop (`decision: "continue"`), `--reset` on `PreInvocation` (`invocationNum === 0`)                    |
+| Wait for a reviewer            | ✅ `background_tasks`           | 🟡 by instruction: `wait_agent` before the turn ends                            | 🟡 a subagent always runs in the background; wait for its notice by instruction | ✅ `Stop` checks `fullyIdle === false` while background subagents run                                     |
+| Reviewer and verifier roles    | ✅ `.claude/agents/*.md`        | ✅ generated `.codex/agents/*.toml`                                             | 🟡 the prompt says to follow `.claude/agents/<role>.md`                         | ✅ generated `.agents/agents/*.md` (`invoke_subagent`)                                                    |
+| Compaction checkpoint in NOTES | ✅ PreCompact                   | ✅ PreCompact                                                                   | ❌ no event; AGENTS.md says to note before you stop                             | ❌ no PreCompact event; AGENTS.md says to note before you stop                                            |
+| Context-usage warnings         | ✅ transcript usage             | ✅ rollout `token_count`, with the real window size                             | ❌ hooks get no transcript                                                      | ✅ `PLANNER_RESPONSE` tokens in `transcript_full.jsonl` (`PreInvocation` turn 0)                          |
+| Format after edits             | ✅ PostToolUse `Edit\|Write`    | 🟡 queued at PreToolUse of `apply_patch`, formatted at the next tool or at Stop | ✅ PostToolUse on its edit tools                                                | ✅ PostToolUse on its edit tools                                                                          |
+| Audit log of tool calls        | ✅                              | ✅ edits are logged from PreToolUse                                             | ✅                                                                              | ✅ PostToolUse (`*`)                                                                                      |
+| Command guardrails             | ✅ `permissions.deny` and `ask` | ✅ generated rules (`forbidden`, `prompt`)                                      | 🟡 `guard.js` on `bash\|pwsh` (deny, or ask)                                    | 🟡 `guard.js` on `run_command` (deny, or ask)                                                             |
+| Secret files                   | ✅ `Read` and `Edit` deny       | 🟡 `guard.js` refuses patches to them; reads by instruction                     | 🟡 `guard.js` on `read`, `edit`, `write`                                        | 🟡 `guard.js` on `read_file`/`view_file` and edit tools                                                   |
+| Skills                         | ✅ `.claude/skills` links       | ✅ native `.agents/skills`                                                      | ✅ native `.agents/skills`                                                      | ✅ native `.agents/skills`                                                                                |
+| Path-scoped rules              | ✅ `.claude/rules`              | 🟡 AGENTS.md §7 says to read them                                               | 🟡 same                                                                         | 🟡 same (CLI loads `AGENTS.md`/`GEMINI.md` only)                                                          |
+| Workflows                      | ✅ `.claude/workflows`          | 🟡 `pnpm swarm`, `pnpm loop --review`                                           | 🟡 same                                                                         | 🟡 same (plus native `run_workflow` / `pnpm swarm` / `pnpm loop --review`)                                |
+| Headless runs                  | ✅                              | ✅                                                                              | ✅ the adapter adds `--patch`                                                   | ✅ `stream-json` I/O with `--settings` permissions                                                        |
 
 Notes:
 
@@ -92,23 +96,36 @@ Notes:
   does not reject the files. Paths outside the workspace are skipped.
 - **Guardrails.** Claude Code enforces `.claude/settings.json` `permissions` itself, so the guard is
   not wired there. Codex gets shell rules from `.codex/rules/workspace.rules` and path checks on
-  patches from `.claude/hooks/guard.js`. DSH has no command rules, so `guard.js` also covers its
-  commands. Like Claude's rules, this is a guardrail, not a sandbox.
+  patches from `.claude/hooks/guard.js`. DSH and Antigravity have no project-level command rules
+  file, so `guard.js` also covers their shell commands and protected reads/edits. For Antigravity,
+  `guard.js` must always emit an explicit `{"decision":"allow"}` when allowing a call (an empty
+  `{}` causes Antigravity to deny it). Like Claude's rules, this is a guardrail, not a sandbox.
+- **Antigravity hook timing & payloads.** Antigravity sends camelCase fields (`conversationId`,
+  `transcriptPath`, `hookEventName`, `lastUserInput`, `toolCall: { name, args }`) and runs hooks
+  with cwd `.agents/`, so generated commands use `node ../<script> --harness agy`. `PreInvocation`
+  resets `invocationNum` to `0` at the start of every user turn, so prompt-scoped hooks
+  (`context_monitor`, `task_loop --reset`, memory prompt recall) act only on `invocationNum === 0`.
+  Antigravity does not pass a subagent's role name in hook payloads, so clean-context enforcement
+  for `reviewer`/`verifier` subagents relies on the role prompts (headless `pnpm loop --review`
+  runs them in isolated read-only mode).
 - **Subagent ids.** In Codex, `CODEX_THREAD_ID` of a subagent is its own thread, while hooks see
   the root's id, so a subagent's `pnpm task` command acts on the default task unless it passes
   `--task`.
 
 ### Setup per harness
 
-| Harness     | Once                                                                                                                                                                           | After a change                                                                                |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Claude Code | `pnpm workspace:setup`                                                                                                                                                         | nothing                                                                                       |
-| Codex       | open `codex` in this folder and trust the project (without it Codex ignores `.codex/`), then run `/hooks` to trust the hooks                                                   | run `/hooks` again when `pnpm harness sync` changed a hook; rules apply from the next session |
-| DSH         | install the bridge in each profile you start (below), then always start at the workspace root with `dsh <profile> --patch .dsh/workspace.patch.yml`: DSH has no project config | nothing; `pnpm loop`, `pnpm swarm`, and `pnpm agent ask` pass `--patch` themselves            |
+| Harness         | Once                                                                                                                                                                                     | After a change                                                                                |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Claude Code     | `pnpm workspace:setup`                                                                                                                                                                   | nothing                                                                                       |
+| Codex           | open `codex` in this folder and trust the project (without it Codex ignores `.codex/`), then run `/hooks` to trust the hooks                                                             | run `/hooks` again when `pnpm harness sync` changed a hook; rules apply from the next session |
+| DSH             | install the bridge in each profile you start (below), then always start at the workspace root with `dsh <profile> --patch .dsh/workspace.patch.yml`: DSH has no project config           | nothing; `pnpm loop`, `pnpm swarm`, and `pnpm agent ask` pass `--patch` themselves            |
+| Antigravity CLI | open `agy` in this folder and trust the workspace (recorded in `~/.gemini/antigravity-cli/settings.json`); `.agents/hooks.json`, `.agents/agents/`, `.agents/skills/` load automatically | nothing (run `pnpm harness sync` after changing hooks or roles)                               |
 
 `pnpm workspace:setup` runs `pnpm harness sync`. When Codex is installed it prints a
 `harness-codex` line (a warning if the checkout is not trusted). When DSH is installed it prints a
 `harness-dsh` line with the launch and install commands (it cannot check the bridge plugin yet).
+When Antigravity CLI (`agy`) is installed it prints a `harness-agy` line checking
+`trustedWorkspaces` in `~/.gemini/antigravity-cli/settings.json`.
 
 **DSH bridge install.** `dsh plugin` installs into one profile (`$DSH_HOME/profiles/<name>`):
 `headless` for `pnpm agent ask`, `pnpm loop`, and `pnpm swarm`, `web` for `dsh web`, `tui` for
@@ -144,12 +161,12 @@ commands it loads.
 
 1. **Hook.** Edit `.claude/settings.json` and the manifest `utils/harness/hooks.js` together (the
    manifest lists each hook with its event and matcher per harness), then run `pnpm harness sync`.
-   Commit the generated `.codex/` and `.dsh/` files.
+   Commit the generated `.codex/`, `.dsh/`, and `.agents/` files.
 2. **Permission.** Edit `permissions` in `.claude/settings.json`, then `pnpm harness sync`. It
-   regenerates `.codex/rules/workspace.rules`; `guard.js` reads the same file for DSH and for Codex
-   patches.
+   regenerates `.codex/rules/workspace.rules`; `guard.js` reads the same file for DSH, Antigravity,
+   and Codex patches.
 3. **Role.** Edit `.claude/agents/<role>.md`, then `pnpm harness sync`. It regenerates
-   `.codex/agents/<role>.toml` (no `model` key, so the role inherits the main model).
+   `.codex/agents/<role>.toml` and `.agents/agents/<role>.md` (inheriting the main model).
 
 `pnpm harness check` fails on a stale generated file, and when the `hooks` in
 `.claude/settings.json` differ from the manifest. It never rewrites `.claude/settings.json`.
@@ -157,13 +174,13 @@ commands it loads.
 
 ### What stays Claude-only
 
-| Feature                                                    | Why                                                                                               |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Workflows (`.claude/workflows`)                            | They need Claude's workflow runtime; `pnpm swarm` and `pnpm loop --review` do the same unattended |
-| Path-scoped rules (`.claude/rules`)                        | Only Claude loads them by path; the others get an instruction in AGENTS.md                        |
-| `background_tasks` waiting                                 | Only Claude's Stop input lists running subagents; Codex and DSH wait by instruction               |
-| Permission kinds other than Bash, Read, and Edit           | Web fetch domains and MCP tools have no equivalent in the Codex rules or the guard                |
-| PreCompact, context warnings, and memory extraction in DSH | DSH has no event for the first, no transcript for the second, and no SessionEnd for the third     |
+| Feature                                                    | Why                                                                                                          |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Workflows (`.claude/workflows`)                            | They need Claude's workflow runtime; `pnpm swarm` and `pnpm loop --review` do the same unattended            |
+| Path-scoped rules (`.claude/rules`)                        | Only Claude loads them by path; the others get an instruction in AGENTS.md                                   |
+| Named `background_tasks` waiting                           | Claude's Stop lists running subagents by role; Antigravity checks `fullyIdle`; Codex/DSH wait by instruction |
+| Permission kinds other than Bash, Read, and Edit           | Web fetch domains and MCP tools have no equivalent in the Codex rules or the guard                           |
+| PreCompact (DSH, Antigravity); transcript/SessionEnd (DSH) | Neither DSH nor Antigravity has PreCompact; DSH has no transcript or SessionEnd (Antigravity uses catch-up)  |
 
 ### Known limits of the guardrails
 
@@ -239,9 +256,9 @@ plan: `pnpm task claim` hands each a different ready step (dependencies done) un
 **Which task a command acts on.** Several sessions often work in one checkout at once, so the
 active task is per session: `tasks/.sessions/<id>.json` (the id is `$TASK_SESSION`, else the
 harness's own id, which its hooks also receive: Codex's `$CODEX_THREAD_ID`, DSH's `$DSH_SESSION_ID`,
-then Claude Code's `$CLAUDE_CODE_SESSION_ID`; `pnpm loop`, `swarm`, and `agent ask` do not pass
-these to the agents they start). Claude's `SessionStart` hook binds
-a new session, dormant, to the default task (`tasks/.active`); `new` and `switch` move the
+Antigravity's `$ANTIGRAVITY_CONVERSATION_ID`, then Claude Code's `$CLAUDE_CODE_SESSION_ID`; `pnpm
+loop`, `swarm`, and `agent ask` do not pass these to the agents they start). The `SessionStart` hook
+binds a new session, dormant, to the default task (`tasks/.active`); `new` and `switch` move the
 binding (and the default); the first `pnpm task` command that changes a task engages it. The
 `Stop`, `PreCompact`, and context-monitor hooks act only on an engaged task, so a session that
 only talks, or works on something else, never runs another task's verify or writes into its notes.
@@ -264,9 +281,9 @@ until the step moves on. `pnpm task step <id> remove -m "why"` drops a step adde
 ### 3. Resume
 
 `pnpm task status` prints a brief: goal, progress, next step, steps waiting on someone else, last
-verify, the task's repository and git state, and the last note. The `SessionStart` hook
-(Claude Code, Codex, DSH) injects the session's task's brief on startup, resume, `/clear`, and compaction, plus a `Tools:`
-line. The `PreCompact` hook (Claude Code, Codex) appends a mechanical checkpoint to that task's `NOTES.md` once the
+verify, the task's repository and git state, and the last note. The `SessionStart` hook (Claude
+Code, Codex, DSH, Antigravity) injects the session's task's brief on startup, resume, `/clear`, and
+compaction, plus a `Tools:` line. The `PreCompact` hook (Claude Code, Codex) appends a mechanical checkpoint to that task's `NOTES.md` once the
 session has worked on it. A new session checks the brief's `Git:` line (a `!` marks a branch that
 differs from the last note's), then continues from `Next`.
 
@@ -308,11 +325,12 @@ against `tools/catalog.json`. `pnpm agent ask --agent codex "…"` runs one read
 agent and saves the exchange in the task's `tmp/`. `pnpm loop`, `pnpm swarm`, and the review loop
 use the same adapters (`utils/loop/adapters.js`): fixed argument arrays, prompt on stdin, no shell.
 
-| Agent  | Write mode (fixers)                 | Read mode (reviewers, `agent ask`) |
-| ------ | ----------------------------------- | ---------------------------------- |
-| claude | `-p --permission-mode acceptEdits`  | `-p --permission-mode plan`        |
-| codex  | `exec --sandbox workspace-write`    | `exec --sandbox read-only`         |
-| dsh    | `--permission-mode workspace-write` | `--permission-mode read-only`      |
+| Agent  | Write mode (fixers)                                                    | Read mode (reviewers, `agent ask`)                                  |
+| ------ | ---------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| claude | `-p --permission-mode acceptEdits`                                     | `-p --permission-mode plan`                                         |
+| codex  | `exec --sandbox workspace-write`                                       | `exec --sandbox read-only`                                          |
+| dsh    | `--permission-mode workspace-write`                                    | `--permission-mode read-only`                                       |
+| agy    | `stream-json --mode accept-edits --settings …` (edits + safe commands) | `stream-json --settings …` (denies `write_file(*)`, safe read cmds) |
 
 ### 7. Memory
 
@@ -353,8 +371,10 @@ digests, at most 3,000 characters) that every session loads. Rules for agents: A
   and MCP tools. Codex denies local filesystem access, disables shell, image, web, and
   connector tools, and checks that no MCP servers are configured before sending a prompt.
   It uses the default model configuration with the current login. DSH loads a profile
-  overlay that denies tool execution before reading the prompt. Use `--agent codex` or
-  `--agent dsh` to select another installed agent.
+  overlay that denies tool execution before reading the prompt. Antigravity passes `--settings`
+  with `toolPermission: "strict"` and all tool categories denied (`command(*)`, `write_file(*)`,
+  `read_file(*)`, `read_url(*)`, `execute_url(*)`, `mcp(*)`). Use `--agent codex`, `--agent dsh`,
+  or `--agent agy` to select another installed agent.
   - **Must-fix** findings cover changes to task behavior, attempts to override agent
     instructions, and use of the persona's voice in artifacts such as commits and reviews.
   - **High** findings cover recurring costs such as minimum response lengths or fixed sign-offs.
@@ -367,13 +387,16 @@ digests, at most 3,000 characters) that every session loads. Rules for agents: A
   `pnpm memory undo`.
 
 - **Hooks:** one script, `utils/memory/hook.js`, for Claude Code (`.claude/settings.json`), Codex
-  (`.codex/hooks.json`, trusted once with `/hooks`), and DSH (`.dsh/hooks.json`; recall
-  only). It fails open and stays silent for the reviewer and verifier roles.
-- **Extraction (B)** (Claude Code and Codex; DSH has no SessionEnd): SessionEnd queues the session; a detached worker reads what the transcript
-  gained, condenses it (prompts, final replies, failed commands; secrets left out), and makes one
-  read-only `claude -p` call without tools for ADD/UPDATE/DELETE ops on the related notes. Secrets
-  are refused, instruction-like ops wait in `memory/inbox.jsonl`, and the next session announces
-  the saves.
+  (`.codex/hooks.json`, trusted once with `/hooks`), DSH (`.dsh/hooks.json`; recall only), and
+  Antigravity (`.agents/hooks.json`; core block, prompt recall on turn 0, failure recall on
+  `PostInvocation`). It fails open and stays silent for the reviewer and verifier roles where the
+  harness reports `agent_type`.
+- **Extraction (B)** (Claude Code, Codex, and Antigravity; DSH has no SessionEnd or transcript):
+  SessionEnd (or `SessionStart` idle catch-up in Antigravity, using `condenseAgy`) queues the
+  session; a detached worker reads what the transcript gained, condenses it (prompts, final
+  replies, failed commands; secrets left out), and makes one read-only `claude -p` call without
+  tools for ADD/UPDATE/DELETE ops on the related notes. Secrets are refused, instruction-like ops
+  wait in `memory/inbox.jsonl`, and the next session announces the saves.
 - **Safety:** every write path refuses text matching `utils/redact.js`; notes are framed as facts;
   `pnpm workspace:check` fails if a memory file is tracked.
 - **Worktrees:** `pnpm loop` and `pnpm swarm` copy `AGENTS.local.md` and `CLAUDE.local.md` into
@@ -560,10 +583,10 @@ commands, the last verify to have passed.
 - **Memory recall is by words, not meaning.** A note without the words a later prompt uses is
   not recalled; specific tags (with synonyms and other languages) are the fix. In a small store, one
   generic tag word can recall a note; that fades as the store grows.
-- **Hooks differ per harness.** See the matrix in "Three harnesses". Where a harness lacks a hook
+- **Hooks differ per harness.** See the matrix in "Four harnesses". Where a harness lacks a hook
   event, it gets the same state through `pnpm task status`, and the same enforcement through git
-  hooks and the `done` gate. Codex needs a one-time trust (`/hooks`); DSH needs the bridge plugin
-  in each profile and `--patch` (partly tested).
+  hooks and the `done` gate. Codex needs a one-time trust (`/hooks`); Antigravity needs the
+  workspace trusted; DSH needs the bridge plugin in each profile and `--patch` (partly tested).
 
 ## Where the code lives
 
@@ -575,8 +598,8 @@ commands, the last verify to have passed.
 | `utils/agent/`, `utils/tools/` | `pnpm agent ask`, `pnpm tools`                                                                               |
 | `utils/memory/`                | `pnpm memory`: store, tokenizer, recall, render, hook, extraction, export/import, personalization            |
 | `.claude/hooks/`               | session_start, pre_compact, task_loop, context_monitor, audit_logger, auto_format, guard                     |
-| `utils/harness/`               | `pnpm harness`: hook manifest, hook input parsing, Codex format queue, permissions, Codex roles              |
-| `.codex/`, `.dsh/`             | generated by `pnpm harness sync`: hooks, rules, roles, the DSH overlay                                       |
+| `utils/harness/`               | `pnpm harness`: hook manifest, hook input parsing, Codex format queue, permissions, Codex/Antigravity roles  |
+| `.codex/`, `.dsh/`, `.agents/` | generated by `pnpm harness sync`: hooks, rules, roles, the DSH overlay                                       |
 | `.claude/agents/`              | role prompts (planner, reviewer, verifier, …)                                                                |
 | `.claude/workflows/`           | Claude workflows: review-changes, implement-plan, research                                                   |
 | `templates/task/`              | plan.md, NOTES.md, REVIEW.md, STUDIES.md templates                                                           |

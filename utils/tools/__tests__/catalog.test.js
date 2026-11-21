@@ -62,7 +62,7 @@ describe('loadCatalog', () => {
   test('should load the committed catalog', () => {
     const catalog = loadCatalog();
     expect(catalog.map((t) => t.name)).toEqual(
-      expect.arrayContaining(['claude', 'codex', 'dsh', 'gh', 'node'])
+      expect.arrayContaining(['claude', 'codex', 'dsh', 'agy', 'gh', 'node'])
     );
   });
 

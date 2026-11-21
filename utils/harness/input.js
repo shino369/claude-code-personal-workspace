@@ -1,31 +1,46 @@
 /**
  * What every hook needs to know about the harness that runs it, in one
- * shape. Hook scripts are written once and run under Claude Code, Codex, and
- * DSH (its Claude hooks bridge); each is started with `--harness <name>`
- * (default `claude`) and reads its payload through these helpers.
+ * shape. Hook scripts are written once and run under Claude Code, Codex,
+ * DSH (its Claude hooks bridge), and Antigravity CLI (`agy`); each is started
+ * with `--harness <name>` (default `claude`) and reads its payload through
+ * these helpers.
  *
- * Payload differences this covers (see the harness-parity study):
+ * Payload differences this covers:
+ * - Field casing: Antigravity uses camelCase (`conversationId`, `transcriptPath`,
+ *   `hookEventName`, `lastUserInput`, `toolCall: { name, args }`); the others
+ *   use snake_case (`session_id`, `transcript_path`, `hook_event_name`,
+ *   `prompt`, `tool_name`, `tool_input`).
  * - Tool names: Claude `Bash`/`Edit`/`Write`/`Read`; Codex `Bash` for shell
  *   commands *and* shell-run `apply_patch`, plus an `apply_patch` tool; DSH
- *   `bash`/`pwsh`/`read`/`edit`/`write`/`apply_patch`/`str_replace_editor`.
+ *   `bash`/`pwsh`/`read`/`edit`/`write`/`apply_patch`/`str_replace_editor`;
+ *   Antigravity `run_command`/`read_file`/`view_file`/`edit_file`/`write_file`/
+ *   `write_to_file`/`replace_file_content`/`multi_replace_file_content`/
+ *   `sed_file`/`notebook_edit`.
  * - Patch edits carry no file list: the files come from the patch headers.
  * - Transcripts: Claude JSONL with `message.usage`; Codex rollout JSONL with
- *   `token_count` events; DSH gives hooks none.
+ *   `token_count` events; Antigravity `transcript_full.jsonl` with
+ *   `PLANNER_RESPONSE` token counts; DSH gives hooks none.
  *
  * Pure apart from reading a transcript file; fails soft (null, empty lists).
  */
 import fs from 'fs';
 
-export const HARNESSES = /** @type {const} */ (['claude', 'codex', 'dsh']);
+export const HARNESSES = /** @type {const} */ ([
+  'claude',
+  'codex',
+  'dsh',
+  'agy',
+]);
 /** Bytes read per step when scanning a transcript from its end. */
 export const TAIL_CHUNK_BYTES = 256 * 1024;
 
 /**
  * @typedef {typeof HARNESSES[number]} Harness
  * @typedef {{ kind: 'shell' | 'edit' | 'read' | 'other', name: string, command: string, files: string[], dir?: string }} ToolEvent
+ * @typedef {{ injectSteps: [{ systemMessage: { systemMessage: string, metadata?: { user_markdown: string } } }] }} AgyInjectOutput
  */
 
-const SHELL_TOOLS = new Set(['Bash', 'bash', 'pwsh']);
+const SHELL_TOOLS = new Set(['Bash', 'bash', 'pwsh', 'run_command']);
 const EDIT_TOOLS = new Set([
   'Edit',
   'Write',
@@ -33,8 +48,15 @@ const EDIT_TOOLS = new Set([
   'NotebookEdit',
   'edit',
   'write',
+  'edit_file',
+  'write_file',
+  'write_to_file',
+  'replace_file_content',
+  'multi_replace_file_content',
+  'sed_file',
+  'notebook_edit',
 ]);
-const READ_TOOLS = new Set(['Read', 'read']);
+const READ_TOOLS = new Set(['Read', 'read', 'read_file', 'view_file']);
 // Linear: `[^\n]*` cannot backtrack, and the trimming is done in code.
 const PATCH_HEADER_RE =
   /^[ \t]*\*\*\* (?:Add File|Update File|Delete File|Move to): ([^\n]*)/gm;
@@ -110,15 +132,89 @@ export function parseHarness(argv) {
 
 /**
  * The project the session works in. Claude Code and the DSH bridge set
- * `CLAUDE_PROJECT_DIR`; Codex sets nothing (and may inherit a parent Claude
- * session's value), so it gets the workspace root the hook script lives in.
+ * `CLAUDE_PROJECT_DIR`; Codex and Antigravity set nothing (and may inherit a
+ * parent Claude session's value), so they get the workspace root the hook
+ * script lives in.
  *
  * @param {{ harness: Harness, env: NodeJS.ProcessEnv, rootDir: string }} input
  * @returns {string}
  */
 export function projectDir({ harness, env, rootDir }) {
-  if (harness === 'codex') return rootDir;
+  if (harness === 'codex' || harness === 'agy') return rootDir;
   return env.CLAUDE_PROJECT_DIR || rootDir;
+}
+
+/**
+ * Normalize a harness hook payload into the shared snake_case shape every
+ * hook reads. For Claude Code, Codex, and DSH this returns the object as-is;
+ * for Antigravity (`agy`) it maps camelCase fields (`conversationId`,
+ * `transcriptPath`, `hookEventName`, `lastUserInput`, `toolCall`) alongside
+ * the original fields.
+ *
+ * @param {unknown} input
+ * @param {Harness} [harness]
+ * @returns {Record<string, any>}
+ */
+export function normalizeHookInput(input, harness = 'claude') {
+  const raw =
+    typeof input === 'object' && input !== null && !Array.isArray(input)
+      ? /** @type {Record<string, any>} */ (input)
+      : {};
+  if (harness !== 'agy') return raw;
+  const toolCall =
+    typeof raw.toolCall === 'object' && raw.toolCall !== null
+      ? raw.toolCall
+      : null;
+  return {
+    ...raw,
+    ...(raw.session_id === undefined && raw.conversationId !== undefined
+      ? { session_id: raw.conversationId }
+      : {}),
+    ...(raw.transcript_path === undefined && raw.transcriptPath !== undefined
+      ? { transcript_path: raw.transcriptPath }
+      : {}),
+    ...(raw.hook_event_name === undefined && raw.hookEventName !== undefined
+      ? { hook_event_name: raw.hookEventName }
+      : {}),
+    ...(raw.prompt === undefined && raw.lastUserInput !== undefined
+      ? { prompt: raw.lastUserInput }
+      : {}),
+    ...(raw.tool_name === undefined && toolCall?.name !== undefined
+      ? { tool_name: toolCall.name }
+      : {}),
+    ...(raw.tool_input === undefined && toolCall?.args !== undefined
+      ? { tool_input: toolCall.args }
+      : {}),
+    ...(raw.tool_response === undefined &&
+    typeof raw.error === 'string' &&
+    raw.error
+      ? { tool_response: { error: raw.error } }
+      : {}),
+  };
+}
+
+/**
+ * Build an Antigravity `SessionStart` / `PreInvocation` / `PostInvocation`
+ * step-injection payload. When `userMarkdown` is given, the UI renders it
+ * inline alongside the system message.
+ *
+ * @param {string} text
+ * @param {string} [userMarkdown]
+ * @returns {AgyInjectOutput}
+ */
+export function agyInjectOutput(text, userMarkdown) {
+  return {
+    injectSteps: [
+      {
+        systemMessage: {
+          systemMessage: text,
+          ...(userMarkdown
+            ? { metadata: { user_markdown: userMarkdown } }
+            : {}),
+        },
+      },
+    ],
+  };
 }
 
 /**
@@ -147,13 +243,14 @@ const stringOrEmpty = (value) => (typeof value === 'string' ? value : '');
  */
 export function toolEvent(input) {
   const payload = /** @type {Record<string, any>} */ (input ?? {});
-  const name = stringOrEmpty(payload.tool_name);
+  const name = stringOrEmpty(payload.tool_name ?? payload.toolCall?.name);
   const args = /** @type {Record<string, unknown>} */ (
-    payload.tool_input ?? {}
+    payload.tool_input ?? payload.toolCall?.args ?? {}
   );
-  const command = Array.isArray(args.command)
-    ? args.command.join(' ')
-    : stringOrEmpty(args.command);
+  const rawCommand = args.command ?? args.CommandLine;
+  const command = Array.isArray(rawCommand)
+    ? rawCommand.join(' ')
+    : stringOrEmpty(rawCommand);
   /** @param {ToolEvent['kind']} kind @param {string[]} [files] @param {string} [dir] */
   const event = (kind, files = [], dir) => ({
     kind,
@@ -190,9 +287,14 @@ export function toolEvent(input) {
     return event('edit', patchFiles(command || args.input));
   }
   if (EDIT_TOOLS.has(name)) {
-    return event('edit', one(args.file_path ?? args.notebook_path));
+    return event(
+      'edit',
+      one(args.file_path ?? args.notebook_path ?? args.Path ?? args.TargetFile)
+    );
   }
-  if (READ_TOOLS.has(name)) return event('read', one(args.file_path));
+  if (READ_TOOLS.has(name)) {
+    return event('read', one(args.file_path ?? args.Path ?? args.AbsolutePath));
+  }
   if (name === 'str_replace_editor') {
     return event(command === 'view' ? 'read' : 'edit', one(args.path));
   }
@@ -262,13 +364,15 @@ function parse(line) {
 /**
  * How full the context window is, from the session transcript: `tokens` in
  * context and the model's `window` when the transcript records it (Codex),
- * else null (Claude: the window comes from config). Null without usage data,
- * and always for DSH, whose hooks get no transcript.
+ * else null (Claude and Antigravity: the window comes from config). Null
+ * without usage data, and always for DSH, whose hooks get no transcript.
  *
  * - Claude: the newest assistant entry's usage (input + cache read + cache
  *   creation); accurate when prompt caching is active.
  * - Codex: the newest `token_count` event's `last_token_usage.total_tokens`,
  *   which is what Codex's own context meter counts.
+ * - Antigravity: the newest `PLANNER_RESPONSE` entry's `input_tokens` +
+ *   `cache_read_tokens`.
  *
  * @param {string | undefined} transcriptPath
  * @param {Harness} harness
@@ -290,6 +394,20 @@ export function transcriptUsage(transcriptPath, harness) {
     return {
       tokens: info.last_token_usage.total_tokens,
       window: typeof window === 'number' && window > 0 ? window : null,
+    };
+  }
+  if (harness === 'agy') {
+    const entry = findLastLine(
+      transcriptPath,
+      (e) =>
+        e?.type === 'PLANNER_RESPONSE' &&
+        (typeof e.input_tokens === 'number' ||
+          typeof e.cache_read_tokens === 'number')
+    );
+    if (!entry) return null;
+    return {
+      tokens: (entry.input_tokens || 0) + (entry.cache_read_tokens || 0),
+      window: null,
     };
   }
   const entry = findLastLine(

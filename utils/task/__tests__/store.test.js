@@ -259,11 +259,14 @@ describe('sessionFromEnv', () => {
     expect(sessionFromEnv({})).toBeNull();
   });
 
-  test("should use Codex's thread id, and DSH's session id", () => {
+  test("should use Codex's thread id, DSH's session id, and Antigravity's conversation id", () => {
     expect(sessionFromEnv({ CODEX_THREAD_ID: '01a1f87b-2730' })).toBe(
       '01a1f87b-2730'
     );
     expect(sessionFromEnv({ DSH_SESSION_ID: 'dsh-1' })).toBe('dsh-1');
+    expect(sessionFromEnv({ ANTIGRAVITY_CONVERSATION_ID: 'agy-1' })).toBe(
+      'agy-1'
+    );
   });
 
   test('should prefer TASK_SESSION over every harness id', () => {
@@ -272,13 +275,14 @@ describe('sessionFromEnv', () => {
         TASK_SESSION: 'mine',
         CODEX_THREAD_ID: 'cx-1',
         DSH_SESSION_ID: 'dsh-1',
+        ANTIGRAVITY_CONVERSATION_ID: 'agy-1',
         CLAUDE_CODE_SESSION_ID: 'cc-1',
       })
     ).toBe('mine');
   });
 
-  test('should prefer the Codex id over one inherited from Claude Code', () => {
-    // A codex started from Claude Code's shell inherits CLAUDE_CODE_SESSION_ID.
+  test('should prefer Codex, DSH, and Antigravity ids over one inherited from Claude Code', () => {
+    // A harness started from Claude Code's shell inherits CLAUDE_CODE_SESSION_ID.
     expect(
       sessionFromEnv({
         CODEX_THREAD_ID: 'cx-1',
@@ -291,6 +295,12 @@ describe('sessionFromEnv', () => {
         CLAUDE_CODE_SESSION_ID: 'cc-1',
       })
     ).toBe('dsh-1');
+    expect(
+      sessionFromEnv({
+        ANTIGRAVITY_CONVERSATION_ID: 'agy-1',
+        CLAUDE_CODE_SESSION_ID: 'cc-1',
+      })
+    ).toBe('agy-1');
   });
 
   test('should return null for an id that is not a safe file name', () => {
@@ -301,6 +311,7 @@ describe('sessionFromEnv', () => {
 describe('HARNESS_SESSION_VARS', () => {
   test('should list every harness session variable, not TASK_SESSION', () => {
     expect([...HARNESS_SESSION_VARS].sort()).toEqual([
+      'ANTIGRAVITY_CONVERSATION_ID',
       'CLAUDE_CODE_SESSION_ID',
       'CODEX_SESSION_ID',
       'CODEX_THREAD_ID',

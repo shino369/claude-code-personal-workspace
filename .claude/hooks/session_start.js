@@ -11,6 +11,11 @@
  *
  * Fails open: any error means no output and exit 0.
  */
+import {
+  agyInjectOutput,
+  normalizeHookInput,
+  parseHarness,
+} from '#utils/harness/input.js';
 import { runIfMain } from '#utils/module-runner.js';
 import { sessionBrief } from '#utils/task/cli.js';
 import { defaultDeps } from '#utils/task/deps.js';
@@ -26,21 +31,29 @@ import { readRegistry } from '#utils/tools/registry.js';
 import { ROOT_DIR } from '#utils/workspace-config.js';
 
 /**
- * @typedef {{ source?: string, session_id?: string }} HookInput
- * @typedef {{ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: string } }} HookOutput
+ * @typedef {{ source?: string, session_id?: string, conversationId?: string }} HookInput
+ * @typedef {{ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: string } }} StandardHookOutput
+ * @typedef {StandardHookOutput | import('#utils/harness/input.js').AgyInjectOutput} HookOutput
  */
 
 /**
+ * @template {import('#utils/harness/input.js').Harness} [H='claude']
  * @param {HookInput | undefined} input
- * @param {{ rootDir?: string, brief?: typeof sessionBrief, tools?: (rootDir: string) => string | null }} [options]
+ * @param {{ rootDir?: string, harness?: H, brief?: typeof sessionBrief, tools?: (rootDir: string) => string | null }} [options]
  *   brief gets the deps and the session id
- * @returns {HookOutput | null}
+ * @returns {(H extends 'agy' ? import('#utils/harness/input.js').AgyInjectOutput : StandardHookOutput) | null}
  */
 export function processHookInput(
   input,
-  { rootDir = ROOT_DIR, brief = sessionBrief, tools = registryLine } = {}
+  {
+    rootDir = ROOT_DIR,
+    harness = /** @type {H} */ ('claude'),
+    brief = sessionBrief,
+    tools = registryLine,
+  } = {}
 ) {
-  const session = input?.session_id ?? null;
+  const normalized = normalizeHookInput(input, harness);
+  const session = normalized.session_id ?? null;
   let text;
   try {
     bindNewSession(rootDir, session);
@@ -51,7 +64,7 @@ export function processHookInput(
   const toolText = tools(rootDir);
   if (!text && !toolText) return null;
 
-  const source = input?.source ?? 'startup';
+  const source = normalized.source ?? 'startup';
   const parts = [];
   if (text) {
     parts.push(
@@ -62,12 +75,16 @@ export function processHookInput(
     );
   }
   if (toolText) parts.push(toolText);
-  return {
-    hookSpecificOutput: {
-      hookEventName: 'SessionStart',
-      additionalContext: parts.join('\n'),
-    },
-  };
+  return /** @type {any} */ (
+    harness === 'agy'
+      ? agyInjectOutput(parts.join('\n'))
+      : {
+          hookSpecificOutput: {
+            hookEventName: 'SessionStart',
+            additionalContext: parts.join('\n'),
+          },
+        }
+  );
 }
 
 /**
@@ -107,24 +124,37 @@ export function registryLine(rootDir) {
 
 /* c8 ignore start - stdin/stdout wiring; logic is tested through processHookInput */
 function main() {
+  const harness = parseHarness(process.argv.slice(2));
   let data = '';
   process.stdin.setEncoding('utf-8');
   process.stdin.on('data', (chunk) => {
     data += chunk;
   });
+  const failOpen = () => {
+    if (harness === 'agy') {
+      process.stdout.write('{}', () => process.exit(0));
+      return;
+    }
+    process.exit(0);
+  };
   process.stdin.on('end', () => {
     try {
-      const output = processHookInput(data.trim() ? JSON.parse(data) : {});
-      if (output) {
-        process.stdout.write(JSON.stringify(output), () => process.exit(0));
+      const output = processHookInput(data.trim() ? JSON.parse(data) : {}, {
+        harness,
+      });
+      if (output || harness === 'agy') {
+        process.stdout.write(JSON.stringify(output ?? {}), () =>
+          process.exit(0)
+        );
         return;
       }
     } catch {
-      // Fail open.
+      failOpen();
+      return;
     }
     process.exit(0);
   });
-  process.stdin.on('error', () => process.exit(0));
+  process.stdin.on('error', failOpen);
 }
 /* c8 ignore stop */
 

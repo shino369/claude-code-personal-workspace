@@ -207,6 +207,30 @@ describe('session_start processHookInput', () => {
     expect(context).toContain('Injected on session startup');
   });
 
+  test('should inject Antigravity injectSteps output and bind conversationId', () => {
+    makeTask('demo-261117');
+    fs.writeFileSync(path.join(root, 'tasks', '.active'), 'demo-261117\n');
+
+    const output = processHookInput(
+      { conversationId: 'agy-1' },
+      { rootDir: root, harness: 'agy', tools: () => null }
+    );
+
+    expect(output).toEqual({
+      injectSteps: [
+        {
+          systemMessage: {
+            systemMessage: expect.stringContaining('[Task] demo-261117'),
+          },
+        },
+      ],
+    });
+    expect(readSession(root, 'agy-1')).toMatchObject({
+      task: 'demo-261117',
+      engaged: false,
+    });
+  });
+
   test('should report an unreadable task instead of failing', () => {
     const brief = vi.fn(() => {
       throw new Error('state.json is not valid JSON');

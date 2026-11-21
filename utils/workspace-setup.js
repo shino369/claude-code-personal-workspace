@@ -627,9 +627,40 @@ export function codexTrustsProject(text, root) {
 }
 
 /**
+ * Whether Antigravity CLI settings JSON marks `root` as a trusted workspace
+ * (`trustedWorkspaces` array). The text is only matched, never printed.
+ *
+ * @param {string} text
+ * @param {string} root
+ * @param {string} [platform]
+ * @returns {boolean}
+ */
+export function agyTrustsProject(text, root, platform = process.platform) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  const list = parsed?.trustedWorkspaces;
+  if (!Array.isArray(list)) return false;
+  const ignoreCase = platform === 'win32' || platform === 'darwin';
+  /** @param {string} value */
+  const norm = (value) => {
+    const clean = value.replace(/\\/g, '/').replace(/\/+$/, '');
+    return ignoreCase ? clean.toLowerCase() : clean;
+  };
+  const target = norm(root);
+  return list.some(
+    (entry) => typeof entry === 'string' && norm(entry) === target
+  );
+}
+
+/**
  * Per-agent hints for the generated config: Codex ignores `.codex/` in a
- * project it does not trust, and DSH has no project config, so it must be
- * started with the workspace patch. Only for agents on this machine.
+ * project it does not trust, DSH has no project config so it must be started
+ * with the workspace patch, and Antigravity CLI trusts workspaces in
+ * `~/.gemini/antigravity-cli/settings.json`. Only for agents on this machine.
  *
  * @param {Deps} deps
  * @returns {StepResult[]}
@@ -688,6 +719,39 @@ export function stepHarnessAgents(deps) {
       status: 'ok',
       detail: `start DSH at the workspace root with: dsh <profile> --patch ${DSH_PATCH}; install the hooks bridge once in each profile you start (headless, web, tui), at the version dsh --version prints: ${DSH_BRIDGE_INSTALL} (not checkable yet)`,
     });
+  }
+  if (installed.has('agy')) {
+    const settingsPath = path.join(
+      deps.homedir(),
+      '.gemini',
+      'antigravity-cli',
+      'settings.json'
+    );
+    let trusted = false;
+    try {
+      trusted = agyTrustsProject(
+        deps.readFile(settingsPath),
+        deps.rootDir,
+        deps.platform
+      );
+    } catch {
+      // No readable settings: the workspace is not trusted yet.
+    }
+    results.push(
+      trusted
+        ? {
+            id: 'harness-agy',
+            status: 'ok',
+            detail: 'this checkout is trusted in Antigravity CLI',
+          }
+        : {
+            id: 'harness-agy',
+            status: 'warn',
+            detail:
+              'this checkout is not trusted in Antigravity CLI, so project hooks may not run until trusted',
+            fix: 'run agy in this folder and trust the workspace',
+          }
+    );
   }
   return results;
 }

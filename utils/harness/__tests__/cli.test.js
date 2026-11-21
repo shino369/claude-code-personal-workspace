@@ -3,7 +3,11 @@ import { vi } from 'vitest';
 import os from 'os';
 import path from 'path';
 import { generatedFiles, main } from '../cli.js';
-import { hookEntries, renderHooksConfig } from '../hooks.js';
+import {
+  hookEntries,
+  renderAgyHooksConfig,
+  renderHooksConfig,
+} from '../hooks.js';
 
 /** @type {string} */
 let root;
@@ -115,6 +119,14 @@ describe('pnpm harness sync', () => {
     expect(lines).toContain('Wrote .codex/hooks.json');
   });
 
+  test('should write .agents/hooks.json in Antigravity named-hook format', () => {
+    run(['sync']);
+    expect(JSON.parse(read('.agents/hooks.json'))).toEqual(
+      renderAgyHooksConfig()
+    );
+    expect(read('.agents/hooks.json')).toContain('--harness agy');
+  });
+
   test('should never rewrite .claude/settings.json, and fail when it differs', () => {
     const settings = claudeSettings();
     settings.hooks.Stop = [];
@@ -195,6 +207,7 @@ describe('pnpm harness check', () => {
       '✓ .codex/hooks.json',
       '✓ .dsh/hooks.json',
       '✓ .dsh/workspace.patch.yml',
+      '✓ .agents/hooks.json',
       '✓ .codex/rules/workspace.rules',
     ]);
   });

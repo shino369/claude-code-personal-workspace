@@ -21,7 +21,11 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { parseHarness, toolEvent } from '#utils/harness/input.js';
+import {
+  normalizeHookInput,
+  parseHarness,
+  toolEvent,
+} from '#utils/harness/input.js';
 import { runIfMain } from '#utils/module-runner.js';
 import { REDACTED, isSecretKey, redactSecrets } from '#utils/redact.js';
 import { ROOT_DIR } from '#utils/workspace-config.js';
@@ -41,7 +45,7 @@ export function getLogRoot(
   env = process.env,
   { harness = 'claude', rootDir = ROOT_DIR } = {}
 ) {
-  if (harness === 'codex') return rootDir;
+  if (harness === 'codex' || harness === 'agy') return rootDir;
   return env.CLAUDE_PROJECT_DIR || input.cwd || process.cwd();
 }
 
@@ -95,7 +99,14 @@ export function sanitizeForLogging(data, maxContentLength = 500) {
 
     const clean = sanitizeForLogging(value, maxContentLength);
     if (
-      ['content', 'new_source'].includes(key) &&
+      [
+        'content',
+        'new_source',
+        'Content',
+        'CodeContent',
+        'Replacement',
+        'ReplacementContent',
+      ].includes(key) &&
       typeof clean === 'string' &&
       clean.length > maxContentLength
     ) {
@@ -129,17 +140,21 @@ export function sanitizeForLogging(data, maxContentLength = 500) {
  * @returns {Record<string, unknown>}
  */
 export function buildLogEntry(input, now = new Date(), harness = 'claude') {
+  const normalized = normalizeHookInput(
+    input,
+    /** @type {import('#utils/harness/input.js').Harness} */ (harness)
+  );
   /** @type {Record<string, unknown>} */
   const logEntry = {
     timestamp: now.toISOString(),
     harness: harness === 'claude' ? undefined : harness,
-    session_id: input.session_id,
-    hook_event: input.hook_event_name,
-    tool_name: input.tool_name,
-    tool_input: sanitizeForLogging(input.tool_input || {}),
-    tool_response: sanitizeForLogging(input.tool_response || {}),
-    cwd: input.cwd,
-    permission_mode: input.permission_mode,
+    session_id: normalized.session_id,
+    hook_event: normalized.hook_event_name,
+    tool_name: normalized.tool_name,
+    tool_input: sanitizeForLogging(normalized.tool_input || {}),
+    tool_response: sanitizeForLogging(normalized.tool_response || {}),
+    cwd: normalized.cwd,
+    permission_mode: normalized.permission_mode,
   };
 
   for (const key of Object.keys(logEntry)) {
@@ -180,6 +195,14 @@ export function processHookInput(input, env = process.env, options = {}) {
 
 /* istanbul ignore next - stdin handling is tested via processHookInput */
 function main() {
+  const harness = parseHarness(process.argv.slice(2));
+  const finish = () => {
+    if (harness === 'agy') {
+      process.stdout.write('{}', () => process.exit(0));
+      return;
+    }
+    process.exit(0); // Exit 0 to not block the operation
+  };
   try {
     let inputData = '';
     process.stdin.setEncoding('utf-8');
@@ -190,22 +213,19 @@ function main() {
 
     process.stdin.on('end', () => {
       try {
-        processHookInput(JSON.parse(inputData), process.env, {
-          harness: parseHarness(process.argv.slice(2)),
-        });
-        process.exit(0);
+        processHookInput(JSON.parse(inputData), process.env, { harness });
       } catch (err) {
         console.error(
           `Audit logging error: ${err instanceof Error ? err.message : String(err)}`
         );
-        process.exit(0); // Exit 0 to not block the operation
       }
+      finish();
     });
   } catch (err) {
     console.error(
       `Audit logging error: ${err instanceof Error ? err.message : String(err)}`
     );
-    process.exit(0); // Exit 0 to not block the operation
+    finish();
   }
 }
 

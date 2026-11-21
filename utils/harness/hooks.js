@@ -9,12 +9,20 @@
  * - Codex: `pnpm harness sync` writes `.codex/hooks.json` from it.
  * - DSH: its Claude hooks bridge reads a Claude-format file that
  *   `pnpm harness sync` writes from it.
+ * - Antigravity CLI (`agy`): `pnpm harness sync` writes `.agents/hooks.json`
+ *   in Antigravity's named-hook schema.
  *
  * Within an event, the order of entries does not matter (Claude Code runs
  * matching hooks in parallel), so comparisons ignore it. Pure; no I/O.
  */
 /** SessionStart sources every harness sends on a (re)started session. */
 export const SESSION_SOURCES = 'startup|resume|clear|compact';
+/** Antigravity file-edit tool names across model families. */
+export const AGY_EDIT_MATCHER =
+  'edit_file|write_file|write_to_file|replace_file_content|multi_replace_file_content|sed_file|notebook_edit';
+/** Antigravity tools the guard hook checks (shell, read, edit). */
+export const AGY_GUARD_MATCHER = `run_command|read_file|view_file|${AGY_EDIT_MATCHER}`;
+const AGY_TOOL_EVENTS = new Set(['PreToolUse', 'PostToolUse']);
 
 /**
  * @typedef {import('./input.js').Harness} Harness
@@ -26,6 +34,7 @@ export const SESSION_SOURCES = 'startup|resume|clear|compact';
  * @typedef {{ type: 'command', command: string, timeout?: number }} CommandHook
  * @typedef {{ matcher?: string, hooks: CommandHook[] }} HookGroup
  * @typedef {{ description?: string, hooks: Record<string, HookGroup[]> }} HooksConfig
+ * @typedef {Record<string, Record<string, CommandHook[] | HookGroup[]>>} AgyHooksConfig
  */
 
 /** @type {HookSpec[]} */
@@ -37,6 +46,7 @@ export const HOOKS = [
     claude: [{ event: 'SessionStart', matcher: SESSION_SOURCES }],
     codex: [{ event: 'SessionStart', matcher: SESSION_SOURCES }],
     dsh: [{ event: 'SessionStart', matcher: SESSION_SOURCES }],
+    agy: [{ event: 'SessionStart' }],
   },
   {
     id: 'memory',
@@ -65,6 +75,15 @@ export const HOOKS = [
       { event: 'PreToolUse', matcher: 'bash|pwsh' },
       { event: 'PostToolUse', matcher: 'bash|pwsh' },
     ],
+    // Antigravity: PreInvocation (invocationNum === 0) is per-turn prompt recall;
+    // PostInvocation inspects failed run_command steps in the transcript. No
+    // PreToolUse (allow reasons are not shown to the model) and no SessionEnd
+    // (SessionStart catch-up queues idle transcripts for extraction).
+    agy: [
+      { event: 'SessionStart' },
+      { event: 'PreInvocation' },
+      { event: 'PostInvocation' },
+    ],
   },
   {
     id: 'guard',
@@ -80,6 +99,7 @@ export const HOOKS = [
         matcher: 'bash|pwsh|read|edit|write|apply_patch|str_replace_editor',
       },
     ],
+    agy: [{ event: 'PreToolUse', matcher: AGY_GUARD_MATCHER }],
   },
   {
     id: 'compact-note',
@@ -96,6 +116,7 @@ export const HOOKS = [
     // In Codex it also formats the files edits queued (see format below).
     codex: [{ event: 'Stop' }],
     dsh: [{ event: 'Stop' }],
+    agy: [{ event: 'Stop' }],
   },
   {
     id: 'task-loop-reset',
@@ -105,6 +126,7 @@ export const HOOKS = [
     claude: [{ event: 'UserPromptSubmit' }],
     codex: [{ event: 'UserPromptSubmit' }],
     dsh: [{ event: 'UserPromptSubmit' }],
+    agy: [{ event: 'PreInvocation' }],
   },
   {
     id: 'context-monitor',
@@ -113,6 +135,7 @@ export const HOOKS = [
     claude: [{ event: 'UserPromptSubmit' }],
     // Codex records the window in its rollout; DSH gives hooks no transcript.
     codex: [{ event: 'UserPromptSubmit' }],
+    agy: [{ event: 'PreInvocation' }],
   },
   {
     id: 'audit',
@@ -125,6 +148,7 @@ export const HOOKS = [
       { event: 'PostToolUse', matcher: '*' },
     ],
     dsh: [{ event: 'PostToolUse', matcher: '*' }],
+    agy: [{ event: 'PostToolUse', matcher: '*' }],
   },
   {
     id: 'format',
@@ -144,6 +168,7 @@ export const HOOKS = [
       { event: 'PreToolUse', matcher: 'Bash|apply_patch' },
       { event: 'PostToolUse', matcher: '*' },
     ],
+    agy: [{ event: 'PostToolUse', matcher: AGY_EDIT_MATCHER }],
   },
 ];
 
@@ -160,6 +185,9 @@ export const HOOKS = [
  * - Codex sets no project dir and runs hooks in the session's cwd, so its
  *   commands find the script from the git top level (a worktree's own copy
  *   in a worktree).
+ * - Antigravity runs hooks with cwd set to the directory containing
+ *   `.agents/hooks.json` (`.agents/`), via `sh -c` on Unix and `cmd /c` on
+ *   Windows, so `../<script>` reaches the checkout root portably.
  *
  * @param {Harness} harness
  * @param {Pick<HookSpec, 'script' | 'args'>} spec
@@ -170,6 +198,7 @@ export function hookCommand(harness, { script, args = [] }) {
     claude: `node "$CLAUDE_PROJECT_DIR"/${script}`,
     codex: `node "$(git rev-parse --show-toplevel)/${script}"`,
     dsh: `node "\${CLAUDE_PROJECT_DIR}/${script}"`,
+    agy: `node ../${script}`,
   }[harness];
   return [program, ...args, '--harness', harness].join(' ');
 }
@@ -232,7 +261,10 @@ export function renderHooksConfig(
   return { ...(description === undefined ? {} : { description }), hooks };
 }
 
-/** @param {unknown} value */
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, any>}
+ */
 const isObject = (value) =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -267,6 +299,103 @@ export function readHookEntries(config) {
               }))
           : []
       )
+  );
+}
+
+/**
+ * Render Antigravity's `.agents/hooks.json` format: each manifest spec becomes
+ * a top-level named hook (`{ [id]: { Event: ... } }`). Tool events
+ * (`PreToolUse`, `PostToolUse`) use `{ matcher, hooks }` groups; lifecycle
+ * events (`SessionStart`, `PreInvocation`, `PostInvocation`, `Stop`) use flat
+ * arrays of command hooks. Null when no spec targets `agy`.
+ *
+ * @param {{ specs?: HookSpec[] }} [options]
+ * @returns {AgyHooksConfig | null}
+ */
+export function renderAgyHooksConfig({ specs = HOOKS } = {}) {
+  /** @type {AgyHooksConfig} */
+  const config = {};
+  for (const spec of specs) {
+    const placements = spec.agy ?? [];
+    if (placements.length === 0) continue;
+    /** @type {Record<string, CommandHook[] | HookGroup[]>} */
+    const named = {};
+    for (const placement of placements) {
+      /** @type {CommandHook} */
+      const hook = {
+        type: 'command',
+        command: hookCommand('agy', spec),
+        timeout: placement.timeout ?? spec.timeout,
+      };
+      if (AGY_TOOL_EVENTS.has(placement.event)) {
+        const groups = /** @type {HookGroup[]} */ (
+          named[placement.event] ??= []
+        );
+        const matcher = placement.matcher ?? null;
+        const last = groups.at(-1);
+        if (last && (last.matcher ?? null) === matcher) last.hooks.push(hook);
+        else {
+          groups.push({
+            ...(matcher === null ? {} : { matcher }),
+            hooks: [hook],
+          });
+        }
+      } else {
+        const list = /** @type {CommandHook[]} */ (
+          named[placement.event] ??= []
+        );
+        list.push(hook);
+      }
+    }
+    config[spec.id] = named;
+  }
+  return Object.keys(config).length > 0 ? config : null;
+}
+
+/**
+ * Flatten an Antigravity `.agents/hooks.json` config into `HookEntry[]`.
+ * Disabled hooks (`enabled: false`), malformed entries, and non-command hooks
+ * are skipped.
+ *
+ * @param {unknown} config
+ * @returns {HookEntry[]}
+ */
+export function readAgyHookEntries(config) {
+  if (!isObject(config)) return [];
+  /** @param {any} hook */
+  const isCommand = (hook) =>
+    isObject(hook) &&
+    (hook.type === undefined || hook.type === 'command') &&
+    typeof hook.command === 'string';
+  return Object.values(/** @type {Record<string, unknown>} */ (config)).flatMap(
+    (spec) => {
+      if (!isObject(spec) || spec.enabled === false) return [];
+      return Object.entries(spec).flatMap(([event, value]) => {
+        if (!Array.isArray(value)) return [];
+        if (AGY_TOOL_EVENTS.has(event)) {
+          return value.flatMap((group) =>
+            isObject(group) && Array.isArray(group.hooks)
+              ? group.hooks
+                  .filter(isCommand)
+                  .map((/** @type {any} */ hook) => ({
+                    event,
+                    matcher:
+                      typeof group.matcher === 'string' ? group.matcher : null,
+                    command: hook.command,
+                    timeout:
+                      typeof hook.timeout === 'number' ? hook.timeout : null,
+                  }))
+              : []
+          );
+        }
+        return value.filter(isCommand).map((/** @type {any} */ hook) => ({
+          event,
+          matcher: null,
+          command: hook.command,
+          timeout: typeof hook.timeout === 'number' ? hook.timeout : null,
+        }));
+      });
+    }
   );
 }
 

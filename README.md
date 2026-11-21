@@ -5,7 +5,7 @@
 
 Kyoten (拠点) is a supercharged personal workspace for programming, documentation, research, translation, and
 generative-AI work. It packages reusable rules, subagents, skills, hooks, and a repeatable quality
-gate. Mainly designed for Claude Code, but also works for Codex / DSH.
+gate. Mainly designed for Claude Code, and also works for Codex, DSH, and Antigravity CLI (`agy`).
 
 ## Table of Contents
 
@@ -313,6 +313,7 @@ to read:
 | --------------------------- | -------------------------------------- | ----------------------------------------------------------- |
 | Claude Code                 | `CLAUDE.md` → `@AGENTS.md`             | `.claude/skills/` links (created by `pnpm workspace:setup`) |
 | Codex                       | `AGENTS.md`                            | `.agents/skills/` (native)                                  |
+| Antigravity CLI (`agy`)     | `AGENTS.md` (≤ 24,000 bytes)           | `.agents/skills/` (native); hooks & roles under `.agents/`  |
 | DeepSeek harness and others | `AGENTS.md` (point it there if needed) | `.agents/skills/`, or `pnpm workspace:setup --target <dir>` |
 
 Most of the Claude Code hooks work on other harness after the setup (but some don't). The git hooks in `.githooks/` (enabled by
