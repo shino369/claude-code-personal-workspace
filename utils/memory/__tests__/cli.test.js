@@ -1022,20 +1022,26 @@ describe('personalize --compact and --audit', () => {
     );
   });
 
-  test('should audit the same persona text that a later init reads back', () => {
-    const persona = '# Voice\n\n    - Speak gently.';
-    const runAgent = fakeAgent({ persona });
+  test.each([
+    '# Voice\n\n    - Speak gently.',
+    '## # Voice\nKeep it calm.',
+    '\u001b[31m# Voice\u001b[0m\nKeep it calm.',
+  ])(
+    'should audit the same persona text that a later init reads back (%j)',
+    (persona) => {
+      const runAgent = fakeAgent({ persona });
 
-    expect(
-      run(['personalize', '--compact', '--persona', long], { runAgent }).code
-    ).toBe(0);
-    const applied = readPersonalization(dir);
-    expect(runAgent.mock.calls[1][0].prompt).toContain(
-      `<<<PERSONA\n${applied.persona}\nPERSONA>>>`
-    );
-    run(['init']);
-    expect(readPersonalization(dir)).toEqual(applied);
-  });
+      expect(
+        run(['personalize', '--compact', '--persona', long], { runAgent }).code
+      ).toBe(0);
+      const applied = readPersonalization(dir);
+      expect(runAgent.mock.calls[1][0].prompt).toContain(
+        `<<<PERSONA\n${applied.persona}\nPERSONA>>>`
+      );
+      run(['init']);
+      expect(readPersonalization(dir)).toEqual(applied);
+    }
+  );
 
   test('should hold the same settings lock while init reads a persona draft', () => {
     run(['init']);

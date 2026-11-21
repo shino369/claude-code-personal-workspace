@@ -238,10 +238,11 @@ export function readPersonaSource(file) {
 
 /** @param {string} persona */
 function checkedText(persona) {
-  if (MARKER_RE.test(persona)) {
+  const cleaned = stripVTControlCharacters(persona);
+  if (MARKER_RE.test(cleaned)) {
     throw new MemoryError('invalid', 'The persona holds memory block markers.');
   }
-  const text = stripVTControlCharacters(stripPersonaComments(persona)).trim();
+  const text = stripPersonaComments(cleaned).trim();
   if (!text) {
     throw new MemoryError(
       'invalid',
@@ -329,7 +330,17 @@ export function compactPersona({ persona, settings, agent, deps }) {
   }
   try {
     normalizePersonalization({ ...settings, persona: result.persona });
-    result.persona = checkedText(personaFromMarkdown(result.persona));
+    let text = checkedText(result.persona);
+    // A heading may itself start with a literal #. Audit the text only
+    // after another pass through init's Markdown parser would leave it alone.
+    for (
+      let parsed = personaFromMarkdown(text);
+      parsed !== text;
+      parsed = personaFromMarkdown(text)
+    ) {
+      text = parsed;
+    }
+    result.persona = text;
   } catch (error) {
     throw new Error(
       `The compacted persona was refused: ${/** @type {Error} */ (error).message}`,
