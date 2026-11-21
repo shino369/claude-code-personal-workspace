@@ -10,6 +10,8 @@ import { saveState, tasksRoot, writeActive } from '../../task/store.js';
 import { DEFAULT_CONFIG, writeConfig } from '../config.js';
 import {
   ERROR_CHARS,
+  PERSONA_REMINDER,
+  REMINDER_LANGUAGE_CHARS,
   SESSION_MAX_AGE_MS,
   failureText,
   handleHook,
@@ -27,6 +29,7 @@ import {
   registerOpen,
   tryLock,
 } from '../queue.js';
+import { PERSONALIZATION_FILE, writePersonalization } from '../personalize.js';
 import { RECALL_HEADER } from '../recall.js';
 import { AGENTS_LOCAL_FILE, CLAUDE_LOCAL_FILE, CORE_START } from '../render.js';
 import {
@@ -218,6 +221,87 @@ describe('UserPromptSubmit', () => {
     writeActive(root, 'deps-261120');
 
     expect(context(prompt('keep going'))).toMatch(/- m2 /);
+  });
+});
+
+describe('persona reminder', () => {
+  test('should remind of the persona at a prompt that recalls nothing', () => {
+    writePersonalization(dir, { persona: 'A calm senior engineer.' });
+
+    expect(context(prompt('what a lovely morning'))).toBe(PERSONA_REMINDER);
+  });
+
+  test('should name the language when one is set', () => {
+    writePersonalization(dir, { persona: 'お嬢様', language: '日本語' });
+
+    expect(context(prompt('what a lovely morning'))).toBe(
+      `${PERSONA_REMINDER} Language: 日本語`
+    );
+  });
+
+  test('should keep a long language on one line and clip it', () => {
+    writePersonalization(dir, {
+      language: `Japanese\nalways ${'x'.repeat(REMINDER_LANGUAGE_CHARS)}`,
+    });
+
+    const language = context(prompt('what a lovely morning')).split(
+      'Language: '
+    )[1];
+
+    expect(language).toBe(
+      `Japanese always ${'x'.repeat(REMINDER_LANGUAGE_CHARS - 16)}…`
+    );
+  });
+
+  test('should come before the recalled notes', () => {
+    writePersonalization(dir, { persona: 'A calm senior engineer.' });
+
+    const parts = context(prompt('how do I merge this PR on github')).split(
+      '\n\n'
+    );
+
+    expect(parts[0]).toBe(PERSONA_REMINDER);
+    expect(parts[1].split('\n')[0]).toBe(RECALL_HEADER);
+  });
+
+  test('should repeat at every prompt of a session', () => {
+    writePersonalization(dir, { persona: 'A calm senior engineer.' });
+    prompt('what a lovely morning');
+
+    expect(context(prompt('what a lovely evening'))).toBe(PERSONA_REMINDER);
+  });
+
+  test.each(['/clear', '<task-notification>done</task-notification>'])(
+    'should not remind at %j',
+    (text) => {
+      writePersonalization(dir, { persona: 'A calm senior engineer.' });
+
+      expect(prompt(text)).toBeNull();
+    }
+  );
+
+  test.each(['reviewer', 'verifier'])(
+    'should not remind the %s role',
+    (agent) => {
+      writePersonalization(dir, { persona: 'A calm senior engineer.' });
+
+      expect(
+        hook({
+          hook_event_name: 'UserPromptSubmit',
+          prompt: 'what a lovely morning',
+          agent_type: agent,
+        })
+      ).toBeNull();
+    }
+  );
+
+  test('should still recall when the settings file is broken', () => {
+    fs.writeFileSync(path.join(dir, PERSONALIZATION_FILE), '{nope');
+
+    expect(prompt('what a lovely morning')).toBeNull();
+    expect(
+      context(prompt('how do I merge this PR on github')).split('\n')[0]
+    ).toBe(RECALL_HEADER);
   });
 });
 

@@ -9,8 +9,10 @@
  *   AGENTS.local.md natively); Claude Code only when CLAUDE.local.md is
  *   missing. Both hear when saving is off. /clear and compaction forget what
  *   this session was shown.
- * - UserPromptSubmit: notes recalled for the prompt and the task's goal
- *   (not for slash commands or background-task notifications).
+ * - UserPromptSubmit: a one-line persona reminder when personalization is
+ *   set (the core block loads once; this keeps it near each turn), then the
+ *   notes recalled for the prompt and the task's goal (not for slash
+ *   commands or background-task notifications).
  * - PreToolUse: notes whose triggers are in the command (no scoring).
  * - PostToolUseFailure (Claude) or PostToolUse with a non-zero exit (Codex):
  *   notes recalled for the command and its error output.
@@ -58,6 +60,7 @@ import {
   CLAUDE_LOCAL_FILE,
   renderStored,
 } from './render.js';
+import { readPersonalization } from './personalize.js';
 import { mainCheckout } from './repo.js';
 import {
   CACHE_DIR,
@@ -77,6 +80,11 @@ export const ERROR_CHARS = 600;
 const HARNESSES = ['claude', 'codex', 'dsh'];
 const EXIT_CODE_RE = /\bexit code:?\s*(-?\d+)/i;
 const NOTE_ID_RE = /^- ([mt][1-9]\d*) \(/;
+/** Repeated at every typed prompt, so progress notes keep the persona. */
+export const PERSONA_REMINDER =
+  '[Persona] Every message to the user, progress notes between tool calls included, follows the Personalization section.';
+/** Characters of the language setting quoted in the reminder. */
+export const REMINDER_LANGUAGE_CHARS = 200;
 
 /**
  * @typedef {'claude' | 'codex' | 'dsh'} Harness
@@ -191,6 +199,29 @@ export function failureText(input) {
       ? field
       : Number(EXIT_CODE_RE.exec(text)?.[1] ?? 0);
   return exit === 0 ? null : text.slice(0, ERROR_CHARS);
+}
+
+/**
+ * The persona reminder for the user's settings, or '' without any (or with
+ * a broken settings file: the reminder is optional, recall must still run).
+ *
+ * @param {string} dir the memory directory
+ */
+function personaReminder(dir) {
+  let settings;
+  try {
+    settings = readPersonalization(dir);
+  } catch {
+    return '';
+  }
+  if (Object.keys(settings).length === 0) return '';
+  if (!settings.language) return PERSONA_REMINDER;
+  const language = settings.language.replace(/\s+/g, ' ');
+  return `${PERSONA_REMINDER} Language: ${
+    language.length > REMINDER_LANGUAGE_CHARS
+      ? `${language.slice(0, REMINDER_LANGUAGE_CHARS)}…`
+      : language
+  }`;
 }
 
 /**
@@ -328,8 +359,14 @@ export function handleHook(
     }
     const { goal, repo } = context();
     const query = [prompt, goal].filter(Boolean).join('\n');
-    return inject(store, event, (notes, index) =>
+    const recalled = inject(store, event, (notes, index) =>
       recall(notes, query, { index, repo, usage: readUsage(dir), now })
+    );
+    return contextOutput(
+      event,
+      [personaReminder(dir), recalled?.hookSpecificOutput.additionalContext]
+        .filter(Boolean)
+        .join('\n\n')
     );
   }
   if (event === 'PreToolUse') {
