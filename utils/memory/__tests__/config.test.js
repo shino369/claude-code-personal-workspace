@@ -42,6 +42,7 @@ describe('normalizeConfig', () => {
       offSessions: ['abc-1'],
       extractModel: 'claude-sonnet-5-5',
       budget: 4000,
+      personalizationEnabled: false,
     };
 
     expect(normalizeConfig(config)).toEqual(config);
@@ -52,6 +53,10 @@ describe('normalizeConfig', () => {
     [null, 'must be an object'],
     [{ colour: 'red' }, 'Unknown setting "colour"'],
     [{ off: 'yes' }, 'off must be true or false'],
+    [
+      { personalizationEnabled: 'off' },
+      'personalizationEnabled must be true or false',
+    ],
     [{ offSessions: 'abc' }, 'offSessions must be a list of session ids'],
     [{ offSessions: ['bad id'] }, 'offSessions must be a list of session ids'],
     [{ extractModel: 'two words' }, 'Invalid model name'],
@@ -85,6 +90,16 @@ describe('normalizeConfig', () => {
 describe('readConfig / writeConfig', () => {
   test('should return the defaults without a config file', () => {
     expect(readConfig(dir)).toEqual(DEFAULT_CONFIG);
+  });
+
+  test('should enable personalization when reading an older config file', () => {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, CONFIG_FILE), '{"off":true}');
+
+    expect(readConfig(dir)).toMatchObject({
+      off: true,
+      personalizationEnabled: true,
+    });
   });
 
   test('should round-trip a written config', () => {

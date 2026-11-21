@@ -33,7 +33,7 @@
 import fs from 'fs';
 import path from 'path';
 import { runIfMain } from '../module-runner.js';
-import { SESSION_ID_RE } from '../task/store.js';
+import { SESSION_ID_RE, readIfExists } from '../task/store.js';
 import { ROOT_DIR } from '../workspace-config.js';
 import { readConfig, savingOff } from './config.js';
 import { consolidationDue } from './consolidate.js';
@@ -58,9 +58,11 @@ import {
 import {
   AGENTS_LOCAL_FILE,
   CLAUDE_LOCAL_FILE,
+  CORE_END,
+  CORE_START,
   renderStored,
 } from './render.js';
-import { readPersonalization } from './personalize.js';
+import { readPersonalization, renderPersonalization } from './personalize.js';
 import { mainCheckout } from './repo.js';
 import {
   CACHE_DIR,
@@ -83,6 +85,10 @@ const NOTE_ID_RE = /^- ([mt][1-9]\d*) \(/;
 /** Repeated at every typed prompt, so progress notes keep the persona. */
 export const PERSONA_REMINDER =
   '[Persona] Every message to the user, progress notes between tool calls included, follows the Personalization section.';
+const PERSONALIZATION_OFF =
+  '[Persona] Workspace memory personalization is off. Disregard the memory-generated Personalization section and its persona reminders.';
+const PERSONALIZATION_EMPTY =
+  '[Persona] No workspace memory personalization settings are saved. Use the session’s usual response style.';
 /** Characters of the language setting quoted in the reminder. */
 export const REMINDER_LANGUAGE_CHARS = 200;
 
@@ -210,6 +216,7 @@ export function failureText(input) {
 function personaReminder(dir) {
   let settings;
   try {
+    if (!readConfig(dir).personalizationEnabled) return PERSONALIZATION_OFF;
     settings = readPersonalization(dir);
   } catch {
     return '';
@@ -222,6 +229,38 @@ function personaReminder(dir) {
       ? `${language.slice(0, REMINDER_LANGUAGE_CHARS)}…`
       : language
   }`;
+}
+
+/**
+ * Supply the core when the harness did not load a local file. A linked
+ * worktree can hold an older copy, so supply just its current personalization.
+ *
+ * @param {string} rootDir
+ * @param {string} home
+ * @param {Harness} harness
+ * @param {import('./config.js').MemoryConfig} config
+ */
+function startupMemory(rootDir, home, harness, config) {
+  const localFile = harness === 'dsh' ? AGENTS_LOCAL_FILE : CLAUDE_LOCAL_FILE;
+  if (harness === 'codex' || !fs.existsSync(path.join(rootDir, localFile))) {
+    return renderStored(home, config).block;
+  }
+  if (rootDir === home) return '';
+
+  const local = readIfExists(path.join(rootDir, AGENTS_LOCAL_FILE)) ?? '';
+  const start = local.indexOf(CORE_START);
+  if (start < 0) return renderStored(home, config).block;
+  if (!config.personalizationEnabled) return '';
+
+  const block = local.slice(start, local.indexOf(CORE_END, start));
+  const { personalization } = renderStored(home, config);
+  const current = renderPersonalization(personalization);
+  if (current) {
+    return block.includes(current)
+      ? ''
+      : `[Persona] Apply the current workspace memory personalization below.\n\n${current}`;
+  }
+  return block.includes('\n## Personalization\n') ? PERSONALIZATION_EMPTY : '';
 }
 
 /**
@@ -315,19 +354,11 @@ export function handleHook(
     catchUp(dir, { current: session, now });
     startWorker(true);
     const news = announcement(dir);
-    const off = savingOff(readConfig(dir), session);
+    const config = readConfig(dir);
+    const off = savingOff(config, session);
     const parts = [
-      // The core block, unless the harness loads it from a local file:
-      // Claude Code through CLAUDE.local.md, DSH AGENTS.local.md itself.
-      ...(harness === 'codex' ||
-      !fs.existsSync(
-        path.join(
-          home,
-          harness === 'dsh' ? AGENTS_LOCAL_FILE : CLAUDE_LOCAL_FILE
-        )
-      )
-        ? [renderStored(home).block]
-        : []),
+      startupMemory(rootDir, home, harness, config),
+      config.personalizationEnabled ? '' : PERSONALIZATION_OFF,
       ...(off
         ? [
             `[Memory] Saving to memory is off ${off === 'global' ? 'everywhere' : 'for this session'}: do not save notes (pnpm memory add) unless the user asks; recall still works.`,
@@ -341,7 +372,7 @@ export function handleHook(
               : `${news}\nMention these saves to the user in one line.`,
           ]
         : []),
-    ];
+    ].filter(Boolean);
     const output = contextOutput(event, parts.join('\n\n'));
     return output && news && harness === 'claude'
       ? { ...output, systemMessage: news }

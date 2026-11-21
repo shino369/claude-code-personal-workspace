@@ -152,6 +152,8 @@ pnpm memory personalize --presets   # how agents talk to you (every message to y
 pnpm memory personalize --language "Japanese"   # keep it even when you write in English
 pnpm memory personalize --persona-file persona.md   # a longer persona, written in markdown
 # or keep it in memory/persona.md: pnpm memory init (and workspace:setup) apply your edits
+pnpm memory personalize --off       # pause applying the saved response settings
+pnpm memory personalize --on        # resume applying them in new sessions
 pnpm memory off --session           # an incognito session
 pnpm memory export                  # back up or move: a checksummed .tar.gz; import <file> --dry-run
 ```

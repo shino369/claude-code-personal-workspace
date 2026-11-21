@@ -176,6 +176,8 @@ Settings
                                 Check the persona without changing it. Both commands default
                                 to Claude and use memory/persona.md or the stored persona
                                 when no source flag is given
+  personalize --off | --on     Pause or resume applying saved personalization across sessions.
+                                A new session loads the full settings after --on
   set [--extract-model <model>|default] [--budget <characters>|default]
                                 Extraction model and core block budget
   off [--session] · on [--session]
@@ -213,6 +215,7 @@ const VALUE_FLAGS = {
   '--out': 'out',
 };
 const REPEATABLE = new Set(['triggers']);
+const PERSONALIZATION_TOGGLE_FLAG = /^--(?:on|off)(?:=|$)/;
 const BOOLEAN_FLAGS = {
   '--pin': 'pin',
   '--force': 'force',
@@ -223,6 +226,8 @@ const BOOLEAN_FLAGS = {
   '--reset': 'reset',
   '--show': 'show',
   '--presets': 'presets',
+  '--on': 'on',
+  '--off': 'off',
   '--compact': 'compact',
   '--audit': 'audit',
   '--session': 'session',
@@ -263,7 +268,8 @@ const FIRST_NOTE =
  *   triggers: string[],
  *   pin: boolean, force: boolean, failure: boolean, pinned: boolean,
  *   stale: boolean, all: boolean, reset: boolean, show: boolean,
- *   presets: boolean, compact: boolean, audit: boolean, session: boolean, dryRun: boolean,
+ *   presets: boolean, on?: boolean, off?: boolean, compact: boolean, audit: boolean,
+ *   session: boolean, dryRun: boolean,
  *   allowSecrets: boolean, replace: boolean, json: boolean, help: boolean,
  * }} Options
  *
@@ -310,6 +316,7 @@ export function parseArgs(argv) {
     help: false,
   };
   const record = /** @type {Record<string, unknown>} */ (options);
+  let optionBeforeToggle = '';
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const eq = arg.startsWith('--') ? arg.indexOf('=') : -1;
@@ -318,17 +325,29 @@ export function parseArgs(argv) {
       const key = VALUE_FLAGS[/** @type {keyof typeof VALUE_FLAGS} */ (flag)];
       const value = eq === -1 ? argv[++i] : arg.slice(eq + 1);
       if (value === undefined) throw new Error(`${flag} needs a value`);
+      if (eq === -1 && PERSONALIZATION_TOGGLE_FLAG.test(value)) {
+        optionBeforeToggle = flag;
+      }
       if (REPEATABLE.has(key))
         /** @type {string[]} */ (record[key]).push(value);
       else record[key] = value;
     } else if (Object.hasOwn(BOOLEAN_FLAGS, flag)) {
-      record[BOOLEAN_FLAGS[/** @type {keyof typeof BOOLEAN_FLAGS} */ (flag)]] =
-        true;
+      const key =
+        BOOLEAN_FLAGS[/** @type {keyof typeof BOOLEAN_FLAGS} */ (flag)];
+      if (eq !== -1 && (key === 'on' || key === 'off')) {
+        throw new Error(`${flag} does not take a value`);
+      }
+      record[key] = true;
     } else if (arg.startsWith('-') && arg !== '-') {
       throw new Error(`Unknown option: ${arg} (see pnpm memory help)`);
     } else {
       options.positionals.push(arg);
     }
+  }
+  if (optionBeforeToggle && options.positionals[0] === 'personalize') {
+    throw new Error(
+      `${optionBeforeToggle} needs a value before --on or --off. Use ${optionBeforeToggle}=<value> for literal flag text.`
+    );
   }
   return options;
 }
@@ -381,6 +400,28 @@ const withWarnings = (text, warnings) =>
   [text, ...warnings.map((warning) => `Warning: ${warning}`)].join('\n');
 
 /**
+ * @typedef {import('./config.js').MemoryConfig} MemoryConfig
+ * @param {Deps} deps
+ * @param {(config: MemoryConfig) => MemoryConfig} change
+ * @param {{ refresh?: boolean }} [options]
+ */
+function changeConfig(deps, change, { refresh = false } = {}) {
+  const dir = dirOf(deps);
+  fs.mkdirSync(dir, { recursive: true });
+  return withLock(
+    dir,
+    () => {
+      const config = writeConfig(dir, change(readConfig(dir)));
+      const warnings = refresh
+        ? refreshAfterWrite(deps.rootDir, { lockHeld: true })
+        : [];
+      return { config, warnings };
+    },
+    { label: 'Memory' }
+  );
+}
+
+/**
  * The rendered settings, then the language hint when it applies ('' without
  * settings).
  *
@@ -407,6 +448,20 @@ function output(deps, options, json, text) {
 
 /** @param {Options} options */
 function checkPersonaOptions(options) {
+  if (options.on || options.off) {
+    const { on, off, json: _json, positionals, triggers, ...other } = options;
+    if (on && off) {
+      throw new Error('Use one of --on and --off.');
+    }
+    if (
+      positionals.length !== 1 ||
+      triggers.length > 0 ||
+      Object.values(other).some((value) => value !== false)
+    ) {
+      throw new Error('Use --on or --off by itself, with optional --json.');
+    }
+    return;
+  }
   if (options.compact && options.audit) {
     throw new Error('Use one of --compact and --audit.');
   }
@@ -897,7 +952,11 @@ export const COMMANDS = {
           ? 'off for this session'
           : 'on';
     const fields = Object.keys(core.personalization);
-    const { extractModel } = core.config;
+    const { extractModel, personalizationEnabled } = core.config;
+    const personalizationState = personalizationEnabled ? 'on' : 'off';
+    const hint = personalizationEnabled
+      ? languageHint(core.personalization)
+      : '';
     const last = readJournal(dir).at(-1);
     const extraction = {
       queued: readQueue(dir).length,
@@ -926,6 +985,7 @@ export const COMMANDS = {
         notes: counts,
         core: { chars: core.block.length, budget: core.budget },
         personalization: fields,
+        personalizationEnabled,
         saving,
         extractModel,
         extraction,
@@ -940,8 +1000,8 @@ export const COMMANDS = {
             ? [`Not set up: ${missing.join(', ')}. Fix: pnpm memory init`]
             : []),
           `Core block: ${core.block.length}/${core.budget} characters (${AGENTS_LOCAL_FILE})`,
-          `Personalization: ${fields.length > 0 ? fields.join(', ') : 'not set (pnpm memory personalize --presets)'}`,
-          ...[languageHint(core.personalization)].filter(Boolean),
+          `Personalization: ${personalizationState} (${fields.length > 0 ? fields.join(', ') : 'no settings, see pnpm memory personalize --presets'})`,
+          ...[hint].filter(Boolean),
           `Saving: ${saving}${off ? ' (pnpm memory on)' : ''}`,
           `Extraction model: ${extractModel ?? "the main session's model"}`,
           `Extraction: ${plural(extraction.queued, 'session')} queued; ${lastRun}`,
@@ -1253,6 +1313,26 @@ export const COMMANDS = {
   personalize(options, deps) {
     const dir = dirOf(deps);
     checkPersonaOptions(options);
+    if (options.on || options.off) {
+      const enabled = options.on === true;
+      const { warnings } = changeConfig(
+        deps,
+        (config) => ({ ...config, personalizationEnabled: enabled }),
+        { refresh: true }
+      );
+      output(
+        deps,
+        options,
+        { enabled, warnings },
+        withWarnings(
+          enabled
+            ? 'Personalization is on. Start a new session to load the saved settings.'
+            : 'Personalization is off.',
+          warnings
+        )
+      );
+      return 0;
+    }
     if (options.presets) {
       const presets = listPresets();
       output(
@@ -1292,12 +1372,15 @@ export const COMMANDS = {
     const fields = FIELD_FLAGS.filter((key) => options[key] !== undefined);
     if (!options.reset && options.preset === undefined && fields.length === 0) {
       const settings = readPersonalization(dir);
+      const { personalizationEnabled: enabled } = readConfig(dir);
+      const details =
+        withHint(settings) ||
+        'No personalization set. Start from a preset: pnpm memory personalize --preset <name> (list: --presets), or set fields such as --call-me "<name>".';
       output(
         deps,
         options,
-        { settings },
-        withHint(settings) ||
-          'No personalization set. Start from a preset: pnpm memory personalize --preset <name> (list: --presets), or set fields such as --call-me "<name>".'
+        { enabled, settings },
+        `Personalization is ${enabled ? 'on' : 'off'}.\n\n${details}`
       );
       return 0;
     }
@@ -1345,7 +1428,7 @@ export const COMMANDS = {
           ...(written.persona && written.persona !== before
             ? personaWarnings(written.persona)
             : []),
-          ...refreshAfterWrite(deps.rootDir),
+          ...refreshAfterWrite(deps.rootDir, { lockHeld: true }),
         ];
         output(
           deps,
@@ -1363,31 +1446,23 @@ export const COMMANDS = {
   },
 
   set(options, deps) {
-    const dir = dirOf(deps);
-    let config = readConfig(dir);
+    const updates = /** @type {Partial<MemoryConfig>} */ ({});
     if (options.extractModel !== undefined) {
-      config = {
-        ...config,
-        extractModel:
-          options.extractModel === 'default' ? null : options.extractModel,
-      };
+      updates.extractModel =
+        options.extractModel === 'default' ? null : options.extractModel;
     }
     if (options.budget !== undefined) {
       const { budget } = options;
       if (budget !== 'default' && !/^\d+$/.test(budget)) {
         throw new Error('--budget takes a number of characters, or default.');
       }
-      config = {
-        ...config,
-        budget: budget === 'default' ? null : Number(budget),
-      };
+      updates.budget = budget === 'default' ? null : Number(budget);
     }
-    /** @type {string[]} */
-    let warnings = [];
-    if (options.extractModel !== undefined || options.budget !== undefined) {
-      config = writeConfig(dir, config);
-      warnings = refreshAfterWrite(deps.rootDir);
-    }
+    const { config, warnings } = Object.keys(updates).length
+      ? changeConfig(deps, (current) => ({ ...current, ...updates }), {
+          refresh: true,
+        })
+      : { config: readConfig(dirOf(deps)), warnings: [] };
     output(
       deps,
       options,
@@ -1404,9 +1479,8 @@ export const COMMANDS = {
   },
 
   off(options, deps) {
-    const dir = dirOf(deps);
     const session = options.session ? needSession(deps) : null;
-    writeConfig(dir, setSaving(readConfig(dir), false, session));
+    changeConfig(deps, (config) => setSaving(config, false, session));
     output(
       deps,
       options,
@@ -1417,15 +1491,11 @@ export const COMMANDS = {
   },
 
   on(options, deps) {
-    const dir = dirOf(deps);
     const session = options.session
       ? needSession(deps)
       : sessionFromEnv(deps.env);
-    const config = writeConfig(
-      dir,
-      setSaving(readConfig(dir), true, session, {
-        sessionOnly: options.session,
-      })
+    const { config } = changeConfig(deps, (current) =>
+      setSaving(current, true, session, { sessionOnly: options.session })
     );
     const stillOff = savingOff(config, session) === 'global';
     output(
@@ -1453,6 +1523,9 @@ export function main({ argv = process.argv.slice(2), deps = {} } = {}) {
   }
   if (!Object.hasOwn(COMMANDS, command)) {
     throw new Error(`Unknown command "${command}". Run: pnpm memory help`);
+  }
+  if (command !== 'personalize' && (options.on || options.off)) {
+    throw new Error('--on and --off are only supported on personalize.');
   }
   if (
     command !== 'personalize' &&

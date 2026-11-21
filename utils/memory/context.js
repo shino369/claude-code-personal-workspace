@@ -71,13 +71,14 @@ export function writerSource({
  * index cache. A broken AGENTS.local.md is a warning; the write stands.
  *
  * @param {string} rootDir the checkout that holds memory/
+ * @param {{ lockHeld?: boolean }} [options] caller already holds the memory lock
  * @returns {string[]} warnings
  */
-export function refreshAfterWrite(rootDir) {
+export function refreshAfterWrite(rootDir, options) {
   /** @type {string[]} */
   let warnings;
   try {
-    warnings = renderLocal(rootDir).warnings;
+    warnings = renderLocal(rootDir, options).warnings;
   } catch (error) {
     if (!(error instanceof MemoryError)) throw error;
     warnings = [error.message];
