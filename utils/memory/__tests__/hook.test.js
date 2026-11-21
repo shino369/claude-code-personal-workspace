@@ -7,7 +7,8 @@ import path from 'path';
 import { vi } from 'vitest';
 import { createState } from '../../task/state.js';
 import { saveState, tasksRoot, writeActive } from '../../task/store.js';
-import { DEFAULT_CONFIG, writeConfig } from '../config.js';
+import { CONFIG_FILE, DEFAULT_CONFIG, writeConfig } from '../config.js';
+import { CONSOLIDATED_FILE } from '../consolidate.js';
 import {
   ERROR_CHARS,
   PERSONA_REMINDER,
@@ -21,6 +22,7 @@ import {
   sessionFile,
 } from '../hook.js';
 import {
+  EXTRACT_DIR,
   EXTRACT_ENV,
   IDLE_MS,
   appendJournal,
@@ -31,7 +33,14 @@ import {
 } from '../queue.js';
 import { PERSONALIZATION_FILE, writePersonalization } from '../personalize.js';
 import { RECALL_HEADER } from '../recall.js';
-import { AGENTS_LOCAL_FILE, CLAUDE_LOCAL_FILE, CORE_START } from '../render.js';
+import {
+  AGENTS_LOCAL_FILE,
+  CLAUDE_LOCAL_FILE,
+  CORE_START,
+  copyLocalFiles,
+  initLocal,
+  renderLocal,
+} from '../render.js';
 import {
   CACHE_DIR,
   LOG_FILE,
@@ -225,6 +234,41 @@ describe('UserPromptSubmit', () => {
 });
 
 describe('persona reminder', () => {
+  test.each(/** @type {const} */ (['claude', 'codex', 'dsh']))(
+    'should suppress personalization at startup and on prompts while paused in %s',
+    (harness) => {
+      writePersonalization(dir, {
+        persona: 'A calm senior engineer.',
+        language: '日本語',
+      });
+      const submit = () =>
+        context(
+          hook(
+            { hook_event_name: 'UserPromptSubmit', prompt: 'merge this PR' },
+            { harness }
+          )
+        );
+      expect(submit()).toContain(`${PERSONA_REMINDER} Language: 日本語`);
+
+      writeConfig(dir, { ...DEFAULT_CONFIG, personalizationEnabled: false });
+      const startup = context(
+        hook(
+          { hook_event_name: 'SessionStart', source: 'compact' },
+          { harness }
+        )
+      );
+      expect(startup).toContain('## Memory');
+      expect(startup).toMatch(/personalization is off/i);
+      expect(startup).not.toContain('## Personalization');
+
+      const next = submit();
+      expect(next).toMatch(/personalization is off/i);
+      expect(next).not.toContain(PERSONA_REMINDER);
+      expect(next).not.toContain('日本語');
+      expect(next).toContain(RECALL_HEADER);
+    }
+  );
+
   test('should remind of the persona at a prompt that recalls nothing', () => {
     writePersonalization(dir, { persona: 'A calm senior engineer.' });
 
@@ -451,6 +495,132 @@ describe('SessionStart', () => {
     /** @type {string} */ source,
     harness = /** @type {'claude' | 'codex' | 'dsh'} */ ('claude')
   ) => hook({ hook_event_name: 'SessionStart', source }, { harness });
+
+  function linkedWorktree() {
+    const gitDir = path.join(root, '.git', 'worktrees', 'linked');
+    fs.mkdirSync(gitDir, { recursive: true });
+    fs.writeFileSync(path.join(gitDir, 'commondir'), '../..\n');
+    const worktree = path.join(root, 'linked');
+    fs.mkdirSync(worktree);
+    fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${gitDir}\n`);
+    return worktree;
+  }
+
+  /**
+   * @param {string} worktree
+   * @param {'claude' | 'dsh'} harness
+   * @param {'startup' | 'compact'} [source]
+   */
+  const startLinked = (worktree, harness, source = 'startup') =>
+    context(
+      handleHook(
+        { hook_event_name: 'SessionStart', source, cwd: worktree },
+        { rootDir: worktree, harness, env: {}, now: NOW, kick }
+      )
+    );
+
+  test.each(/** @type {const} */ (['claude', 'dsh']))(
+    'should reload the resumed persona from the main checkout for a stale %s worktree',
+    (harness) => {
+      const worktree = linkedWorktree();
+      writePersonalization(dir, { persona: 'A calm senior engineer.' });
+      writeConfig(dir, { ...DEFAULT_CONFIG, personalizationEnabled: false });
+      initLocal(root);
+      copyLocalFiles(root, worktree);
+
+      writeConfig(dir, DEFAULT_CONFIG);
+      renderLocal(root);
+
+      expect(startLinked(worktree, harness)).toContain(
+        '- Persona: A calm senior engineer.'
+      );
+      expect(startLinked(worktree, harness)).not.toContain('## Memory');
+      copyLocalFiles(root, worktree);
+      expect(startLinked(worktree, harness)).toBe('');
+    }
+  );
+
+  test('should use the main core when a linked worktree has no local file', () => {
+    initLocal(root);
+    const worktree = linkedWorktree();
+
+    expect(startLinked(worktree, 'claude')).toContain('## Memory');
+  });
+
+  test('should use the main core when a worktree import points to a missing file', () => {
+    initLocal(root);
+    const worktree = linkedWorktree();
+    fs.writeFileSync(
+      path.join(worktree, CLAUDE_LOCAL_FILE),
+      '@AGENTS.local.md\n'
+    );
+
+    expect(startLinked(worktree, 'claude')).toContain('## Memory');
+  });
+
+  test('should load memory after compaction in a worktree with a missing import target while paused', () => {
+    initLocal(root);
+    const worktree = linkedWorktree();
+    fs.writeFileSync(
+      path.join(worktree, CLAUDE_LOCAL_FILE),
+      '@AGENTS.local.md\n'
+    );
+    writePersonalization(dir, { persona: 'A calm senior engineer.' });
+    writeConfig(dir, { ...DEFAULT_CONFIG, personalizationEnabled: false });
+
+    const output = startLinked(worktree, 'claude', 'compact');
+
+    expect(output).toContain('## Memory');
+    expect(output).toMatch(/personalization is off/i);
+    expect(output).not.toContain('## Personalization');
+  });
+
+  test('should apply the current switch and settings when a worktree still has a cleared persona', () => {
+    const worktree = linkedWorktree();
+    writePersonalization(dir, { persona: 'A calm senior engineer.' });
+    initLocal(root);
+    copyLocalFiles(root, worktree);
+
+    writeConfig(dir, { ...DEFAULT_CONFIG, personalizationEnabled: false });
+    expect(startLinked(worktree, 'claude')).toMatch(/personalization is off/i);
+
+    writePersonalization(dir, {});
+    writeConfig(dir, DEFAULT_CONFIG);
+    expect(startLinked(worktree, 'claude')).toMatch(
+      /no workspace memory personalization settings/i
+    );
+    renderLocal(root);
+    copyLocalFiles(root, worktree);
+    expect(startLinked(worktree, 'claude')).toBe('');
+  });
+
+  test('should use one personalization state for a Codex startup during a toggle', () => {
+    writePersonalization(dir, { persona: 'A calm senior engineer.' });
+    writeConfig(dir, { ...DEFAULT_CONFIG, personalizationEnabled: false });
+    const extractDir = path.join(dir, EXTRACT_DIR);
+    fs.mkdirSync(extractDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(extractDir, CONSOLIDATED_FILE),
+      JSON.stringify({ tried: NOW.toISOString() })
+    );
+    const configFile = path.join(dir, CONFIG_FILE);
+    const readFile = fs.readFileSync;
+    const spy = vi
+      .spyOn(fs, 'readFileSync')
+      .mockImplementation((file, options) => {
+        const value = readFile(file, options);
+        if (file === configFile) writeConfig(dir, DEFAULT_CONFIG);
+        return value;
+      });
+    try {
+      const output = context(start('startup', 'codex'));
+
+      expect(output).toMatch(/personalization is off/i);
+      expect(output).not.toContain('## Personalization');
+    } finally {
+      spy.mockRestore();
+    }
+  });
 
   test('should stay silent in Claude Code when CLAUDE.local.md loads the core block', () => {
     fs.writeFileSync(path.join(root, CLAUDE_LOCAL_FILE), '@AGENTS.local.md\n');

@@ -194,6 +194,10 @@ describe('parseArgs', () => {
     });
   });
 
+  test('should leave a literal toggle flag available as a value in other commands', () => {
+    expect(parseArgs(['edit', 'm1', '--tags', '--off']).tags).toBe('--off');
+  });
+
   test('should read -m as the message', () => {
     expect(parseArgs(['rm', 'm1', '-m', 'wrong']).message).toBe('wrong');
   });
@@ -1008,6 +1012,23 @@ describe('personalize --compact and --audit', () => {
     });
   });
 
+  test('should save an audited compaction while paused and apply it after resuming', () => {
+    const runAgent = fakeAgent();
+    run(['personalize', '--persona', 'A deliberately wordier guide.']);
+    run(['personalize', '--off']);
+
+    expect(run(['personalize', '--compact'], { runAgent }).code).toBe(0);
+    expect(runJson(['personalize'])).toMatchObject({
+      enabled: false,
+      settings: { persona: short },
+    });
+    expect(read(path.join('memory', PERSONA_FILE))).toContain(short);
+    expect(read(AGENTS_LOCAL_FILE)).not.toContain(short);
+
+    run(['personalize', '--on']);
+    expect(read(AGENTS_LOCAL_FILE)).toContain(short);
+  });
+
   test('should write only a candidate when the audit blocks compaction', () => {
     const runAgent = fakeAgent({
       findings: [{ category: 'cost', quote: short }],
@@ -1296,7 +1317,7 @@ describe('status', () => {
 
     const { out } = run(['status']);
 
-    expect(out).toMatch(/^Personalization: callMe, tone$/m);
+    expect(out).toMatch(/^Personalization: on \(callMe, tone\)$/m);
     expect(out).toMatch(/^Saving: off everywhere \(pnpm memory on\)$/m);
     expect(out).toMatch(/^Extraction model: small-model$/m);
   });
@@ -1318,7 +1339,7 @@ describe('status', () => {
 
     expect(out).not.toContain(LANGUAGE_HINT);
     expect(out).toMatch(
-      /^Personalization: not set \(pnpm memory personalize --presets\)$/m
+      /^Personalization: on \(no settings, see pnpm memory personalize --presets\)$/m
     );
     expect(out).toMatch(/^Saving: on$/m);
     expect(out).toMatch(/^Extraction model: the main session's model$/m);
@@ -1374,6 +1395,7 @@ describe('status', () => {
       },
       core: { budget: 3000 },
       personalization: [],
+      personalizationEnabled: true,
       saving: 'on',
       extractModel: null,
       missing: ['AGENTS.local.md', 'CLAUDE.local.md'],
@@ -2295,9 +2317,106 @@ describe('pin, unpin, check', () => {
 });
 
 describe('personalize', () => {
+  test('should pause and restore the applied settings without editing the saved persona', () => {
+    run(['init']);
+    const file = path.join('memory', PERSONA_FILE);
+    fs.writeFileSync(
+      path.join(root, file),
+      '<!-- My notes -->\nA calm guide.\n'
+    );
+    run(['init']);
+    run(['personalize', '--language', '日本語']);
+    const markdown = read(file);
+    const before = read(AGENTS_LOCAL_FILE);
+
+    expect(run(['personalize', '--off']).out).toMatch(/Personalization is off/);
+    expect(run(['personalize', '--off']).code).toBe(0);
+    expect(read(AGENTS_LOCAL_FILE)).toContain('## Memory');
+    expect(read(AGENTS_LOCAL_FILE)).not.toContain('## Personalization');
+    expect(runJson(['personalize'])).toMatchObject({
+      enabled: false,
+      settings: { language: '日本語', persona: 'A calm guide.' },
+    });
+    expect(read(file)).toBe(markdown);
+
+    expect(runJson(['personalize', '--on'])).toEqual({
+      enabled: true,
+      warnings: [],
+    });
+    expect(read(AGENTS_LOCAL_FILE)).toBe(before);
+  });
+
+  test('should report and keep the paused state through other memory operations', () => {
+    run(['personalize', '--off']);
+    run(['off', '--session']);
+    run(['set', '--budget', '4000']);
+    run(['personalize', '--persona', 'A calm guide.']);
+    run(['init']);
+
+    expect(run(['status']).out).toMatch(/^Personalization: off \(persona\)$/m);
+    expect(run(['status']).out).not.toContain(LANGUAGE_HINT);
+    expect(run(['personalize']).out).toMatch(/^Personalization is off\./);
+    expect(runJson(['status'])).toMatchObject({
+      personalization: ['persona'],
+      personalizationEnabled: false,
+      saving: 'off for this session',
+      core: { budget: 4000 },
+    });
+    expect(read(AGENTS_LOCAL_FILE)).not.toContain('## Personalization');
+
+    run(['on']);
+    expect(runJson(['status'])).toMatchObject({
+      personalizationEnabled: false,
+      saving: 'on',
+    });
+    expect(run(['personalize', '--on']).out).toMatch(/Start a new session/);
+  });
+
+  test.each([
+    [['personalize', '--off', '--on'], /Use one of --on and --off/],
+    [['personalize', '--off', '--persona', ''], /by itself/],
+    [['personalize', '--off', '--persona-file', 'missing.md'], /by itself/],
+    [['personalize', '--off', '--compact'], /by itself/],
+    [['personalize', '--on', '--audit'], /by itself/],
+    [['personalize', '--on', '--reset'], /by itself/],
+    [['personalize', '--off', '--session'], /by itself/],
+    [['personalize', '--on', '--budget', '4000'], /by itself/],
+    [['personalize', '--on', 'false'], /by itself/],
+    [['personalize', '--on', '--trigger', 'sample'], /by itself/],
+    [['personalize', '--off=false'], /does not take a value/],
+    [['off', '--off'], /only supported on personalize/],
+  ])('should reject incompatible toggle arguments %j', (argv, message) => {
+    expect(() => run(argv)).toThrow(message);
+    expect(fs.existsSync(dir)).toBe(false);
+  });
+
+  test.each(['--off', '--on', '--off=false'])(
+    'should reject %s where a personalization option needs a value',
+    (flag) => {
+      run(['personalize', '--language', '日本語']);
+
+      expect(() => run(['personalize', '--language', flag])).toThrow(
+        /--language needs a value/
+      );
+      expect(runJson(['personalize'])).toEqual({
+        enabled: true,
+        settings: { language: '日本語' },
+      });
+    }
+  );
+
+  test('should accept a literal toggle flag as a personalization value with equals', () => {
+    run(['personalize', '--tone=--off']);
+
+    expect(runJson(['personalize'])).toEqual({
+      enabled: true,
+      settings: { tone: '--off' },
+    });
+  });
+
   test('should explain how to start when nothing is set', () => {
     expect(run(['personalize']).out).toBe(
-      'No personalization set. Start from a preset: pnpm memory personalize --preset <name> (list: --presets), or set fields such as --call-me "<name>".'
+      'Personalization is on.\n\nNo personalization set. Start from a preset: pnpm memory personalize --preset <name> (list: --presets), or set fields such as --call-me "<name>".'
     );
   });
 

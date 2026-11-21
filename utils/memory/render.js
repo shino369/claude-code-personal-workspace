@@ -260,9 +260,10 @@ export function applyCoreBlock(text, block) {
  * defaults, not an error, so memory still loads.
  *
  * @param {string} rootDir
+ * @param {import('./config.js').MemoryConfig} [knownConfig] the caller's config snapshot
  * @returns {{ block: string, budget: number, personalization: Personalization, config: import('./config.js').MemoryConfig, warnings: string[] }}
  */
-export function renderStored(rootDir) {
+export function renderStored(rootDir, knownConfig) {
   const dir = memoryDir(rootDir);
   /** @type {string[]} */
   const warnings = [];
@@ -285,14 +286,16 @@ export function renderStored(rootDir) {
     () => readPersonalization(dir),
     /** @type {Personalization} */ ({})
   );
-  const config = orWarn(() => readConfig(dir), {
-    ...DEFAULT_CONFIG,
-    offSessions: [],
-  });
+  const config =
+    knownConfig ??
+    orWarn(() => readConfig(dir), {
+      ...DEFAULT_CONFIG,
+      offSessions: [],
+    });
   const budget = config.budget ?? CORE_BUDGET;
   const rendered = renderCore({
     notes: loadNotes(dir).notes,
-    personalization,
+    personalization: config.personalizationEnabled ? personalization : {},
     profile: readIfExists(path.join(dir, PROFILE_FILE)),
     budget,
   });
@@ -310,16 +313,26 @@ export function renderStored(rootDir) {
  * file from the template when missing).
  *
  * @param {string} rootDir
+ * @param {{ lockHeld?: boolean }} [options] caller already holds the memory lock
  * @returns {{ file: string, changed: boolean, warnings: string[] }}
  */
-export function renderLocal(rootDir) {
-  const { block, warnings } = renderStored(rootDir);
-  const file = path.join(rootDir, AGENTS_LOCAL_FILE);
-  const current = readIfExists(file) ?? fs.readFileSync(TEMPLATE_FILE, 'utf-8');
-  const next = applyCoreBlock(current, block);
-  const changed = next !== readIfExists(file);
-  if (changed) writeFileAtomic(file, next);
-  return { file, changed, warnings };
+export function renderLocal(rootDir, { lockHeld = false } = {}) {
+  const render = () => {
+    const { block, warnings } = renderStored(rootDir);
+    const file = path.join(rootDir, AGENTS_LOCAL_FILE);
+    const current = readIfExists(file);
+    const next = applyCoreBlock(
+      current ?? fs.readFileSync(TEMPLATE_FILE, 'utf-8'),
+      block
+    );
+    const changed = next !== current;
+    if (changed) writeFileAtomic(file, next);
+    return { file, changed, warnings };
+  };
+  if (lockHeld) return render();
+  const dir = memoryDir(rootDir);
+  fs.mkdirSync(dir, { recursive: true });
+  return withLock(dir, render, { label: 'Memory' });
 }
 
 /**
@@ -346,7 +359,7 @@ export function initLocal(rootDir) {
     () => ({
       persona: applyPersonaFile(dir),
       agentsExisted: fs.existsSync(path.join(rootDir, AGENTS_LOCAL_FILE)),
-      rendered: renderLocal(rootDir),
+      rendered: renderLocal(rootDir, { lockHeld: true }),
     }),
     { label: 'Memory' }
   );

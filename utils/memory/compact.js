@@ -401,7 +401,7 @@ export function applyCompaction(
         note: `Compacted ${dateOf(now)}: ${detail} by ${agent}; before: memory/${SNAPSHOTS_DIR}/${snapshot}/ (pnpm memory undo)`,
       });
       writePersonalization(dir, normalized);
-      const warnings = refreshAfterWrite(rootDir);
+      const warnings = refreshAfterWrite(rootDir, { lockHeld: true });
       return { snapshot, warnings };
     },
     { label: 'Memory' }

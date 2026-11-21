@@ -1,12 +1,13 @@
 /**
  * Memory settings in memory/config.json (gitignored), changed with
- * `pnpm memory set`, `off`, and `on`:
+ * `pnpm memory set`, `off`, `on`, and `personalize --on|--off`:
  *
  * - `off`: automatic saving is paused everywhere; `offSessions`: paused for
  *   these sessions only (an "incognito" session). Recall still works.
  * - `extractModel`: the model extraction uses; null means the main session's
  *   model (the workspace rule).
  * - `budget`: the core block's size in characters; null means CORE_BUDGET.
+ * - `personalizationEnabled`: apply saved personalization to agent sessions.
  *
  * Only settings that differ from the defaults are written.
  */
@@ -27,6 +28,7 @@ const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,99}$/;
  * @property {string[]} offSessions
  * @property {string | null} extractModel
  * @property {number | null} budget
+ * @property {boolean} personalizationEnabled
  */
 
 /** @type {Readonly<MemoryConfig>} */
@@ -35,6 +37,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   offSessions: [],
   extractModel: null,
   budget: null,
+  personalizationEnabled: true,
 });
 const KEYS = Object.keys(DEFAULT_CONFIG);
 
@@ -79,6 +82,9 @@ export function normalizeConfig(input) {
   }
   const config = { ...DEFAULT_CONFIG, ...input };
   if (typeof config.off !== 'boolean') invalid('off must be true or false.');
+  if (typeof config.personalizationEnabled !== 'boolean') {
+    invalid('personalizationEnabled must be true or false.');
+  }
   const extractModel = config.extractModel;
   if (
     extractModel !== null &&
@@ -106,6 +112,7 @@ export function normalizeConfig(input) {
     offSessions: normalizeSessions(config.offSessions),
     extractModel,
     budget,
+    personalizationEnabled: config.personalizationEnabled,
   };
 }
 

@@ -338,6 +338,11 @@ digests, at most 3,000 characters) that every session loads. Rules for agents: A
   agents answer in the language the user writes in (`pnpm memory status` says so). In Claude
   Code, `"language": "<name>"` in `.claude/settings.local.json` adds a system-prompt rule; it
   also asks for code comments in that language and changes session titles.
+- **Pause personalization.** `pnpm memory personalize --off` pauses the workspace's saved
+  response settings across sessions. The memory hooks report the paused state on session start
+  and at each typed prompt. You can still edit, audit, and compact the saved persona while it
+  is paused. Run `pnpm memory personalize --on` and start a new session to load the saved settings
+  again. `pnpm memory status` shows both the personalization and automatic saving states.
 - **Persona compaction and audit.** `pnpm memory personalize --compact` shortens a persona
   to fit, then audits the result in a second fresh session. `--audit` checks the original
   persona without writing files. The persona comes from `--persona` or `--persona-file`,
