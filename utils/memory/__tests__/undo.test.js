@@ -154,6 +154,27 @@ describe('undoLast', () => {
     ).toBe(LATER.toISOString());
   });
 
+  test('should remove a file created by compaction and preserve later local instructions', () => {
+    const agents = path.join(root, AGENTS_LOCAL_FILE);
+    applyCompaction(root, {
+      settings: {},
+      persona: 'Short voice.',
+      before: 2000,
+      agent: 'claude',
+      now: JOB,
+    });
+    fs.appendFileSync(agents, '\nUser instructions added later.\n');
+
+    undoLast(root, { now: LATER });
+    initLocal(root);
+
+    expect(fs.existsSync(path.join(dir, 'persona.md'))).toBe(false);
+    expect(readPersonalization(dir)).toEqual({});
+    expect(fs.readFileSync(agents, 'utf-8')).toContain(
+      'User instructions added later.'
+    );
+  });
+
   test('should change nothing on a dry run', () => {
     history();
     const before = fs.readFileSync(path.join(dir, LOG_FILE), 'utf-8');

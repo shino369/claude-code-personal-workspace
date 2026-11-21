@@ -19,7 +19,7 @@ import {
   readArchive,
 } from './archive.js';
 import { runIfMain } from '../module-runner.js';
-import { SESSION_ID_RE, readIfExists, sessionFromEnv } from '../task/store.js';
+import { SESSION_ID_RE, sessionFromEnv, withLock } from '../task/store.js';
 import { ROOT_DIR } from '../workspace-config.js';
 import { readConfig, savingOff, setSaving, writeConfig } from './config.js';
 import {
@@ -28,6 +28,7 @@ import {
   compactPersona,
   formatAudit,
   formatCompaction,
+  readPersonaSource,
   writeCandidate,
 } from './compact.js';
 import {
@@ -436,7 +437,8 @@ function checkPersonaOptions(options) {
 function runPersonaJob(options, deps) {
   const dir = dirOf(deps);
   const settings = readPersonalization(dir);
-  const markdown = readIfExists(path.join(dir, PERSONA_FILE));
+  const file = path.join(dir, PERSONA_FILE);
+  const markdown = fs.existsSync(file) ? readPersonaSource(file) : null;
   const persona =
     options.persona ??
     (personaFromMarkdown(markdown ?? '') || settings.persona || '');
@@ -468,11 +470,7 @@ function runPersonaJob(options, deps) {
       now,
     }));
   }
-  const report = formatCompaction(result, {
-    snapshot,
-    candidate,
-    wrotePersonaFile: markdown !== null,
-  });
+  const report = formatCompaction(result, { snapshot, candidate });
   output(
     deps,
     options,
@@ -1273,10 +1271,11 @@ export const COMMANDS = {
       }
       let markdown;
       try {
-        markdown = fs.readFileSync(
-          path.resolve(deps.cwd, options.personaFile),
-          'utf-8'
-        );
+        const file = path.resolve(deps.cwd, options.personaFile);
+        markdown =
+          options.compact || options.audit
+            ? readPersonaSource(file)
+            : fs.readFileSync(file, 'utf-8');
       } catch (error) {
         throw new Error(
           `Cannot read ${options.personaFile}: ${/** @type {Error} */ (error).message}`
@@ -1302,55 +1301,65 @@ export const COMMANDS = {
       );
       return 0;
     }
-    /** @type {Record<string, unknown>} */
-    const settings =
-      options.preset !== undefined
-        ? readPreset(options.preset)
-        : options.reset
-          ? {}
-          : readPersonalization(dir);
-    const presetNames = listPresets().map((preset) => preset.name);
-    for (const key of fields) {
-      const value = /** @type {string} */ (options[key]);
-      if (key === 'traits') settings.traits = splitList(value);
-      else if (key === 'tone') {
-        // A preset's name picks that preset's tone.
-        settings.tone = presetNames.includes(value)
-          ? readPreset(value).tone
-          : value;
-      } else settings[key] = value;
-    }
-    const before = storedPersona(dir);
-    let written;
-    try {
-      written = writePersonalization(dir, settings);
-    } catch (error) {
-      if (
-        error instanceof MemoryError &&
-        error.code === 'budget' &&
-        options.persona
-      ) {
-        throw new MemoryError(
-          'budget',
-          `${error.message}\nFix: ${compactFix(options)} (a clean-context agent shortens and audits it)`
+    fs.mkdirSync(dir, { recursive: true });
+    return withLock(
+      dir,
+      () => {
+        /** @type {Record<string, unknown>} */
+        const settings =
+          options.preset !== undefined
+            ? readPreset(options.preset)
+            : options.reset
+              ? {}
+              : readPersonalization(dir);
+        const presetNames = listPresets().map((preset) => preset.name);
+        for (const key of fields) {
+          const value = /** @type {string} */ (options[key]);
+          if (key === 'traits') settings.traits = splitList(value);
+          else if (key === 'tone') {
+            // A preset's name picks that preset's tone.
+            settings.tone = presetNames.includes(value)
+              ? readPreset(value).tone
+              : value;
+          } else settings[key] = value;
+        }
+        const before = storedPersona(dir);
+        let written;
+        try {
+          written = writePersonalization(dir, settings);
+        } catch (error) {
+          if (
+            error instanceof MemoryError &&
+            error.code === 'budget' &&
+            options.persona
+          ) {
+            throw new MemoryError(
+              'budget',
+              `${error.message}\nFix: ${compactFix(options)} (a clean-context agent shortens and audits it)`
+            );
+          }
+          throw error;
+        }
+        if (written.persona !== before) syncPersonaFile(dir, written.persona);
+        const warnings = [
+          ...(written.persona && written.persona !== before
+            ? personaWarnings(written.persona)
+            : []),
+          ...refreshAfterWrite(deps.rootDir),
+        ];
+        output(
+          deps,
+          options,
+          { settings: written, warnings },
+          withWarnings(
+            withHint(written) || 'Personalization cleared.',
+            warnings
+          )
         );
-      }
-      throw error;
-    }
-    if (written.persona !== before) syncPersonaFile(dir, written.persona);
-    const warnings = [
-      ...(written.persona && written.persona !== before
-        ? personaWarnings(written.persona)
-        : []),
-      ...refreshAfterWrite(deps.rootDir),
-    ];
-    output(
-      deps,
-      options,
-      { settings: written, warnings },
-      withWarnings(withHint(written) || 'Personalization cleared.', warnings)
+        return 0;
+      },
+      { label: 'Memory' }
     );
-    return 0;
   },
 
   set(options, deps) {

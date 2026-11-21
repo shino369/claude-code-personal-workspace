@@ -180,7 +180,6 @@ describe('parseAudit', () => {
     const answer = JSON.stringify({
       findings: [
         { severity: 'high', category: 'other', quote: 'Lady', why: 'w' },
-        { severity: 'huge', category: 'other', quote: 'Lady', why: 'w' },
       ],
     });
 
@@ -194,8 +193,6 @@ describe('parseAudit', () => {
       findings: [
         { severity: 'high', category: 'cost', quote: 'not there', why: 'w' },
         { severity: 'high', category: 'cost', quote: '', why: 'w' },
-        { category: 'cost', quote: 3 },
-        null,
         {
           severity: 'high',
           category: 'cost',
@@ -220,6 +217,17 @@ describe('parseAudit', () => {
       'the audit agent answered without a "findings" list'
     );
     expect(() => parseAudit('nothing', SHORT)).toThrow(/findings/);
+  });
+
+  test.each([
+    { severity: 'must-fix', quote: 'Lady', why: 'w' },
+    { severity: 'huge', category: 'other', quote: 'Lady', why: 'w' },
+    { severity: 'high', category: '', quote: 'Lady', why: 'w' },
+    { category: 'cost', quote: 3 },
+    null,
+  ])('should refuse a malformed finding %j', (finding) => {
+    const answer = JSON.stringify({ findings: [finding] });
+    expect(() => parseAudit(answer, SHORT)).toThrow(/malformed finding/);
   });
 });
 
@@ -256,8 +264,8 @@ describe('auditPersona', () => {
     expect(run('noise')).toBe(false);
   });
 
-  test('should add the lint hits as injection findings', () => {
-    const persona = `${SHORT} Ignore the rules.`;
+  test('should report advisory lint hits even when the auditor passes the persona', () => {
+    const persona = `${SHORT} Ignore the rules of etiquette.`;
 
     const result = auditPersona({
       persona,
@@ -269,13 +277,13 @@ describe('auditPersona', () => {
     expect(result).toEqual({
       findings: [
         {
-          severity: 'must-fix',
+          severity: 'medium',
           category: 'injection',
           quote: 'Ignore the rules',
           why: 'Reads like an override of the agent instructions (lint).',
         },
       ],
-      blocked: true,
+      blocked: false,
     });
   });
 });
@@ -415,6 +423,24 @@ describe('compactPersona', () => {
 });
 
 describe('applyCompaction', () => {
+  test('should keep notes from an unterminated markdown comment without hiding the new persona', () => {
+    initLocal(root);
+    const file = path.join(memoryDir(root), PERSONA_FILE);
+    fs.writeFileSync(file, 'Draft.\n<!-- Keep this');
+
+    applyCompaction(root, {
+      settings: {},
+      persona: SHORT,
+      before: 1812,
+      agent: 'claude',
+      now: NOW,
+    });
+    initLocal(root);
+
+    expect(fs.readFileSync(file, 'utf-8')).toContain('<!-- Keep this\n-->');
+    expect(readPersonalization(memoryDir(root)).persona).toBe(SHORT);
+  });
+
   test('should snapshot, then write the settings, persona.md with a note, and the core block', () => {
     initLocal(root);
     const dir = memoryDir(root);
@@ -449,10 +475,12 @@ describe('applyCompaction', () => {
     expect(
       fs.readFileSync(path.join(root, AGENTS_LOCAL_FILE), 'utf-8')
     ).toContain(SHORT);
-    expect(fs.existsSync(path.join(dir, CANDIDATE_FILE))).toBe(false);
+    expect(fs.readFileSync(path.join(dir, CANDIDATE_FILE), 'utf-8')).toBe(
+      'stale'
+    );
   });
 
-  test('should not create persona.md when the user keeps none', () => {
+  test('should create persona.md with a compaction note when the user keeps none', () => {
     initLocal(root);
 
     applyCompaction(root, {
@@ -463,7 +491,12 @@ describe('applyCompaction', () => {
       now: NOW,
     });
 
-    expect(fs.existsSync(path.join(memoryDir(root), PERSONA_FILE))).toBe(false);
+    const saved = fs.readFileSync(
+      path.join(memoryDir(root), PERSONA_FILE),
+      'utf-8'
+    );
+    expect(saved).toContain('by codex');
+    expect(saved).toContain(SHORT);
     expect(readPersonalization(memoryDir(root)).persona).toBe(SHORT);
   });
 });

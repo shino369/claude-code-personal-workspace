@@ -39,7 +39,7 @@ export const COMPACT_RATIO = 0.9;
 export const COMPACT_HINT =
   '(a clean-context agent shortens and audits memory/persona.md)';
 const PERSONA_LABEL = '- Persona: ';
-const COMMENT_RE = /<!--[\s\S]*?-->/g;
+const COMMENT_RE = /<!--[\s\S]*?(?:-->|$)/g;
 const MAX_TRAITS = 10;
 const PRESET_NAME = /^[a-z][a-z0-9-]*$/;
 /** The core block markers (render.js); a value holding one would break it. */
@@ -366,9 +366,11 @@ export function storedPersona(dir) {
  * @param {{ note?: string }} [options]
  */
 export function personaMarkdown(existing, persona, { note } = {}) {
-  const comments = (existing?.match(COMMENT_RE) ?? []).filter(
-    (comment) => comment !== PERSONA_PLACEHOLDER.trim()
-  );
+  const comments = (existing?.match(COMMENT_RE) ?? [])
+    .filter((comment) => comment !== PERSONA_PLACEHOLDER.trim())
+    .map((comment) =>
+      comment.endsWith('-->') ? comment : `${comment.trimEnd()}\n-->`
+    );
   if (note) comments.push(`<!-- ${note} -->`);
   return [...comments, `${persona}\n`].join('\n\n');
 }
@@ -380,13 +382,13 @@ export function personaMarkdown(existing, persona, { note } = {}) {
  *
  * @param {string} dir the memory directory
  * @param {string | undefined} persona
- * @param {{ note?: string }} [options] a comment to add (compact)
+ * @param {{ note?: string, create?: boolean }} [options] a comment to add and whether to create a missing file
  * @returns {boolean} whether the file changed
  */
 export function syncPersonaFile(dir, persona, options = {}) {
   const file = path.join(dir, PERSONA_FILE);
   const existing = readIfExists(file);
-  if (existing === null) return false;
+  if (existing === null && !options.create) return false;
   const content = persona
     ? personaMarkdown(existing, persona, options)
     : PERSONA_PLACEHOLDER;

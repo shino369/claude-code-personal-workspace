@@ -1,13 +1,16 @@
 /**
  * One headless agent call for a memory job: extraction, consolidation, and
  * the persona compaction and audit. The agent runs read-only, with its tools
- * off where the CLI can turn them off, in an empty temporary folder (no
+ * isolated in a temporary folder (no
  * project instructions or hooks there), with EXTRACT_ENV set so memory hooks
  * stay silent and the session is never queued, and the inner loop off.
  */
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import { stripVTControlCharacters } from 'util';
 import { DSH_PATCH, buildCommand } from '../loop/adapters.js';
+import { redactSecrets } from '../redact.js';
 import { INNER_LOOP_ENV } from '../task/loop.js';
 import { commandFor } from '../tools/registry.js';
 import { EXTRACT_ENV } from './queue.js';
@@ -16,6 +19,23 @@ export const AGENT_CALL_TIMEOUT_MS = 5 * 60 * 1000;
 /** The agents a memory job can call. */
 export const CALL_AGENTS = /** @type {const} */ (['claude', 'codex', 'dsh']);
 const ERROR_TAIL = 300;
+const DSH_PERSONA_PATCH = fileURLToPath(
+  new URL('./dsh-persona.patch.yml', import.meta.url)
+);
+const CODEX_DISABLED_FEATURES = [
+  'apps',
+  'browser_use',
+  'hooks',
+  'in_app_browser',
+  'multi_agent',
+  'multi_agent_v2',
+  'plugins',
+  'shell_snapshot',
+  'shell_tool',
+  'skill_mcp_dependency_install',
+  'skill_search',
+  'view_image',
+];
 /**
  * @typedef {typeof CALL_AGENTS[number]} CallAgent
  * @typedef {{
@@ -43,17 +63,39 @@ export function headlessCommand({ agent, model = null, rootDir }) {
     argv: commandFor(rootDir, agent),
     mode: 'read',
   });
-  // Codex starts outside a checkout. DSH must not load the workspace patch.
+  // Codex starts outside a checkout. DSH needs its overlay before app flags.
   const args = [...command.args];
   switch (command.agent) {
     case 'claude':
-      args.push('--tools', '');
+      args.push(
+        '--strict-mcp-config',
+        '--settings',
+        '{"disableAllHooks":true}',
+        '--tools',
+        ''
+      );
       break;
     case 'codex':
-      args.splice(-1, 0, '--skip-git-repo-check');
+      args.splice(
+        -1,
+        0,
+        '--skip-git-repo-check',
+        '--ignore-user-config',
+        '-c',
+        'web_search="disabled"',
+        '-c',
+        'mcp_servers={}',
+        ...CODEX_DISABLED_FEATURES.flatMap((feature) => ['--disable', feature])
+      );
       break;
     case 'dsh':
       args.splice(args.lastIndexOf(DSH_PATCH) - 1, 2);
+      args.splice(
+        args.lastIndexOf('--permission-mode'),
+        0,
+        '--patch',
+        DSH_PERSONA_PATCH
+      );
       break;
   }
   return {
@@ -95,7 +137,7 @@ export function callAgent(
       ? `was stopped by ${result.signal}`
       : `exited with code ${result.code}`;
     throw new Error(
-      `the ${job} agent ${how}: ${result.output.trim().slice(-ERROR_TAIL)}`
+      `the ${job} agent ${how}: ${redactSecrets(stripVTControlCharacters(result.output)).trim().slice(-ERROR_TAIL)}`
     );
   }
   return result;

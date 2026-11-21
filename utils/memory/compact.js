@@ -1,7 +1,7 @@
 /** Compact and audit persona text in separate, isolated agent calls. */
 import fs from 'fs';
 import path from 'path';
-import { isDeepStrictEqual } from 'util';
+import { isDeepStrictEqual, stripVTControlCharacters } from 'util';
 import { findSecrets, redactSecrets } from '../redact.js';
 import { readIfExists, withLock, writeFileAtomic } from '../task/store.js';
 import { callAgent, headlessCommand, jsonObjectOf } from './agent-call.js';
@@ -138,6 +138,9 @@ export function auditPrompt({ persona, language }) {
   ].join('\n\n');
 }
 
+/** @param {string} text */
+const reportText = (text) => redactSecrets(stripVTControlCharacters(text));
+
 /** @param {string} answer @returns {{ persona: string, removed: Removal[] }} */
 export function parseCompaction(answer) {
   const data = jsonObjectOf(answer);
@@ -153,8 +156,8 @@ export function parseCompaction(answer) {
           typeof item?.text === 'string' && typeof item.category === 'string'
       )
       .map(({ text, category }) => ({
-        text: redactSecrets(text),
-        category: redactSecrets(category),
+        text: reportText(text),
+        category: reportText(category),
       })),
   };
 }
@@ -173,22 +176,55 @@ export function parseAudit(answer, persona) {
   /** @type {Finding[]} */
   const findings = [];
   for (const item of data.findings) {
-    if (typeof item?.quote !== 'string' || typeof item.category !== 'string')
-      continue;
+    if (
+      typeof item?.quote !== 'string' ||
+      typeof item.category !== 'string' ||
+      !item.category.trim()
+    ) {
+      throw new Error('The audit agent returned a malformed finding.');
+    }
+    const category = item.category.trim().toLowerCase();
+    const severity =
+      RUBRIC.find((entry) => entry.category === category)?.severity ??
+      item.severity;
+    if (!SEVERITIES.has(severity)) {
+      throw new Error('The audit agent returned a malformed finding severity.');
+    }
     const quote = collapseWhitespace(item.quote);
     if (!quote || !text.includes(quote)) continue;
-    const severity =
-      RUBRIC.find(({ category }) => category === item.category)?.severity ??
-      item.severity;
-    if (!SEVERITIES.has(severity)) continue;
     findings.push({
       severity,
-      category: redactSecrets(item.category),
-      quote: redactSecrets(item.quote),
-      why: typeof item.why === 'string' ? redactSecrets(item.why) : '',
+      category: reportText(category),
+      quote: reportText(item.quote),
+      why: typeof item.why === 'string' ? reportText(item.why) : '',
     });
   }
   return findings;
+}
+
+const PROTECTED_NAME =
+  /^(?:\.env.*|secrets|\.ssh|\.aws|credentials\.json|.*\.(?:key|pem))$/i;
+
+/** @param {string} file */
+function checkSourcePath(file) {
+  if (file.split(path.sep).some((part) => PROTECTED_NAME.test(part))) {
+    throw new MemoryError(
+      'secret',
+      'Refused to read a protected persona file.'
+    );
+  }
+}
+
+/**
+ * Read a persona for a remote agent only after checking its resolved path.
+ *
+ * @param {string} file
+ */
+export function readPersonaSource(file) {
+  checkSourcePath(file);
+  const resolved = fs.realpathSync(file);
+  checkSourcePath(resolved);
+  return fs.readFileSync(resolved, 'utf-8');
 }
 
 /** @param {string} persona */
@@ -196,7 +232,7 @@ function checkedText(persona) {
   if (MARKER_RE.test(persona)) {
     throw new MemoryError('invalid', 'The persona holds memory block markers.');
   }
-  const text = stripPersonaComments(persona).trim();
+  const text = stripVTControlCharacters(stripPersonaComments(persona)).trim();
   if (!text) {
     throw new MemoryError(
       'invalid',
@@ -235,7 +271,7 @@ export function auditPersona({ persona, settings, agent, deps }) {
   const findings = parseAudit(answer.stdout, text);
   for (const quote of injectionsIn(text)) {
     findings.push({
-      severity: 'must-fix',
+      severity: 'medium',
       category: 'injection',
       quote,
       why: 'Reads like an override of the agent instructions (lint).',
@@ -341,11 +377,11 @@ export function applyCompaction(
         now,
       }).id;
       syncPersonaFile(dir, persona, {
+        create: true,
         note: `Compacted ${dateOf(now)}: ${detail} by ${agent}; before: memory/${SNAPSHOTS_DIR}/${snapshot}/ (pnpm memory undo)`,
       });
       writePersonalization(dir, normalized);
       const warnings = refreshAfterWrite(rootDir);
-      fs.rmSync(path.join(dir, CANDIDATE_FILE), { force: true });
       return { snapshot, warnings };
     },
     { label: 'Memory' }
@@ -401,12 +437,9 @@ const auditLines = (findings) =>
 
 /**
  * @param {Compaction} result
- * @param {{ snapshot: string | null, candidate: string | null, wrotePersonaFile?: boolean }} outcome
+ * @param {{ snapshot: string | null, candidate: string | null }} outcome
  */
-export function formatCompaction(
-  result,
-  { snapshot, candidate, wrotePersonaFile = true }
-) {
+export function formatCompaction(result, { snapshot, candidate }) {
   const { before, after, room, target, removed, findings, blocked } = result;
   return [
     `Compacted the persona: ${before} → ${after} characters (target ${target}, room ${room}).`,
@@ -414,7 +447,7 @@ export function formatCompaction(
     ...auditLines(findings),
     ...(snapshot
       ? [
-          `Written: ${wrotePersonaFile ? `memory/${PERSONA_FILE}, ` : ''}memory/personalization.json, AGENTS.local.md (snapshot ${snapshot}).`,
+          `Written: memory/${PERSONA_FILE}, memory/personalization.json, AGENTS.local.md (snapshot ${snapshot}).`,
           'Undo: pnpm memory undo',
         ]
       : [

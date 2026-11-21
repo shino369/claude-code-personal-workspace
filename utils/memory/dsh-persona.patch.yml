@@ -1,0 +1,17 @@
+# Keep the provider configured by DSH. The runner waits for the tool guard.
+- insert:
+    - id: memory-persona-isolation
+      name: './dsh-persona.js'
+
+- id: headless-runner
+  inject: [headlessStartup, personaIsolation]
+
+- id: agent-instructions
+  disabled: true
+
+- id: session-title-llm
+  disabled: true
+
+- id: session-persistence-jsonl
+  config:
+    root: './.sessions'

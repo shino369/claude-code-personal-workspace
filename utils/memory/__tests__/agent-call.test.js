@@ -11,6 +11,7 @@ import {
   jsonObjectOf,
 } from '../agent-call.js';
 import { EXTRACT_ENV } from '../queue.js';
+import { apply as isolateDsh } from '../dsh-persona.js';
 
 /** @type {string} */
 let root;
@@ -53,6 +54,8 @@ describe('headlessCommand', () => {
     expect(command.args).toEqual(
       expect.arrayContaining(['-p', '--permission-mode', 'plan'])
     );
+    expect(command.args).toContain('--strict-mcp-config');
+    expect(command.args).toContain('{"disableAllHooks":true}');
     expect(command.args.slice(-4)).toEqual(['--tools', '', '--model', 'opus']);
     expect(
       headlessCommand({ agent: 'claude', rootDir: root }).args.slice(-2)
@@ -66,10 +69,19 @@ describe('headlessCommand', () => {
     expect(codex.bin).toBe('codex');
     expect(codex.args).toContain('read-only');
     expect(codex.args).toContain('--skip-git-repo-check');
+    expect(codex.args).toContain('--ignore-user-config');
+    expect(codex.args).toContain('shell_tool');
+    expect(codex.args).toContain('view_image');
+    expect(codex.args).toContain('web_search="disabled"');
     expect(codex.args).not.toContain('--tools');
     expect(dsh.bin).toBe('dsh');
     expect(dsh.args).toContain('read-only');
-    expect(dsh.args).not.toContain('--patch');
+    const patch = dsh.args.indexOf('--patch');
+    expect(patch).toBeGreaterThan(-1);
+    expect(patch).toBeLessThan(dsh.args.indexOf('--permission-mode'));
+    expect(fs.readFileSync(dsh.args[patch + 1], 'utf-8')).toContain(
+      'inject: [headlessStartup, personaIsolation]'
+    );
     expect(dsh.args).not.toContain('--tools');
   });
 
@@ -78,6 +90,21 @@ describe('headlessCommand', () => {
       `Memory jobs run on claude, codex, dsh (got gemini).\nFix: use --agent ${CALL_AGENTS.join('|')}`
     );
   });
+});
+
+test('should block DSH tool calls and hide global tools before the first request', () => {
+  const guard = vi.fn();
+  const on = vi.fn();
+  const provide = vi.fn();
+  const restrict = vi.fn();
+
+  isolateDsh({ tools: { guard }, on, provide });
+
+  expect(guard.mock.calls[0][0]()).toMatch(/disabled/);
+  expect(on.mock.calls[0][0]).toBe('agent/created');
+  on.mock.calls[0][1]({ agent: { ctx: { tools: { restrict } } } });
+  expect(restrict).toHaveBeenCalledWith({ allow: [] });
+  expect(provide).toHaveBeenCalledWith('personaIsolation', true);
 });
 
 describe('callAgent', () => {
@@ -137,6 +164,18 @@ describe('callAgent', () => {
 
     expect(() => callAgent(deps(runAgent), command, 'P')).toThrow(
       'the extraction agent was stopped by SIGTERM: (stopped)'
+    );
+  });
+
+  test('should redact a credential before truncating a failed agent response', () => {
+    const key = 'gh' + 'p_' + 'a'.repeat(36);
+    const runAgent = agentReturning({
+      code: 1,
+      output: `Authentication failure: \u001b[31m${key}\u001b[0m`,
+    });
+
+    expect(() => callAgent(deps(runAgent), command, 'P')).toThrow(
+      /^the extraction agent exited with code 1: Authentication failure: \[REDACTED\]$/
     );
   });
 

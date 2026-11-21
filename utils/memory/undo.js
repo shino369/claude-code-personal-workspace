@@ -47,7 +47,8 @@ const PERSONALIZATION_FILES = [
 ];
 const RESTORED = {
   import: PERSONALIZATION_FILES,
-  compact: PERSONALIZATION_FILES,
+  // The core is rendered again below so later edits outside it survive.
+  compact: PERSONALIZATION_FILES.slice(0, 2),
   consolidate: [`${MEMORY_DIR}/profile.md`],
 };
 const NEVER_REMOVED = [AGENTS_LOCAL_FILE, `${MEMORY_DIR}/persona.md`];
@@ -143,8 +144,11 @@ export function undoLast(rootDir, { now = new Date(), dryRun = false } = {}) {
       writeFileAtomic(path.join(dir, LOG_FILE), plan.log);
       for (const { file, content } of restore) {
         const target = path.join(rootDir, file);
-        if (content !== null) fs.writeFileSync(target, content);
-        else if (!NEVER_REMOVED.includes(file)) {
+        if (content !== null) writeFileAtomic(target, content);
+        else if (
+          plan.snapshot.reason === 'compact' ||
+          !NEVER_REMOVED.includes(file)
+        ) {
           fs.rmSync(target, { force: true });
         }
       }

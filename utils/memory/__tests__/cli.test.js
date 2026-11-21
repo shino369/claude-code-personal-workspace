@@ -5,6 +5,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { vi } from 'vitest';
+import { linkDir } from '../../__tests__/support/links.js';
 import { createState } from '../../task/state.js';
 import { saveState, tasksRoot, writeActive } from '../../task/store.js';
 import { HELP, defaultDeps, main, parseArgs } from '../cli.js';
@@ -1005,16 +1006,18 @@ describe('personalize --compact and --audit', () => {
     expect(fs.readdirSync(dir)).toEqual([CANDIDATE_FILE]);
   });
 
-  test('should report a success without persona.md if the user keeps none', () => {
+  test('should write and report persona.md even if the user keeps none', () => {
     const { code, out } = run(['personalize', '--persona', long, '--compact'], {
       runAgent: fakeAgent(),
     });
 
     expect(code).toBe(0);
     expect(out).toContain(
-      'Written: memory/personalization.json, AGENTS.local.md'
+      'Written: memory/persona.md, memory/personalization.json, AGENTS.local.md'
     );
-    expect(fs.existsSync(path.join(dir, PERSONA_FILE))).toBe(false);
+    expect(fs.readFileSync(path.join(dir, PERSONA_FILE), 'utf-8')).toContain(
+      short
+    );
   });
 
   test('should audit an oversized input with a single call and no files written', () => {
@@ -1055,6 +1058,56 @@ describe('personalize --compact and --audit', () => {
     expect(code).toBe(0);
     expect(out).toMatch(/^Audit: no findings/);
     expect(fs.existsSync(dir)).toBe(false);
+  });
+
+  test('should keep a trailing unterminated markdown comment out of the audit prompt', () => {
+    const runAgent = fakeAgent();
+    const file = path.join(tmp, 'audit.md');
+    fs.writeFileSync(file, `${short}\n<!-- notes meant for the user\n`);
+
+    expect(
+      run(['personalize', '--audit', '--persona-file', file], { runAgent }).code
+    ).toBe(0);
+    expect(runAgent.mock.calls[0][0].prompt).toContain(short);
+    expect(runAgent.mock.calls[0][0].prompt).not.toContain(
+      'notes meant for the user'
+    );
+  });
+
+  test('should refuse protected paths and links to protected paths before calling an agent', () => {
+    const runAgent = fakeAgent();
+    const protectedDir = path.join(tmp, 'secrets');
+    const file = path.join(protectedDir, 'persona.md');
+    fs.mkdirSync(protectedDir);
+    fs.writeFileSync(file, 'Synthetic protected fixture.');
+    const link = path.join(tmp, 'drafts');
+    linkDir(protectedDir, link);
+
+    expect(() =>
+      run(['personalize', '--audit', '--persona-file', file], { runAgent })
+    ).toThrow(/protected persona file/);
+    expect(() =>
+      run(
+        [
+          'personalize',
+          '--audit',
+          '--persona-file',
+          path.join(link, 'persona.md'),
+        ],
+        { runAgent }
+      )
+    ).toThrow(/protected persona file/);
+    expect(runAgent).not.toHaveBeenCalled();
+  });
+
+  test('should report a missing audit file without making a model call', () => {
+    const runAgent = fakeAgent();
+    expect(() =>
+      run(['personalize', '--audit', '--persona-file', 'absent.md'], {
+        runAgent,
+      })
+    ).toThrow(/Cannot read absent.md/);
+    expect(runAgent).not.toHaveBeenCalled();
   });
 
   test('should reject absent persona input before a model call', () => {

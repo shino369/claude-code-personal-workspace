@@ -83,7 +83,7 @@ function isWindowsBusy(error, platform) {
  * fails for a moment (EPERM/EBUSY), so the rename is retried for `retryMs`.
  *
  * @param {string} file
- * @param {string} content
+ * @param {string | Buffer} content
  * @param {{ platform?: NodeJS.Platform, retryMs?: number }} [options]
  */
 export function writeFileAtomic(
