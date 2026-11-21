@@ -59,6 +59,8 @@ export const PERSONA_SCOPE_RULES = `${SCOPE_FIRST} ${SCOPE_REST}`;
 /** Rendered only with a language: models otherwise answer in the user's. */
 export const PERSONA_LANGUAGE_RULE =
   'Write in the Language even when the user writes in another language.';
+export const LANGUAGE_HINT =
+  'Language: not set — agents answer in the language you write in (pnpm memory personalize --language "…")';
 
 /**
  * @typedef {object} Personalization
@@ -183,6 +185,18 @@ export function renderPersonalization(settings) {
       : PERSONA_SCOPE_RULES,
   ].join('\n');
 }
+
+/**
+ * LANGUAGE_HINT when a persona or tone is set without a language, else ''.
+ * A persona written in one language does not hold when the user writes in
+ * another unless the language is set.
+ *
+ * @param {Personalization} settings
+ */
+export const languageHint = (settings) =>
+  (settings.persona || settings.tone) && !settings.language
+    ? LANGUAGE_HINT
+    : '';
 
 /**
  * @param {string} dir the memory directory

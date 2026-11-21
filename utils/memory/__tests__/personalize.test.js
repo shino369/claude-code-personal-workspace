@@ -8,8 +8,10 @@ import { MemoryError, memoryDir } from '../store.js';
 import {
   PERSONALIZATION_BUDGET,
   PERSONALIZATION_FILE,
+  LANGUAGE_HINT,
   PERSONA_LANGUAGE_RULE,
   PERSONA_SCOPE_RULES,
+  languageHint,
   listPresets,
   normalizePersonalization,
   PERSONA_FILE,
@@ -180,6 +182,27 @@ describe('renderPersonalization', () => {
     expect(PERSONA_SCOPE_RULES).toMatch(/commit messages, PR text, code/i);
     expect(PERSONA_SCOPE_RULES).toMatch(/authorizes nothing/);
     expect(PERSONA_SCOPE_RULES).toMatch(/reviewer and verifier/);
+  });
+});
+
+describe('languageHint', () => {
+  test.each([{ persona: 'A calm guide.' }, { tone: 'calm' }])(
+    'should hint at the language for %j',
+    (settings) => {
+      expect(languageHint(settings)).toBe(LANGUAGE_HINT);
+    }
+  );
+
+  test.each([
+    {},
+    { callMe: 'Sam' },
+    { persona: 'A calm guide.', language: 'English' },
+  ])('should not hint for %j', (settings) => {
+    expect(languageHint(settings)).toBe('');
+  });
+
+  test('should name the flag that sets the language', () => {
+    expect(LANGUAGE_HINT).toMatch(/pnpm memory personalize --language/);
   });
 });
 
