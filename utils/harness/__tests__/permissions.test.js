@@ -282,6 +282,98 @@ describe('guardDecision', () => {
     ).toBe('deny');
   });
 
+  const uncWhere = {
+    projectDir: '\\\\server\\share\\proj',
+    home: 'C:\\Users\\me',
+    platform: 'win32',
+  };
+
+  test.each([
+    ['backslashes', '\\', '\\\\SERVER\\SHARE\\proj'],
+    ['forward slashes', '/', '//server/share/proj'],
+  ])('should deny protected UNC tool calls using %s', (_, separator, dir) => {
+    const edit = [dir, 'sub', '..', 'secrets', 'sample.txt'].join(separator);
+    const read = [dir, '.env.test'].join(separator);
+
+    for (const [harness, payload] of /** @type {const} */ ([
+      [
+        'codex',
+        {
+          tool_name: 'apply_patch',
+          tool_input: {
+            input: '*** Begin Patch\n*** Add File: ' + edit + '\n*** End Patch',
+          },
+        },
+      ],
+      ['dsh', { tool_name: 'edit', tool_input: { file_path: edit } }],
+      ['dsh', { tool_name: 'read', tool_input: { file_path: read } }],
+    ])) {
+      expect(
+        guardDecision({ cwd: 'C:\\other', ...payload }, PERMS, {
+          harness,
+          ...uncWhere,
+        })?.decision
+      ).toBe('deny');
+    }
+  });
+
+  test.each([
+    'secrets\\sample.txt',
+    '\\proj\\secrets\\sample.txt',
+    '..\\..\\proj\\secrets\\sample.txt',
+    '//server//share/proj/secrets/sample.txt',
+  ])('should keep the Windows UNC share root when resolving %s', (file) => {
+    expect(
+      guardDecision(
+        { tool_name: 'edit', tool_input: { file_path: file } },
+        PERMS,
+        { harness: 'dsh', ...uncWhere }
+      )?.decision
+    ).toBe('deny');
+  });
+
+  test('should match rules anchored at a UNC share root', () => {
+    expect(
+      guardDecision(
+        { tool_name: 'read', tool_input: { file_path: '//server/share/.env' } },
+        PERMS,
+        { harness: 'dsh', ...uncWhere, projectDir: '\\\\server\\share\\' }
+      )?.decision
+    ).toBe('deny');
+  });
+
+  test.each([
+    [uncWhere.projectDir, '\\\\?\\UNC\\server\\share\\proj'],
+    ['\\\\?\\UNC\\server\\share\\proj', uncWhere.projectDir],
+  ])(
+    'should match ordinary and extended-length UNC paths (root %s)',
+    (root, dir) => {
+      expect(
+        guardDecision(
+          {
+            tool_name: 'edit',
+            tool_input: { file_path: dir + '\\secrets\\sample.txt' },
+          },
+          PERMS,
+          { harness: 'dsh', ...uncWhere, projectDir: root }
+        )?.decision
+      ).toBe('deny');
+    }
+  );
+
+  test('should keep UNC shares distinct', () => {
+    expect(
+      guardDecision(
+        {
+          tool_name: 'edit',
+          tool_input: { file_path: '//server/other/proj/secrets/sample.txt' },
+        },
+        PERMS,
+        { harness: 'dsh', ...uncWhere }
+      )
+    ).toBeNull();
+  });
+
   test('should resolve . and .. and doubled slashes in relative, absolute, Windows, and home paths', () => {
     for (const file of [
       './secrets/a',
