@@ -4,6 +4,8 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { applyCompaction } from '../compact.js';
+import { readPersonalization, writePersonalization } from '../personalize.js';
 import { AGENTS_LOCAL_FILE, initLocal } from '../render.js';
 import { listSnapshots, takeSnapshot } from '../snapshot.js';
 import {
@@ -112,6 +114,31 @@ describe('planUndo', () => {
 });
 
 describe('undoLast', () => {
+  test('should undo a persona compaction, restoring each file and preserving later notes', () => {
+    const original = '<!-- My notes -->\n\nAn unpublished persona draft.\n';
+    const file = path.join(dir, 'persona.md');
+    writePersonalization(dir, { persona: 'Original voice.' });
+    fs.writeFileSync(file, original);
+    applyCompaction(root, {
+      settings: { persona: 'Original voice.' },
+      persona: 'Short voice.',
+      before: 2000,
+      agent: 'claude',
+      now: JOB,
+    });
+    add('A note saved after the persona changed.', JOB);
+
+    const result = undoLast(root, { now: LATER });
+
+    expect(formatUndo(result)[0]).toMatch(/^Undid the persona compaction of /);
+    expect(readPersonalization(dir)).toEqual({ persona: 'Original voice.' });
+    expect(fs.readFileSync(file, 'utf-8')).toBe(original);
+    expect(
+      fs.readFileSync(path.join(root, AGENTS_LOCAL_FILE), 'utf-8')
+    ).toContain('Original voice.');
+    expect(texts()).toEqual(['A note saved after the persona changed.']);
+  });
+
   test('should revert the job and keep later saves', () => {
     history();
 
@@ -286,7 +313,7 @@ describe('formatUndo', () => {
       /^Would undo the import of .*: 1 change reverted; 2 later changes kept\. Nothing was changed\.$/
     );
     expect(formatUndo(null)).toEqual([
-      'Nothing to undo: no extraction, consolidation, or import left to revert.',
+      'Nothing to undo: no extraction, consolidation, import, or persona compaction left to revert.',
     ]);
   });
 

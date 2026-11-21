@@ -1,6 +1,6 @@
 /**
  * Snapshots: a copy of the store files taken before a job rewrites them
- * (`pnpm memory import --replace`, and consolidation), so `pnpm memory undo`
+ * (such as import, consolidation, and persona compaction), so `pnpm memory undo`
  * can put them back (design §6 path D, §12). Kept in memory/snapshots/
  * (gitignored), one folder per snapshot with a meta.json.
  */

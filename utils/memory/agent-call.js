@@ -7,7 +7,7 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { buildCommand } from '../loop/adapters.js';
+import { DSH_PATCH, buildCommand } from '../loop/adapters.js';
 import { INNER_LOOP_ENV } from '../task/loop.js';
 import { commandFor } from '../tools/registry.js';
 import { EXTRACT_ENV } from './queue.js';
@@ -16,9 +16,6 @@ export const AGENT_CALL_TIMEOUT_MS = 5 * 60 * 1000;
 /** The agents a memory job can call. */
 export const CALL_AGENTS = /** @type {const} */ (['claude', 'codex', 'dsh']);
 const ERROR_TAIL = 300;
-/** Claude can drop every tool; codex and dsh rely on their read-only modes. */
-const NO_TOOLS = { claude: ['--tools', ''], codex: [], dsh: [] };
-
 /**
  * @typedef {typeof CALL_AGENTS[number]} CallAgent
  * @typedef {{
@@ -46,13 +43,22 @@ export function headlessCommand({ agent, model = null, rootDir }) {
     argv: commandFor(rootDir, agent),
     mode: 'read',
   });
+  // Codex starts outside a checkout. DSH must not load the workspace patch.
+  const args = [...command.args];
+  switch (command.agent) {
+    case 'claude':
+      args.push('--tools', '');
+      break;
+    case 'codex':
+      args.splice(-1, 0, '--skip-git-repo-check');
+      break;
+    case 'dsh':
+      args.splice(args.lastIndexOf(DSH_PATCH) - 1, 2);
+      break;
+  }
   return {
     ...command,
-    args: [
-      ...command.args,
-      ...NO_TOOLS[/** @type {CallAgent} */ (agent)],
-      ...(model ? ['--model', model] : []),
-    ],
+    args: [...args, ...(model ? ['--model', model] : [])],
   };
 }
 

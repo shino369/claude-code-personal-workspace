@@ -65,8 +65,11 @@ describe('headlessCommand', () => {
 
     expect(codex.bin).toBe('codex');
     expect(codex.args).toContain('read-only');
+    expect(codex.args).toContain('--skip-git-repo-check');
     expect(codex.args).not.toContain('--tools');
     expect(dsh.bin).toBe('dsh');
+    expect(dsh.args).toContain('read-only');
+    expect(dsh.args).not.toContain('--patch');
     expect(dsh.args).not.toContain('--tools');
   });
 

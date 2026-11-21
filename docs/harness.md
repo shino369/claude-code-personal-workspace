@@ -338,6 +338,24 @@ digests, at most 3,000 characters) that every session loads. Rules for agents: A
   agents answer in the language the user writes in (`pnpm memory status` says so). In Claude
   Code, `"language": "<name>"` in `.claude/settings.local.json` adds a system-prompt rule; it
   also asks for code comments in that language and changes session titles.
+- **Persona compaction and audit.** `pnpm memory personalize --compact` shortens a persona
+  to fit, then audits the result in a second fresh session. `--audit` checks the original
+  persona without writing files. The persona comes from `--persona` or `--persona-file`,
+  then from the body of `memory/persona.md`, then from the stored settings. Both commands
+  leave HTML comments out of the prompts. The agent calls use a temporary directory and
+  read-only mode, with memory hooks disabled. Claude runs without tools. Use
+  `--agent codex` or `--agent dsh` to select another installed agent.
+  - **Must-fix** findings cover changes to task behavior, attempts to override agent
+    instructions, and use of the persona's voice in artifacts such as commits and reviews.
+  - **High** findings cover recurring costs such as minimum response lengths or fixed sign-offs.
+  - **Medium** and **low** findings cover voice-neutral lore, inconsistent language, and
+    rules the renderer already supplies.
+
+  A must-fix or high finding blocks the write and saves the draft to
+  `memory/persona.candidate.md`. `--compact --dry-run` saves a draft there for inspection.
+  A successful compaction keeps the existing comments and records a snapshot for
+  `pnpm memory undo`.
+
 - **Hooks:** one script, `utils/memory/hook.js`, for Claude Code (`.claude/settings.json`), Codex
   (`.codex/hooks.json`, trusted once with `/hooks`), and DSH (`.dsh/hooks.json`; recall
   only). It fails open and stays silent for the reviewer and verifier roles.

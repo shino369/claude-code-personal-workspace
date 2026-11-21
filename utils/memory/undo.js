@@ -1,6 +1,7 @@
 /**
  * `pnpm memory undo`: revert the last job that changed the store (an
- * extraction run, a consolidation, an import) from the snapshot it took
+ * extraction run, a consolidation, an import, or a persona compaction)
+ * from the snapshot it took
  * just before (snapshot.js), newest first, one job per call.
  *
  * Restoring the snapshot alone would also drop what was saved after the
@@ -8,7 +9,7 @@
  * job's own (they carry the job's time) and ops on notes the job created.
  * When the job replaced the log (`import --replace`), later ops cannot be
  * kept and are counted as lost. Only the files the job could change are put
- * back: for an import the settings, memory/persona.md, and AGENTS.local.md;
+ * back: for an import or compaction the settings, persona.md, and AGENTS.local.md;
  * for a consolidation the profile; an extraction changes notes only. The
  * state before the undo is kept as an `undo` snapshot,
  * which undo itself never picks.
@@ -39,12 +40,14 @@ import {
  * The files each job may change, put back as they were. A file the job
  * created is removed, except the user's own (AGENTS.local.md, persona.md).
  */
+const PERSONALIZATION_FILES = [
+  `${MEMORY_DIR}/personalization.json`,
+  `${MEMORY_DIR}/persona.md`,
+  AGENTS_LOCAL_FILE,
+];
 const RESTORED = {
-  import: [
-    `${MEMORY_DIR}/personalization.json`,
-    `${MEMORY_DIR}/persona.md`,
-    AGENTS_LOCAL_FILE,
-  ],
+  import: PERSONALIZATION_FILES,
+  compact: PERSONALIZATION_FILES,
   consolidate: [`${MEMORY_DIR}/profile.md`],
 };
 const NEVER_REMOVED = [AGENTS_LOCAL_FILE, `${MEMORY_DIR}/persona.md`];
@@ -52,6 +55,7 @@ const JOBS = {
   extract: 'extraction',
   consolidate: 'consolidation',
   import: 'import',
+  compact: 'persona compaction',
 };
 
 /**
@@ -78,6 +82,10 @@ export function planUndo(rootDir) {
   const current = readIfExists(path.join(memoryDir(rootDir), LOG_FILE)) ?? '';
   const appended = current.startsWith(before);
   const { ops } = parseLog(appended ? current.slice(before.length) : current);
+  if (snapshot.reason === 'compact') {
+    // A compaction has no note operations, even at the snapshot's time.
+    return { snapshot, log: current, undone: 0, kept: ops.length, lost: 0 };
+  }
   /** @param {import('./store.js').Op} op */
   const target = (op) => (op.op === 'add' ? op.note?.id : op.id);
   const created = new Set(
@@ -164,7 +172,7 @@ const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 export function formatUndo(result) {
   if (!result) {
     return [
-      'Nothing to undo: no extraction, consolidation, or import left to revert.',
+      'Nothing to undo: no extraction, consolidation, import, or persona compaction left to revert.',
     ];
   }
   const { snapshot, undone, kept, lost, backup } = result;

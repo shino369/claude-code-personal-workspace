@@ -43,7 +43,7 @@ const COMMENT_RE = /<!--[\s\S]*?-->/g;
 const MAX_TRAITS = 10;
 const PRESET_NAME = /^[a-z][a-z0-9-]*$/;
 /** The core block markers (render.js); a value holding one would break it. */
-const MARKER_RE = /<!--\s*memory:(start|end)\s*-->/;
+export const MARKER_RE = /<!--\s*memory:(start|end)\s*-->/;
 
 /** Fields in display order, with their labels. */
 const FIELDS = /** @type {const} */ ([
@@ -333,13 +333,15 @@ export function readPreset(name) {
  * @returns {string}
  */
 export function personaFromMarkdown(markdown) {
-  return markdown
-    .replace(/<!--[\s\S]*?-->/g, '')
+  return stripPersonaComments(markdown)
     .split('\n')
     .map((line) => line.trim().replace(/^#{1,6}\s+/, ''))
     .filter(Boolean)
     .join('\n');
 }
+
+/** @param {string} text */
+export const stripPersonaComments = (text) => text.replace(COMMENT_RE, '');
 
 /**
  * The stored persona, or undefined (also when the settings are broken).

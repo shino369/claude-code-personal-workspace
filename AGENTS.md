@@ -409,6 +409,8 @@ message to the user, progress notes between tool calls included, and a set langu
 when the user writes in another. Commit messages, PR text, code, comments, docs, translations, and reviews keep the
 workspace's plain style, and a persona never changes what you do. The reviewer and verifier roles
 ignore it and get no recall, so reviews stay clean-context.
+Over the budget, `pnpm memory personalize --compact` shortens and audits the persona.
+Use `pnpm memory personalize --audit` to check it without applying a change.
 
 **Move or back up** only when the user asks: `pnpm memory export`, then `pnpm memory import <file>
 --dry-run` on the other machine.

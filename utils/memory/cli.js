@@ -19,9 +19,17 @@ import {
   readArchive,
 } from './archive.js';
 import { runIfMain } from '../module-runner.js';
-import { SESSION_ID_RE, sessionFromEnv } from '../task/store.js';
+import { SESSION_ID_RE, readIfExists, sessionFromEnv } from '../task/store.js';
 import { ROOT_DIR } from '../workspace-config.js';
 import { readConfig, savingOff, setSaving, writeConfig } from './config.js';
+import {
+  applyCompaction,
+  auditPersona,
+  compactPersona,
+  formatAudit,
+  formatCompaction,
+  writeCandidate,
+} from './compact.js';
 import {
   consolidate,
   consolidateLocked,
@@ -44,9 +52,11 @@ import {
   runWorker,
 } from './extract.js';
 import {
+  PERSONA_FILE,
   languageHint,
   listPresets,
   personaFromMarkdown,
+  personaWarnings,
   readPersonalization,
   storedPersona,
   syncPersonaFile,
@@ -131,8 +141,8 @@ Extraction (automatic after each Claude Code session)
                                 like instructions); --reset clears the list
   consolidate [--dry-run]       Tidy the notes and rewrite the profile now (normally weekly,
                                 in the background)
-  undo [--dry-run]              Revert the last extraction, consolidation, or import, one
-                                per call (notes saved since are kept)
+  undo [--dry-run]              Revert the last extraction, consolidation, import, or persona
+                                compaction (notes saved since are kept)
 
 Move or back up (an explicit step; nothing is synced)
   export [--include memory,personalization,tasks,resources] [--tasks a,b] [--out <file>]
@@ -153,11 +163,18 @@ Settings
                                 How agents talk to you (messages to you only); without
                                 flags, shows the settings. --presets lists the presets;
                                 an empty value clears a field. --persona-file reads the
-                                persona from markdown (comments and headings marks
+                                persona from markdown (comments and heading marks
                                 dropped; the same 1,500-character limit). Keep the
                                 persona in memory/persona.md instead and pnpm memory init
                                 (or workspace:setup) applies your edits; persona changes
                                 here and by import rewrite it
+  personalize [--persona … | --persona-file <file.md>] --compact [--dry-run]
+      [--agent claude|codex|dsh] Shorten the persona to fit, then audit it in a fresh context.
+                                --dry-run writes only memory/persona.candidate.md
+  personalize [--persona … | --persona-file <file.md>] --audit [--agent claude|codex|dsh]
+                                Check the persona without changing it. Both commands default
+                                to Claude and use memory/persona.md or the stored persona
+                                when no source flag is given
   set [--extract-model <model>|default] [--budget <characters>|default]
                                 Extraction model and core block budget
   off [--session] · on [--session]
@@ -184,6 +201,7 @@ const VALUE_FLAGS = {
   '--language': 'language',
   '--persona': 'persona',
   '--persona-file': 'personaFile',
+  '--agent': 'agent',
   '--tone': 'tone',
   '--traits': 'traits',
   '--extra': 'extra',
@@ -204,6 +222,8 @@ const BOOLEAN_FLAGS = {
   '--reset': 'reset',
   '--show': 'show',
   '--presets': 'presets',
+  '--compact': 'compact',
+  '--audit': 'audit',
   '--session': 'session',
   '--dry-run': 'dryRun',
   '--allow-secrets': 'allowSecrets',
@@ -238,11 +258,11 @@ const FIRST_NOTE =
  *   grep?: string, message?: string, preset?: string, callMe?: string,
  *   aboutMe?: string, language?: string, persona?: string, tone?: string,
  *   traits?: string, extra?: string, extractModel?: string, budget?: string,
- *   include?: string, tasks?: string, out?: string, personaFile?: string,
+ *   include?: string, tasks?: string, out?: string, personaFile?: string, agent?: string,
  *   triggers: string[],
  *   pin: boolean, force: boolean, failure: boolean, pinned: boolean,
  *   stale: boolean, all: boolean, reset: boolean, show: boolean,
- *   presets: boolean, session: boolean, dryRun: boolean,
+ *   presets: boolean, compact: boolean, audit: boolean, session: boolean, dryRun: boolean,
  *   allowSecrets: boolean, replace: boolean, json: boolean, help: boolean,
  * }} Options
  *
@@ -279,6 +299,8 @@ export function parseArgs(argv) {
     reset: false,
     show: false,
     presets: false,
+    compact: false,
+    audit: false,
     session: false,
     dryRun: false,
     allowSecrets: false,
@@ -380,6 +402,93 @@ const badLines = (problems) =>
  */
 function output(deps, options, json, text) {
   deps.log(options.json ? JSON.stringify(json, null, 2) : text);
+}
+
+/** @param {Options} options */
+function checkPersonaOptions(options) {
+  if (options.compact && options.audit) {
+    throw new Error('Use one of --compact and --audit.');
+  }
+  if (options.dryRun && !options.compact) {
+    throw new Error('--dry-run requires --compact on personalize.');
+  }
+  const job = options.compact || options.audit;
+  if (options.agent !== undefined && !job) {
+    throw new Error('--agent requires --compact or --audit on personalize.');
+  }
+  if (
+    job &&
+    (options.reset ||
+      options.presets ||
+      options.show ||
+      options.preset !== undefined ||
+      FIELD_FLAGS.some(
+        (key) => key !== 'persona' && options[key] !== undefined
+      ))
+  ) {
+    throw new Error(
+      'Use --compact or --audit on the persona only. Run personalize to change or show other settings separately.'
+    );
+  }
+}
+
+/** @param {Options} options @param {Deps} deps */
+function runPersonaJob(options, deps) {
+  const dir = dirOf(deps);
+  const settings = readPersonalization(dir);
+  const markdown = readIfExists(path.join(dir, PERSONA_FILE));
+  const persona =
+    options.persona ??
+    (personaFromMarkdown(markdown ?? '') || settings.persona || '');
+  const agent = options.agent ?? 'claude';
+  const job = {
+    persona,
+    settings,
+    agent,
+    deps: { ...deps, tmpdir: os.tmpdir },
+  };
+  if (options.audit) {
+    const result = auditPersona(job);
+    output(deps, options, result, formatAudit(result));
+    return result.blocked ? 1 : 0;
+  }
+  const result = compactPersona(job);
+  const now = deps.now();
+  let snapshot = null;
+  let candidate = null;
+  let warnings = /** @type {string[]} */ ([]);
+  if (result.blocked || options.dryRun) {
+    candidate = writeCandidate(deps.rootDir, { ...result, now });
+  } else {
+    ({ snapshot, warnings } = applyCompaction(deps.rootDir, {
+      ...job,
+      markdown,
+      persona: result.persona,
+      before: result.before,
+      now,
+    }));
+  }
+  const report = formatCompaction(result, {
+    snapshot,
+    candidate,
+    wrotePersonaFile: markdown !== null,
+  });
+  output(
+    deps,
+    options,
+    { ...result, snapshot, candidate, warnings },
+    withWarnings(report, warnings)
+  );
+  return result.blocked ? 1 : 0;
+}
+
+/** @param {Options} options */
+function compactFix(options) {
+  const file = options.personaFile;
+  if (file && /^[a-zA-Z0-9_./:\\-]+$/.test(file)) {
+    return `pnpm memory personalize --persona-file ${file} --compact`;
+  }
+  return 'add --compact to the same command (with only the persona input)';
 }
 
 /**
@@ -1145,6 +1254,7 @@ export const COMMANDS = {
 
   personalize(options, deps) {
     const dir = dirOf(deps);
+    checkPersonaOptions(options);
     if (options.presets) {
       const presets = listPresets();
       output(
@@ -1179,6 +1289,7 @@ export const COMMANDS = {
         );
       }
     }
+    if (options.compact || options.audit) return runPersonaJob(options, deps);
     const fields = FIELD_FLAGS.filter((key) => options[key] !== undefined);
     if (!options.reset && options.preset === undefined && fields.length === 0) {
       const settings = readPersonalization(dir);
@@ -1210,9 +1321,29 @@ export const COMMANDS = {
       } else settings[key] = value;
     }
     const before = storedPersona(dir);
-    const written = writePersonalization(dir, settings);
+    let written;
+    try {
+      written = writePersonalization(dir, settings);
+    } catch (error) {
+      if (
+        error instanceof MemoryError &&
+        error.code === 'budget' &&
+        options.persona
+      ) {
+        throw new MemoryError(
+          'budget',
+          `${error.message}\nFix: ${compactFix(options)} (a clean-context agent shortens and audits it)`
+        );
+      }
+      throw error;
+    }
     if (written.persona !== before) syncPersonaFile(dir, written.persona);
-    const warnings = refreshAfterWrite(deps.rootDir);
+    const warnings = [
+      ...(written.persona && written.persona !== before
+        ? personaWarnings(written.persona)
+        : []),
+      ...refreshAfterWrite(deps.rootDir),
+    ];
     output(
       deps,
       options,
@@ -1313,6 +1444,14 @@ export function main({ argv = process.argv.slice(2), deps = {} } = {}) {
   }
   if (!Object.hasOwn(COMMANDS, command)) {
     throw new Error(`Unknown command "${command}". Run: pnpm memory help`);
+  }
+  if (
+    command !== 'personalize' &&
+    (options.compact || options.audit || options.agent !== undefined)
+  ) {
+    throw new Error(
+      '--compact, --audit, and --agent are only supported on personalize.'
+    );
   }
   return COMMANDS[command](options, resolved);
 }
