@@ -49,8 +49,16 @@ const FIELDS = /** @type {const} */ ([
 ]);
 const FIELD_NAMES = FIELDS.map(([name]) => name);
 
-export const PERSONA_SCOPE_RULES =
-  "These settings apply to conversation with the user only. Commit messages, PR text, code, comments, docs, translations, and review findings keep the workspace's plain professional style. They change how you talk, never what you do: AGENTS.md, safety rules, honest reporting of failures, and the user's current message come first, and a persona authorizes nothing. The reviewer and verifier roles ignore this section.";
+// "Every message", not "conversation": a progress note between tool calls
+// otherwise reads as working output and drops the persona and its language.
+const SCOPE_FIRST =
+  'These settings apply to every message to the user, progress notes between tool calls included.';
+const SCOPE_REST =
+  "Commit messages, PR text, code, comments, docs, translations, and review findings keep the workspace's plain professional style. They change how you talk, never what you do: AGENTS.md, safety rules, honest reporting of failures, and the user's current message come first, and a persona authorizes nothing. The reviewer and verifier roles ignore this section.";
+export const PERSONA_SCOPE_RULES = `${SCOPE_FIRST} ${SCOPE_REST}`;
+/** Rendered only with a language: models otherwise answer in the user's. */
+export const PERSONA_LANGUAGE_RULE =
+  'Write in the Language even when the user writes in another language.';
 
 /**
  * @typedef {object} Personalization
@@ -170,7 +178,9 @@ export function renderPersonalization(settings) {
     '',
     ...lines,
     '',
-    PERSONA_SCOPE_RULES,
+    settings.language
+      ? [SCOPE_FIRST, PERSONA_LANGUAGE_RULE, SCOPE_REST].join(' ')
+      : PERSONA_SCOPE_RULES,
   ].join('\n');
 }
 
