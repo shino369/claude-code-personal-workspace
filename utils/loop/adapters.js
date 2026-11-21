@@ -217,6 +217,9 @@ export function runAgent({
     timeout: timeoutMs,
     killSignal: 'SIGTERM',
     maxBuffer: 64 * 1024 * 1024,
+    // A detached caller (the memory worker, queue.js) has no console, so
+    // Windows would give every headless child a new, visible console window.
+    windowsHide: true,
     env: Object.fromEntries(
       Object.entries(env).filter(([key]) => !HARNESS_SESSION_VARS.includes(key))
     ),
