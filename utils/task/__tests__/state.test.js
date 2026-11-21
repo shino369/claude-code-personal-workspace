@@ -474,6 +474,51 @@ describe('waiting steps', () => {
     expect(nextStep(next)?.id).toBe('s2');
   });
 
+  test('should mark a waiting step as a gate', () => {
+    const { step } = setStepStatus(makeState(), {
+      id: 's1',
+      status: 'waiting',
+      note: 'the user approves the design',
+      gate: true,
+    });
+    expect(step).toMatchObject({ status: 'waiting', gate: true });
+  });
+
+  test('should drop the gate when the step moves on or waits again without it', () => {
+    const { state } = setStepStatus(makeState(), {
+      id: 's1',
+      status: 'waiting',
+      note: 'the user approves the design',
+      gate: true,
+    });
+    expect(
+      setStepStatus(state, { id: 's1', status: 'done' }).step
+    ).not.toHaveProperty('gate');
+    expect(
+      setStepStatus(state, {
+        id: 's1',
+        status: 'waiting',
+        note: 'a store review',
+      }).step
+    ).not.toHaveProperty('gate');
+  });
+
+  test('should refuse a gate on a step that is not waiting', () => {
+    expect(() =>
+      setStepStatus(makeState(), { id: 's1', status: 'done', gate: true })
+    ).toThrow(
+      '--gate goes with waiting: pnpm task step s1 waiting --gate -m "who does what"'
+    );
+  });
+
+  test('should refuse a gate in state.json that is not true', () => {
+    const state = /** @type {any} */ (makeState());
+    state.steps[0].gate = 'yes';
+    expect(validateState(state)).toContain(
+      'steps[0].gate must be true when set'
+    );
+  });
+
   test('should be listed by idleReason', () => {
     const state = makeState();
     for (const step of state.steps) step.status = 'done';

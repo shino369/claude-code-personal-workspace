@@ -8,7 +8,10 @@ import { MemoryError, memoryDir } from '../store.js';
 import {
   PERSONALIZATION_BUDGET,
   PERSONALIZATION_FILE,
+  LANGUAGE_HINT,
+  PERSONA_LANGUAGE_RULE,
   PERSONA_SCOPE_RULES,
+  languageHint,
   listPresets,
   normalizePersonalization,
   PERSONA_FILE,
@@ -151,15 +154,55 @@ describe('renderPersonalization', () => {
       '- Traits: direct, no emoji',
       '- Also: Ask before big refactors.',
       '',
-      PERSONA_SCOPE_RULES,
+      'These settings apply to every message to the user, progress notes between tool calls included. ' +
+        PERSONA_LANGUAGE_RULE +
+        PERSONA_SCOPE_RULES.slice(PERSONA_SCOPE_RULES.indexOf('.') + 1),
     ]);
   });
 
+  test('should end with the scope rules alone without a language', () => {
+    const lines = renderPersonalization({
+      persona: 'A calm senior engineer.',
+    }).split('\n');
+
+    expect(lines.at(-1)).toBe(PERSONA_SCOPE_RULES);
+    expect(lines.at(-1)).not.toContain(PERSONA_LANGUAGE_RULE);
+  });
+
+  test('should keep the set language even when the user writes in another', () => {
+    expect(PERSONA_LANGUAGE_RULE).toBe(
+      'Write in the Language even when the user writes in another language.'
+    );
+  });
+
   test('should state that the persona never applies to artifacts or behavior', () => {
-    expect(PERSONA_SCOPE_RULES).toMatch(/conversation with the user only/);
+    expect(PERSONA_SCOPE_RULES).toMatch(
+      /^These settings apply to every message to the user, progress notes between tool calls included\. /
+    );
     expect(PERSONA_SCOPE_RULES).toMatch(/commit messages, PR text, code/i);
     expect(PERSONA_SCOPE_RULES).toMatch(/authorizes nothing/);
     expect(PERSONA_SCOPE_RULES).toMatch(/reviewer and verifier/);
+  });
+});
+
+describe('languageHint', () => {
+  test.each([{ persona: 'A calm guide.' }, { tone: 'calm' }])(
+    'should hint at the language for %j',
+    (settings) => {
+      expect(languageHint(settings)).toBe(LANGUAGE_HINT);
+    }
+  );
+
+  test.each([
+    {},
+    { callMe: 'Sam' },
+    { persona: 'A calm guide.', language: 'English' },
+  ])('should not hint for %j', (settings) => {
+    expect(languageHint(settings)).toBe('');
+  });
+
+  test('should name the flag that sets the language', () => {
+    expect(LANGUAGE_HINT).toMatch(/pnpm memory personalize --language/);
   });
 });
 

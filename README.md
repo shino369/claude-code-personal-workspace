@@ -81,7 +81,6 @@ pnpm check
 
 Then simply run the agent inside this workspace.
 
-
 ## Repository Layout
 
 ```text
@@ -149,7 +148,8 @@ pnpm memory init                    # once (pnpm workspace:setup runs it)
 pnpm memory                         # status: notes, core block, saving on/off, extraction queue
 pnpm memory add "The user prefers design first, then review." --scope user --type preference --tags design,review
 pnpm memory recall "how do I merge this PR"   # what the hooks would inject
-pnpm memory personalize --presets   # how agents talk to you (conversation only)
+pnpm memory personalize --presets   # how agents talk to you (every message to you, nothing else)
+pnpm memory personalize --language "Japanese"   # keep it even when you write in English
 pnpm memory personalize --persona-file persona.md   # a longer persona, written in markdown
 # or keep it in memory/persona.md: pnpm memory init (and workspace:setup) apply your edits
 pnpm memory off --session           # an incognito session

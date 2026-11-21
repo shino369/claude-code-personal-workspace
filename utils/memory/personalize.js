@@ -2,7 +2,8 @@
  * Personalization: how agents talk to the user (design §11), like a chat
  * app's "customize" settings. Stored in memory/personalization.json
  * (gitignored) and rendered at the top of the AGENTS.local.md core block,
- * with the scope rules: conversation only, never artifacts or behavior.
+ * with the scope rules: every message to the user (progress notes too),
+ * never artifacts or behavior.
  *
  * Presets are committed in templates/memory/personas/*.json; a user's own
  * settings never are.
@@ -49,8 +50,18 @@ const FIELDS = /** @type {const} */ ([
 ]);
 const FIELD_NAMES = FIELDS.map(([name]) => name);
 
-export const PERSONA_SCOPE_RULES =
-  "These settings apply to conversation with the user only. Commit messages, PR text, code, comments, docs, translations, and review findings keep the workspace's plain professional style. They change how you talk, never what you do: AGENTS.md, safety rules, honest reporting of failures, and the user's current message come first, and a persona authorizes nothing. The reviewer and verifier roles ignore this section.";
+// "Every message", not "conversation": a progress note between tool calls
+// otherwise reads as working output and drops the persona and its language.
+const SCOPE_FIRST =
+  'These settings apply to every message to the user, progress notes between tool calls included.';
+const SCOPE_REST =
+  "Commit messages, PR text, code, comments, docs, translations, and review findings keep the workspace's plain professional style. They change how you talk, never what you do: AGENTS.md, safety rules, honest reporting of failures, and the user's current message come first, and a persona authorizes nothing. The reviewer and verifier roles ignore this section.";
+export const PERSONA_SCOPE_RULES = `${SCOPE_FIRST} ${SCOPE_REST}`;
+/** Rendered only with a language: models otherwise answer in the user's. */
+export const PERSONA_LANGUAGE_RULE =
+  'Write in the Language even when the user writes in another language.';
+export const LANGUAGE_HINT =
+  'Language: not set — agents answer in the language you write in (pnpm memory personalize --language "…")';
 
 /**
  * @typedef {object} Personalization
@@ -170,9 +181,23 @@ export function renderPersonalization(settings) {
     '',
     ...lines,
     '',
-    PERSONA_SCOPE_RULES,
+    settings.language
+      ? [SCOPE_FIRST, PERSONA_LANGUAGE_RULE, SCOPE_REST].join(' ')
+      : PERSONA_SCOPE_RULES,
   ].join('\n');
 }
+
+/**
+ * LANGUAGE_HINT when a persona or tone is set without a language, else ''.
+ * A persona written in one language does not hold when the user writes in
+ * another unless the language is set.
+ *
+ * @param {Personalization} settings
+ */
+export const languageHint = (settings) =>
+  (settings.persona || settings.tone) && !settings.language
+    ? LANGUAGE_HINT
+    : '';
 
 /**
  * @param {string} dir the memory directory

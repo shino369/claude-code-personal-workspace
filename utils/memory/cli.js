@@ -44,6 +44,7 @@ import {
   runWorker,
 } from './extract.js';
 import {
+  languageHint,
   listPresets,
   personaFromMarkdown,
   readPersonalization,
@@ -149,7 +150,7 @@ Settings
   personalize [--preset <name>] [--call-me …] [--about-me …] [--language …]
       [--persona … | --persona-file <file.md>] [--tone <text|preset>] [--traits a,b]
       [--extra …] [--reset]
-                                How agents talk to you (conversation only); without
+                                How agents talk to you (messages to you only); without
                                 flags, shows the settings. --presets lists the presets;
                                 an empty value clears a field. --persona-file reads the
                                 persona from markdown (comments and headings marks
@@ -355,6 +356,17 @@ const splitList = (value) =>
  */
 const withWarnings = (text, warnings) =>
   [text, ...warnings.map((warning) => `Warning: ${warning}`)].join('\n');
+
+/**
+ * The rendered settings, then the language hint when it applies ('' without
+ * settings).
+ *
+ * @param {import('./personalize.js').Personalization} settings
+ */
+const withHint = (settings) =>
+  [renderPersonalization(settings), languageHint(settings)]
+    .filter(Boolean)
+    .join('\n\n');
 
 /** @param {string[]} problems */
 const badLines = (problems) =>
@@ -822,6 +834,7 @@ export const COMMANDS = {
             : []),
           `Core block: ${core.block.length}/${core.budget} characters (${AGENTS_LOCAL_FILE})`,
           `Personalization: ${fields.length > 0 ? fields.join(', ') : 'not set (pnpm memory personalize --presets)'}`,
+          ...[languageHint(core.personalization)].filter(Boolean),
           `Saving: ${saving}${off ? ' (pnpm memory on)' : ''}`,
           `Extraction model: ${extractModel ?? "the main session's model"}`,
           `Extraction: ${plural(extraction.queued, 'session')} queued; ${lastRun}`,
@@ -1173,7 +1186,7 @@ export const COMMANDS = {
         deps,
         options,
         { settings },
-        renderPersonalization(settings) ||
+        withHint(settings) ||
           'No personalization set. Start from a preset: pnpm memory personalize --preset <name> (list: --presets), or set fields such as --call-me "<name>".'
       );
       return 0;
@@ -1204,10 +1217,7 @@ export const COMMANDS = {
       deps,
       options,
       { settings: written, warnings },
-      withWarnings(
-        renderPersonalization(written) || 'Personalization cleared.',
-        warnings
-      )
+      withWarnings(withHint(written) || 'Personalization cleared.', warnings)
     );
     return 0;
   },

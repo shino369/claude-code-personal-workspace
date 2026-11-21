@@ -124,6 +124,7 @@ In `plan.md`, edit the Goal, Acceptance, and Decisions by hand. The Steps block 
 | A step is finished                   | `pnpm task step <id> done -m "what changed"`                  |
 | A step cannot continue               | `pnpm task step <id> blocked -m "why"`                        |
 | A step waits on the user or others   | `pnpm task step <id> waiting -m "who does what"`              |
+| …and nothing is built yet (approval) | `pnpm task step <id> waiting --gate -m "the user approves …"` |
 | A step was added by mistake          | `pnpm task step <id> remove -m "why"`                         |
 | New work appears                     | `pnpm task step add "title" [--deps s1,s2]`                   |
 | Check the work                       | `pnpm task verify` (`--fast` for the quick subset)            |
@@ -403,8 +404,9 @@ announces it at the next session start, and a weekly consolidation merges duplic
 the profile; `pnpm memory inbox` lists the changes they held back, and `pnpm memory undo` reverts
 the last such job (or import).
 
-**Personalization** (`pnpm memory personalize`: name, tone, persona) applies to conversation with
-the user only. Commit messages, PR text, code, comments, docs, translations, and reviews keep the
+**Personalization** (`pnpm memory personalize`: name, language, tone, persona) applies to every
+message to the user, progress notes between tool calls included, and a set language holds even
+when the user writes in another. Commit messages, PR text, code, comments, docs, translations, and reviews keep the
 workspace's plain style, and a persona never changes what you do. The reviewer and verifier roles
 ignore it and get no recall, so reviews stay clean-context.
 

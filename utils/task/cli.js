@@ -111,10 +111,12 @@ Work
   claim [id]                    Atomically take the next ready step (or <id>) for --agent;
                                 exit 2 when nothing is ready (prints why)
   step add "title" [--deps s1,s2]
-  step <id> start|done|blocked|waiting|todo [-m "…"] [--force]
+  step <id> start|done|blocked|waiting [--gate]|todo [-m "…"] [--force]
                                 Update a step (blocked needs -m "reason"; waiting = on
-                                someone else, needs -m "who does what"; todo releases a
-                                claim; --force takes over a step another agent claimed)
+                                someone else, needs -m "who does what"; --gate: the wait
+                                holds the review, e.g. design approval before any code;
+                                todo releases a claim; --force takes over a step another
+                                agent claimed)
   step <id> remove -m "why"     Remove a step written by mistake
   note --done "…" --next "…" [--open "…"] [-m "…"] [--learn "…"]…
                                 Append a NOTES.md entry (State line is filled in for you);
@@ -192,6 +194,7 @@ const BOOLEAN_FLAGS = {
   '--fast': 'fast',
   '--all': 'all',
   '--force': 'force',
+  '--gate': 'gate',
   '--folder': 'folder',
   '--fix': 'fix',
   '--no-check': 'noCheck',
@@ -208,7 +211,7 @@ const BOOLEAN_FLAGS = {
  *   repo?: string,
  *   step: string[], verify: string[], verifyFast: string[], learn: string[],
  *   json: boolean, fast: boolean, all: boolean, force: boolean, help: boolean,
- *   fix: boolean, noCheck: boolean, folder: boolean,
+ *   fix: boolean, noCheck: boolean, folder: boolean, gate: boolean,
  * }} Options
  * @typedef {import('./deps.js').Deps} Deps
  */
@@ -233,6 +236,7 @@ export function parseArgs(argv) {
     fix: false,
     noCheck: false,
     folder: false,
+    gate: false,
   };
   const record = /** @type {Record<string, unknown>} */ (options);
 
@@ -869,7 +873,7 @@ export const COMMANDS = {
     };
     if (!action || !Object.hasOwn(actions, action)) {
       throw new Error(
-        `Usage: pnpm task step ${first} start|done|blocked|waiting|todo|remove [-m "…"]`
+        `Usage: pnpm task step ${first} start|done|blocked|waiting [--gate]|todo|remove [-m "…"]`
       );
     }
     /** @type {import('./state.js').Step | undefined} */
@@ -884,6 +888,7 @@ export const COMMANDS = {
           agent,
           note: options.message,
           force: options.force,
+          gate: options.gate,
           now,
         });
         changed = result.step;
@@ -912,7 +917,7 @@ export const COMMANDS = {
       options,
       { ok: true, task: name, step, next: following },
       [
-        `${step.id}. ${step.title} → ${step.status}`,
+        `${step.id}. ${step.title} → ${step.status}${step.gate ? ' (gate: holds the review)' : ''}`,
         following
           ? `Next step: ${following.id}. ${following.title}`
           : waitingIds.length > 0

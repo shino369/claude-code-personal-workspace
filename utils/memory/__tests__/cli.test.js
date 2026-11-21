@@ -14,7 +14,11 @@ import {
   readConfig,
   writeConfig,
 } from '../config.js';
-import { PERSONALIZATION_FILE, readPersonalization } from '../personalize.js';
+import {
+  LANGUAGE_HINT,
+  PERSONALIZATION_FILE,
+  readPersonalization,
+} from '../personalize.js';
 import {
   appendInbox,
   appendJournal,
@@ -930,9 +934,22 @@ describe('status', () => {
     expect(out).toMatch(/^Extraction model: small-model$/m);
   });
 
+  test('should hint at the language when a persona has none', () => {
+    run(['personalize', '--persona', 'A calm guide.']);
+
+    expect(run(['status']).out.split('\n')).toContain(LANGUAGE_HINT);
+  });
+
+  test('should not hint at the language once one is set', () => {
+    run(['personalize', '--persona', 'A calm guide.', '--language', 'English']);
+
+    expect(run(['status']).out).not.toContain(LANGUAGE_HINT);
+  });
+
   test('should show the defaults', () => {
     const { out } = run(['status']);
 
+    expect(out).not.toContain(LANGUAGE_HINT);
     expect(out).toMatch(
       /^Personalization: not set \(pnpm memory personalize --presets\)$/m
     );
@@ -1915,6 +1932,33 @@ describe('personalize', () => {
     expect(run(['personalize']).out).toBe(
       'No personalization set. Start from a preset: pnpm memory personalize --preset <name> (list: --presets), or set fields such as --call-me "<name>".'
     );
+  });
+
+  test('should hint at the language after setting a persona without one', () => {
+    const { out } = run(['personalize', '--persona', 'A calm guide.']);
+
+    expect(out).toMatch(/^## Personalization/);
+    expect(out.endsWith(`\n\n${LANGUAGE_HINT}`)).toBe(true);
+  });
+
+  test('should hint at the language when showing such settings', () => {
+    run(['personalize', '--persona', 'A calm guide.']);
+
+    expect(run(['personalize']).out.endsWith(`\n\n${LANGUAGE_HINT}`)).toBe(
+      true
+    );
+  });
+
+  test('should not hint at the language once one is set', () => {
+    const { out } = run([
+      'personalize',
+      '--persona',
+      'A calm guide.',
+      '--language',
+      'English',
+    ]);
+
+    expect(out).not.toContain(LANGUAGE_HINT);
   });
 
   test('should list the presets', () => {

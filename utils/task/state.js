@@ -34,7 +34,9 @@ export const DATE_SUFFIX_RE = /-\d{6}$/;
 
 /**
  * @typedef {'todo' | 'in_progress' | 'blocked' | 'waiting' | 'done'} StepStatus
- * @typedef {{ id: string, title: string, status: StepStatus, deps: string[], owner: string | null, claimedAt?: string, note?: string }} Step
+ * @typedef {{ id: string, title: string, status: StepStatus, deps: string[], owner: string | null, claimedAt?: string, note?: string, gate?: true }} Step
+ *   gate: a waiting step that holds the review (nothing to review until it is
+ *   resolved, e.g. the user's approval of a design)
  * @typedef {{ at: string, ok: boolean, failed: string | null, summary: string, print?: string }} VerifyResult
  *   print: what the run saw (`workPrint`); a passing run is not repeated on the same print
  * @typedef {{
@@ -216,6 +218,9 @@ export function validateState(state) {
     }
     if (st.claimedAt !== undefined && !isString(st.claimedAt)) {
       errors.push(`${label}.claimedAt must be a string`);
+    }
+    if (st.gate !== undefined && st.gate !== true) {
+      errors.push(`${label}.gate must be true when set`);
     }
   });
 
@@ -488,15 +493,24 @@ export function addStep(state, { title, deps = [] }) {
 /**
  * Change a step's status. `start` also sets the owner and refuses a step
  * another agent is working on (unless `force`); `todo` releases the claim;
- * `blocked` requires a reason so the next agent knows why.
+ * `blocked` requires a reason so the next agent knows why. `gate` (waiting
+ * only) marks a wait that holds the review; any other change drops it.
  *
  * @param {TaskState} state
- * @param {{ id: string, status: StepStatus, agent?: string | null, note?: string, force?: boolean, now?: Date }} options
+ * @param {{ id: string, status: StepStatus, agent?: string | null, note?: string, force?: boolean, gate?: boolean, now?: Date }} options
  * @returns {{ state: TaskState, step: Step }}
  */
 export function setStepStatus(
   state,
-  { id, status, agent = null, note, force = false, now = new Date() }
+  {
+    id,
+    status,
+    agent = null,
+    note,
+    force = false,
+    gate = false,
+    now = new Date(),
+  }
 ) {
   if (!STEP_STATUSES.includes(status)) {
     throw new Error(
@@ -507,6 +521,11 @@ export function setStepStatus(
   if (!current) {
     const known = state.steps.map((s) => s.id).join(', ') || 'none';
     throw new Error(`Unknown step "${id}" (steps: ${known})`);
+  }
+  if (gate && status !== 'waiting') {
+    throw new Error(
+      `--gate goes with waiting: pnpm task step ${id} waiting --gate -m "who does what"`
+    );
   }
   if (status === 'blocked' && !note) {
     throw new Error('A blocked step needs a reason: -m "why it is blocked"');
@@ -557,6 +576,8 @@ export function setStepStatus(
   }
   if (note) step.note = note;
   else delete step.note;
+  if (gate) step.gate = true;
+  else delete step.gate;
 
   return {
     state: {

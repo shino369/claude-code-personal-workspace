@@ -250,7 +250,7 @@ describe('pendingReviewAgents', () => {
 describe('decideQuality', () => {
   /**
    * @param {Partial<import('../quality.js').Quality>} [q]
-   * @param {Array<{ id: string, status: import('../state.js').StepStatus }>} [steps]
+   * @param {Array<{ id: string, status: import('../state.js').StepStatus, gate?: true }>} [steps]
    * @returns {import('../state.js').TaskState}
    */
   const code = (q = {}, steps = [{ id: 's1', status: 'done' }]) => ({
@@ -272,6 +272,9 @@ describe('decideQuality', () => {
     const result = decide(code());
     expect(result.action).toBe('block');
     expect(result.reason).toContain('run review round 1/2 in clean contexts');
+    expect(result.reason).toContain(
+      'Verify passes and every step of demo is done. Before stopping'
+    );
     expect(result.reason).toContain('1. pnpm task review');
     expect(result.reason).toContain('this reminder is not repeated');
     expect(result.quality.nudged).toBe('review round 1:r0:fp2:');
@@ -300,6 +303,17 @@ describe('decideQuality', () => {
     );
     expect(result.action).toBe('block');
     expect(result.reason).toContain('run review round 1/2');
+    expect(result.reason).toContain(
+      'every step of demo is done or waiting on someone else (s2).'
+    );
+  });
+
+  test('should not ask for a review while a gate step waits', () => {
+    const state = code({}, [
+      { id: 's1', status: 'done' },
+      { id: 's2', status: 'waiting', gate: true },
+    ]);
+    expect(decide(state)).toEqual({ action: 'allow', quality: state.quality });
   });
 
   test('should allow a stop while a step is blocked or work is open', () => {

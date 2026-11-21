@@ -789,6 +789,24 @@ describe('step waiting and remove', () => {
     );
   });
 
+  test('should mark a waiting step as a gate that holds the review', () => {
+    newTask();
+    const { out } = run([
+      'step',
+      's2',
+      'waiting',
+      '--gate',
+      '-m',
+      'the user approves the design',
+    ]);
+    expect(out).toContain('s2. Two → waiting (gate: holds the review)');
+    expect(state().steps[1]).toMatchObject({ status: 'waiting', gate: true });
+  });
+
+  test('should list --gate in the help', () => {
+    expect(run(['help']).out).toContain('waiting [--gate]');
+  });
+
   test('should say no step is left for the agent when the rest waits on someone else', () => {
     newTask();
     run(['step', 's1', 'done']);
