@@ -329,6 +329,13 @@ digests, at most 3,000 characters) that every session loads. Rules for agents: A
 - **Recall** is lexical (BM25F over tags and text, `Intl.Segmenter` for Japanese and Chinese) with
   a gate, so unrelated prompts inject nothing; at most 4 notes, 1,200 characters, once per session.
   Tags written at save time carry the synonyms and other languages.
+- **Personalization** (`pnpm memory personalize`) renders at the top of the core block and
+  applies to every message to the user, progress notes between tool calls included. The core
+  block loads once per session, so the hook also adds one `[Persona]` line, with the language, at
+  each typed prompt. A persona written in another language needs `--language`: without it,
+  agents answer in the language the user writes in (`pnpm memory status` says so). In Claude
+  Code, `"language": "<name>"` in `.claude/settings.local.json` adds a system-prompt rule; it
+  also asks for code comments in that language and changes session titles.
 - **Hooks:** one script, `utils/memory/hook.js`, for Claude Code (`.claude/settings.json`), Codex
   (`.codex/hooks.json`, trusted once with `/hooks`), and DSH (`.dsh/hooks.json`; recall
   only). It fails open and stays silent for the reviewer and verifier roles.

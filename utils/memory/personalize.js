@@ -2,7 +2,8 @@
  * Personalization: how agents talk to the user (design §11), like a chat
  * app's "customize" settings. Stored in memory/personalization.json
  * (gitignored) and rendered at the top of the AGENTS.local.md core block,
- * with the scope rules: conversation only, never artifacts or behavior.
+ * with the scope rules: every message to the user (progress notes too),
+ * never artifacts or behavior.
  *
  * Presets are committed in templates/memory/personas/*.json; a user's own
  * settings never are.

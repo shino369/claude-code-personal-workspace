@@ -403,8 +403,9 @@ announces it at the next session start, and a weekly consolidation merges duplic
 the profile; `pnpm memory inbox` lists the changes they held back, and `pnpm memory undo` reverts
 the last such job (or import).
 
-**Personalization** (`pnpm memory personalize`: name, tone, persona) applies to conversation with
-the user only. Commit messages, PR text, code, comments, docs, translations, and reviews keep the
+**Personalization** (`pnpm memory personalize`: name, language, tone, persona) applies to every
+message to the user, progress notes between tool calls included, and a set language holds even
+when the user writes in another. Commit messages, PR text, code, comments, docs, translations, and reviews keep the
 workspace's plain style, and a persona never changes what you do. The reviewer and verifier roles
 ignore it and get no recall, so reviews stay clean-context.
 

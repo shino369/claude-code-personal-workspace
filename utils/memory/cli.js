@@ -150,7 +150,7 @@ Settings
   personalize [--preset <name>] [--call-me …] [--about-me …] [--language …]
       [--persona … | --persona-file <file.md>] [--tone <text|preset>] [--traits a,b]
       [--extra …] [--reset]
-                                How agents talk to you (conversation only); without
+                                How agents talk to you (messages to you only); without
                                 flags, shows the settings. --presets lists the presets;
                                 an empty value clears a field. --persona-file reads the
                                 persona from markdown (comments and headings marks
