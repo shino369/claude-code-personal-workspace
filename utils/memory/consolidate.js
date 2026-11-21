@@ -17,15 +17,11 @@ import path from 'path';
 import { answerOf } from '../agent/cli.js';
 import { findSecrets, redactSecrets } from '../redact.js';
 import { writeFileAtomic } from '../task/store.js';
+import { callAgent } from './agent-call.js';
 import { readConfig } from './config.js';
+import { looksLikeInstruction } from './instructions.js';
 import { kindLabel, refreshAfterWrite, shorten } from './context.js';
-import {
-  applyOps,
-  callAgent,
-  extractCommand,
-  looksLikeInstruction,
-  validateOps,
-} from './extract.js';
+import { applyOps, extractCommand, validateOps } from './extract.js';
 import {
   EXTRACT_DIR,
   appendInbox,

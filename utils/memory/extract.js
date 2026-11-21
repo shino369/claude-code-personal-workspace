@@ -21,14 +21,18 @@
  */
 import fs from 'fs';
 import os from 'os';
-import path from 'path';
 import { answerOf } from '../agent/cli.js';
-import { buildCommand, runAgent as defaultRunAgent } from '../loop/adapters.js';
+import { runAgent as defaultRunAgent } from '../loop/adapters.js';
 import { redactSecrets } from '../redact.js';
-import { INNER_LOOP_ENV } from '../task/loop.js';
-import { commandFor } from '../tools/registry.js';
 import { ROOT_DIR } from '../workspace-config.js';
+import {
+  AGENT_CALL_TIMEOUT_MS,
+  callAgent,
+  headlessCommand,
+  jsonObjectOf,
+} from './agent-call.js';
 import { readConfig, savingOff } from './config.js';
+import { looksLikeInstruction } from './instructions.js';
 import {
   ANNOUNCE_CHARS,
   announceSave,
@@ -37,7 +41,6 @@ import {
   shorten,
 } from './context.js';
 import {
-  EXTRACT_ENV,
   MAX_ATTEMPTS,
   appendInbox,
   appendJournal,
@@ -77,11 +80,10 @@ export const RELATED_LIMIT = 12;
 export const PINNED_LIMIT = 10;
 /** Ops applied per run; more are reported and dropped. */
 export const MAX_OPS = 10;
-export const EXTRACT_TIMEOUT_MS = 5 * 60 * 1000;
+export const EXTRACT_TIMEOUT_MS = AGENT_CALL_TIMEOUT_MS;
 /** Note types extraction may write; episodes come from task digests. */
 export const EXTRACT_TYPES = ['preference', 'fact', 'howto'];
 /** Characters of a failed agent's output kept in its error. */
-const ERROR_TAIL = 300;
 const HELD_REASON = 'it reads like an instruction to an agent';
 const PINNED_DELETE_REASON = 'deleting a pinned note needs the user';
 const DEFAULT_WHY = 'contradicted by a later session';
@@ -91,24 +93,6 @@ const CHANGE_FIELDS = /** @type {const} */ ([
   'triggers',
   'type',
 ]);
-
-/**
- * Text addressed to an agent rather than stating a fact (design §13). A
- * poisoned note would be injected into every later session, so such ops are
- * held for the user.
- */
-export const INSTRUCTION_PATTERNS = [
-  /\bignore\b[^.\n]{0,40}\b(instructions?|previous|prior|above|rules?|system)\b/i,
-  /\bdisregard\b/i,
-  /\byou\s+(must|should|shall|need to|have to|are now|will now)\b/i,
-  /\bsystem\s+prompt\b/i,
-  /\b(new|updated|hidden)\s+instructions?\b/i,
-  /<\/?\s*(system|instructions?|assistant)\b/i,
-  /(指示|命令).{0,10}(無視|忘れ)/,
-  /システムプロンプト/,
-  /忽略.{0,10}(指令|指示|提示)/,
-  /(系統|系统)提示/,
-];
 
 /**
  * @typedef {import('./store.js').Note} Note
@@ -142,10 +126,6 @@ export const INSTRUCTION_PATTERNS = [
 /** @param {unknown} value */
 const isObject = (value) =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
-
-/** @param {string} text */
-export const looksLikeInstruction = (text) =>
-  INSTRUCTION_PATTERNS.some((pattern) => pattern.test(text));
 
 /** @param {Note} note @param {string | null} repo */
 const visible = (note, repo) =>
@@ -237,17 +217,8 @@ ${session}
  * @returns {unknown[]}
  */
 export function parseOps(answer) {
-  const start = answer.indexOf('{');
-  const end = answer.lastIndexOf('}');
-  let parsed = null;
-  if (start !== -1 && end > start) {
-    try {
-      parsed = JSON.parse(answer.slice(start, end + 1));
-    } catch {
-      // Reported below.
-    }
-  }
-  if (!isObject(parsed) || !Array.isArray(parsed.ops)) {
+  const parsed = jsonObjectOf(answer);
+  if (!parsed || !Array.isArray(parsed.ops)) {
     throw new Error('the answer has no JSON object with an "ops" list');
   }
   return parsed.ops;
@@ -535,66 +506,18 @@ export function formatRun(run) {
   return [skipped[run.status]];
 }
 
-/** How each harness runs as the extractor: no tools, and a model flag. */
-const EXTRACTORS = {
-  claude: {
-    /** @param {string | null} model */
-    args: (model) => ['--tools', '', ...(model ? ['--model', model] : [])],
-  },
-};
-
 /**
- * The headless command for one extraction call.
+ * The headless command for one extraction call (Claude only: the model
+ * names in transcripts are Claude's).
  *
  * @param {{ agent: string, model: string | null, rootDir: string }} input
  * @returns {import('../loop/adapters.js').AgentCommand}
  */
 export function extractCommand({ agent, model, rootDir }) {
-  if (!Object.hasOwn(EXTRACTORS, agent)) {
-    throw new Error(
-      `Extraction runs on ${Object.keys(EXTRACTORS).join(', ')} only (got ${agent}).`
-    );
+  if (agent !== 'claude') {
+    throw new Error(`Extraction runs on claude only (got ${agent}).`);
   }
-  const command = buildCommand({
-    agent,
-    argv: commandFor(rootDir, agent),
-    mode: 'read',
-  });
-  const extractor = EXTRACTORS[/** @type {keyof typeof EXTRACTORS} */ (agent)];
-  return { ...command, args: [...command.args, ...extractor.args(model)] };
-}
-
-/**
- * One headless call in an empty folder (no project instructions or hooks
- * there), removed afterwards. Throws when the agent fails.
- *
- * @param {ExtractDeps} deps
- * @param {import('../loop/adapters.js').AgentCommand} command
- * @param {string} prompt
- */
-export function callAgent(deps, command, prompt) {
-  const cwd = fs.mkdtempSync(path.join(deps.tmpdir(), 'memory-extract-'));
-  let result;
-  try {
-    result = deps.runAgent({
-      command,
-      cwd,
-      prompt,
-      timeoutMs: EXTRACT_TIMEOUT_MS,
-      env: { ...deps.env, [EXTRACT_ENV]: '1', [INNER_LOOP_ENV]: 'off' },
-    });
-  } finally {
-    fs.rmSync(cwd, { recursive: true, force: true });
-  }
-  if (result.code !== 0) {
-    const how = result.signal
-      ? `was stopped by ${result.signal}`
-      : `exited with code ${result.code}`;
-    throw new Error(
-      `the extraction agent ${how}: ${result.output.trim().slice(-ERROR_TAIL)}`
-    );
-  }
-  return result;
+  return headlessCommand({ agent, model, rootDir });
 }
 
 /**

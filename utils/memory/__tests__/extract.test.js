@@ -20,7 +20,6 @@ import {
   extractEntry,
   formatChange,
   formatRun,
-  looksLikeInstruction,
   parseOps,
   relatedNotes,
   runWorker,
@@ -38,6 +37,7 @@ import {
   writeAnnounced,
   writeOffset,
 } from '../queue.js';
+import { looksLikeInstruction } from '../instructions.js';
 import { buildIndex } from '../recall.js';
 import { AGENTS_LOCAL_FILE, initLocal } from '../render.js';
 import { listSnapshots } from '../snapshot.js';
